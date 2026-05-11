@@ -1,0 +1,73 @@
+using Application.Interfaces.IRepositories;
+using Application.Interfaces.IUnitOfWork;
+using Infrastructure.DbContexts;
+using Infrastructure.Repositories;
+using Microsoft.EntityFrameworkCore.Storage;
+
+namespace Infrastructure.UnitOfWork
+{
+    public class UnitOfWork : IUnitOfWork
+    {
+        private readonly CDESystemDbContext _context;
+        private IDbContextTransaction? _transaction;
+        private bool _disposed;
+
+        public UnitOfWork(CDESystemDbContext context)
+        {
+            _context = context ?? throw new ArgumentNullException(nameof(context));
+        }
+
+        private IAccountRepository? _accountRepository;
+        public IAccountRepository AccountRepository =>
+            _accountRepository ??= new AccountRepository(_context);
+
+        public async Task<int> SaveChangesAsync()
+        {
+            return await _context.SaveChangesAsync();
+        }
+
+        public async Task CommitAsync()
+        {
+            try
+            {
+                await _context.Database.BeginTransactionAsync();
+                await _context.SaveChangesAsync();
+                await _context.Database.CommitTransactionAsync();
+            }
+            catch
+            {
+                await RollbackAsync();
+                throw;
+            }
+        }
+
+        private async Task RollbackAsync()
+        {
+            if (_transaction != null)
+            {
+                await _transaction.RollbackAsync();
+                await _transaction.DisposeAsync();
+                _transaction = null;
+            }
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposed)
+            {
+                if (disposing)
+                {
+                    _transaction?.Dispose();
+                    _context.Dispose();
+                }
+                _disposed = true;
+            }
+        }
+    }
+}
