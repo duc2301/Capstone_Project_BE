@@ -6,7 +6,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <ItemGroup>    
+  <ItemGroup>
+    <Folder Include="Enum\Notification\" />
   </ItemGroup>
 
 </Project>
