@@ -6,6 +6,7 @@ using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using BCrypt.Net;
 using Domain.Entities;
+using Domain.Enum.Account;
 
 namespace Application.Services
 {
@@ -41,8 +42,8 @@ namespace Application.Services
             var account = _mapper.Map<Account>(dto);
             account.Id = Guid.NewGuid();
             account.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
-            account.Status = "Active";
-            account.Role ??= "Viewer";
+            account.Status = AccountStatus.Active;
+            account.Role = AccountRole.User;
             account.CreatedAt = DateTime.UtcNow;
             account.UpdatedAt = DateTime.UtcNow;
 
