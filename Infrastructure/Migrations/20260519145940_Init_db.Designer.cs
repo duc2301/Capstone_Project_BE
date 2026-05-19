@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    [Migration("20260519092736_TenCuaMigration")]
-    partial class TenCuaMigration
+    [Migration("20260519145940_Init_db")]
+    partial class Init_db
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -515,6 +515,9 @@ namespace Infrastructure.Migrations
 
                     b.Property<Guid?>("DepartmentId")
                         .HasColumnType("uuid");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
@@ -1331,6 +1334,9 @@ namespace Infrastructure.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("DepartmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ManagerAccountId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("ProjectDescription")

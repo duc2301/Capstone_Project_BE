@@ -513,6 +513,9 @@ namespace Infrastructure.Migrations
                     b.Property<Guid?>("DepartmentId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("Role")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("AccountId");
@@ -1328,6 +1331,9 @@ namespace Infrastructure.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("DepartmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ManagerAccountId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("ProjectDescription")

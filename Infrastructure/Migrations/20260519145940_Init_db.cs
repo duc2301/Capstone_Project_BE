@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class TenCuaMigration : Migration
+    public partial class Init_db : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -105,7 +105,8 @@ namespace Infrastructure.Migrations
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     ProjectName = table.Column<string>(type: "text", nullable: false),
                     ProjectDescription = table.Column<string>(type: "text", nullable: false),
-                    DepartmentId = table.Column<Guid>(type: "uuid", nullable: false)
+                    DepartmentId = table.Column<Guid>(type: "uuid", nullable: false),
+                    ManagerAccountId = table.Column<Guid>(type: "uuid", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -622,7 +623,8 @@ namespace Infrastructure.Migrations
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     AccountId = table.Column<Guid>(type: "uuid", nullable: false),
-                    DepartmentId = table.Column<Guid>(type: "uuid", nullable: true)
+                    DepartmentId = table.Column<Guid>(type: "uuid", nullable: true),
+                    Role = table.Column<int>(type: "integer", nullable: false)
                 },
                 constraints: table =>
                 {

@@ -12,6 +12,7 @@ namespace Domain.Entities
         public string ProjectName { get; set; }
         public string ProjectDescription { get; set; }
         public Guid DepartmentId { get; set; }
+        public Guid? ManagerAccountId { get; set; }   // Manager dự án (Admin cấp tài khoản & gán)
         public ICollection<Department> Departments { get; set; }
     }
 }

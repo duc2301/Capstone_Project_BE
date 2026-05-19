@@ -13,5 +13,7 @@ namespace Application.DTOs.RequestDTOs.Project
 
         [Required]
         public Guid DepartmentId { get; set; }
+
+        public Guid? ManagerAccountId { get; set; }
     }
 }
