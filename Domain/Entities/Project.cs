@@ -2,9 +2,11 @@
 using System.Collections.Generic;
 using System.Text;
 
+using Domain.Common;
+
 namespace Domain.Entities
 {
-    public class Project
+    public class Project : IEntity
     {
         public Guid Id { get; set; }
         public string ProjectName { get; set; }

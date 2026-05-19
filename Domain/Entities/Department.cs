@@ -3,9 +3,11 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
+using Domain.Common;
+
 namespace Domain.Entities
 {
-    public class Department
+    public class Department : IEntity
     {
         public Guid Id { get; set; }
         public string Name { get; set; }

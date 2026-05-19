@@ -24,7 +24,15 @@ namespace Infrastructure.Configurations
             services.AddAutoMapper(cfg => cfg.AddProfile<MappingProfile>());
 
             services.AddScoped<IUnitOfWork, Infrastructure.UnitOfWork.UnitOfWork>();
+
+            // CRUD generic cho mọi aggregate root — đăng ký 1 lần (open generic)
+            services.AddScoped(typeof(IGenericService<,,,>), typeof(GenericService<,,,>));
+
             services.AddScoped<IAccountService, AccountService>();
+
+            // Auth (giống ChemXLab) + refresh token
+            services.AddScoped<IJwtService, JwtService>();
+            services.AddScoped<IAuthService, AuthService>();
 
             return services;
         }
