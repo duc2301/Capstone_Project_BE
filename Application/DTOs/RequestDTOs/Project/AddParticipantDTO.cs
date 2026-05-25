@@ -3,9 +3,10 @@ using Domain.Enum.Project;
 
 namespace Application.DTOs.RequestDTOs.Project
 {
-    // Project Manager gọi: thêm bên tham gia (Organization và/hoặc Group) vô project.
+    // 1 bên tham gia: đúng 1 trong 3 (DepartmentId / OrganizationId / GroupId) phải có.
     public class AddParticipantDTO
     {
+        public Guid? DepartmentId { get; set; }
         public Guid? OrganizationId { get; set; }
         public Guid? GroupId { get; set; }
 

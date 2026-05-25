@@ -101,15 +101,18 @@ namespace Infrastructure.DbContexts
                 .HasIndex(t => t.Code)
                 .IsUnique();
 
+            // Seed 8 loại theo ISO 19650 / TCVN 14177.
+            // GUID generate thật 1 lần (Guid.NewGuid() lúc design) rồi hardcode làm constant —
+            // EF Core HasData yêu cầu constant để migration reproducible giữa các môi trường.
             modelBuilder.Entity<OrganizationType>().HasData(
-                new OrganizationType { Id = new Guid("11111111-1111-1111-1111-111111111111"), Code = "Client",                Name = "Chủ đầu tư",            IsActive = true },
-                new OrganizationType { Id = new Guid("22222222-2222-2222-2222-222222222222"), Code = "ProjectManagementUnit", Name = "Ban quản lý dự án",     IsActive = true },
-                new OrganizationType { Id = new Guid("33333333-3333-3333-3333-333333333333"), Code = "Surveyor",              Name = "Tư vấn giám sát",       IsActive = true },
-                new OrganizationType { Id = new Guid("44444444-4444-4444-4444-444444444444"), Code = "Consultant",            Name = "Tư vấn (thiết kế/BIM)", IsActive = true },
-                new OrganizationType { Id = new Guid("55555555-5555-5555-5555-555555555555"), Code = "MainContractor",        Name = "Nhà thầu chính",        IsActive = true },
-                new OrganizationType { Id = new Guid("66666666-6666-6666-6666-666666666666"), Code = "Subcontractor",         Name = "Nhà thầu phụ",          IsActive = true },
-                new OrganizationType { Id = new Guid("77777777-7777-7777-7777-777777777777"), Code = "Supplier",              Name = "Nhà cung cấp",          IsActive = true },
-                new OrganizationType { Id = new Guid("88888888-8888-8888-8888-888888888888"), Code = "FacilityManagement",    Name = "Đơn vị vận hành",       IsActive = true }
+                new OrganizationType { Id = new Guid("7f947ce1-e7c6-49b2-aa41-f9b30292917a"), Code = "Client",                Name = "Chủ đầu tư",            IsActive = true },
+                new OrganizationType { Id = new Guid("ad5b98c7-b28f-4c40-861a-5a363b84eb00"), Code = "ProjectManagementUnit", Name = "Ban quản lý dự án",     IsActive = true },
+                new OrganizationType { Id = new Guid("ad4c917e-b170-4ff8-bca3-10764641c8d9"), Code = "Surveyor",              Name = "Tư vấn giám sát",       IsActive = true },
+                new OrganizationType { Id = new Guid("d692eaa8-4cf1-4a12-8bf8-4d0e1529acb5"), Code = "Consultant",            Name = "Tư vấn (thiết kế/BIM)", IsActive = true },
+                new OrganizationType { Id = new Guid("ae2fd257-cca8-4bb4-8f90-c0c45100702b"), Code = "MainContractor",        Name = "Nhà thầu chính",        IsActive = true },
+                new OrganizationType { Id = new Guid("8c0dcb7d-87fe-413e-b8d6-83eb91171cbe"), Code = "Subcontractor",         Name = "Nhà thầu phụ",          IsActive = true },
+                new OrganizationType { Id = new Guid("3fe93ed9-2e6a-47a6-90cf-6e5aac24c645"), Code = "Supplier",              Name = "Nhà cung cấp",          IsActive = true },
+                new OrganizationType { Id = new Guid("e48c6618-c877-46bf-9d6d-7d9fb92a50e9"), Code = "FacilityManagement",    Name = "Đơn vị vận hành",       IsActive = true }
             );
 
             // Cascade Restrict cho các cây tự tham chiếu — tránh "multiple cascade paths"

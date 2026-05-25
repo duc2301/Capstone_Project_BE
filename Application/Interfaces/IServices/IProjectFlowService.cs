@@ -3,12 +3,12 @@ using Application.DTOs.ResponseDTOs.Project;
 
 namespace Application.Interfaces.IServices
 {
-    // Các operation thuộc luồng nghiệp vụ dự án không hợp với CRUD generic:
-    // - Admin tạo PM cho 1 project trống (account + Project.ManagerAccountId atomic)
-    // - PM add bên tham gia (Organization/Group) vô project
+    // Operation thuộc luồng dự án không hợp với CRUD generic:
+    // - Admin gán 1 account hiện có làm PM của project (1 account có thể làm PM nhiều dự án)
+    // - PM add nhiều bên tham gia (department/team/organization) vô project trong 1 transaction
     public interface IProjectFlowService
     {
-        Task<ProjectManagerCreatedResponseDTO> CreateManagerAsync(Guid projectId, CreateProjectManagerDTO dto);
-        Task<ParticipantResponseDTO> AddParticipantAsync(Guid projectId, AddParticipantDTO dto);
+        Task<ProjectResponseDTO> AssignManagerAsync(Guid projectId, AssignProjectManagerDTO dto);
+        Task<List<ParticipantResponseDTO>> AddParticipantsAsync(Guid projectId, AddParticipantsBulkDTO dto);
     }
 }

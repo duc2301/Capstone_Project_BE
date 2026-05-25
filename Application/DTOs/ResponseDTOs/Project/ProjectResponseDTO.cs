@@ -7,7 +7,7 @@ namespace Application.DTOs.ResponseDTOs.Project
         public Guid Id { get; set; }
         public string ProjectName { get; set; } = null!;
         public string ProjectDescription { get; set; } = null!;
-        public Guid DepartmentId { get; set; }
+        public Guid? DepartmentId { get; set; }
         public Guid? ManagerAccountId { get; set; }
         public ProjectStatus Status { get; set; }
         public ProjectPhase Phase { get; set; }

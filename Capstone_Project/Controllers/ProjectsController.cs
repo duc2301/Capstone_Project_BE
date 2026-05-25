@@ -22,23 +22,24 @@ namespace Capstone_Project.Controllers
             _projectFlow = projectFlow;
         }
 
-        // Admin tạo tài khoản Project Manager cho 1 project trống.
-        // Atomic: tạo Account + set Project.ManagerAccountId trong cùng transaction.
+        // Admin gán 1 account hiện có làm Project Manager.
+        // 1 account có thể làm PM nhiều dự án.
         [HttpPost("{id:guid}/manager")]
         [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> CreateManager(Guid id, [FromBody] CreateProjectManagerDTO dto)
+        public async Task<IActionResult> AssignManager(Guid id, [FromBody] AssignProjectManagerDTO dto)
         {
-            var result = await _projectFlow.CreateManagerAsync(id, dto);
-            return Ok(ApiResponse.Success("Manager created and assigned", result));
+            var result = await _projectFlow.AssignManagerAsync(id, dto);
+            return Ok(ApiResponse.Success("Manager assigned", result));
         }
 
-        // Project Manager thêm bên tham gia (Organization/Group) vô project.
-        [HttpPost("{id:guid}/participants")]
+        // PM add nhiều bên tham gia (department/team/organization) cho project trong 1 transaction.
+        // Mỗi item phải đúng 1 trong 3 (DepartmentId / OrganizationId / GroupId).
+        [HttpPost("{id:guid}/participants/bulk")]
         [Authorize]
-        public async Task<IActionResult> AddParticipant(Guid id, [FromBody] AddParticipantDTO dto)
+        public async Task<IActionResult> AddParticipants(Guid id, [FromBody] AddParticipantsBulkDTO dto)
         {
-            var result = await _projectFlow.AddParticipantAsync(id, dto);
-            return Ok(ApiResponse.Success("Participant added", result));
+            var result = await _projectFlow.AddParticipantsAsync(id, dto);
+            return Ok(ApiResponse.Success($"{result.Count} participant(s) added", result));
         }
     }
 }
