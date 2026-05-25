@@ -6,6 +6,7 @@ namespace Application.DTOs.ResponseDTOs.Project
     {
         public Guid Id { get; set; }
         public Guid ProjectId { get; set; }
+        public Guid? DepartmentId { get; set; }
         public Guid? OrganizationId { get; set; }
         public Guid? GroupId { get; set; }
         public ProjectParticipantRole Role { get; set; }

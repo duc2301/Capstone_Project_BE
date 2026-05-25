@@ -28,35 +28,22 @@ namespace Application.Services
             _mapper = mapper;
         }
 
-        // Admin gọi: tạo account làm PM cho project trống + gán Project.ManagerAccountId
-        public async Task<ProjectManagerCreatedResponseDTO> CreateManagerAsync(
-            Guid projectId, CreateProjectManagerDTO dto)
+        // Admin gán 1 account hiện có làm PM của project.
+        // 1 account có thể làm PM nhiều dự án -> chỉ validate account tồn tại + active.
+        public async Task<ProjectResponseDTO> AssignManagerAsync(
+            Guid projectId, AssignProjectManagerDTO dto)
         {
             var project = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId)
                 ?? throw new ApiExceptionResponse("Project not found.", 404);
 
-            if (project.ManagerAccountId.HasValue)
-                throw new ApiExceptionResponse("Project already has a manager. Replace via PUT /api/projects/{id}.", 409);
+            var account = await _unitOfWork.AccountRepository.GetByIdAsync(dto.AccountId)
+                ?? throw new ApiExceptionResponse("Account not found.", 404);
 
-            if (await _unitOfWork.AccountRepository.EmailExistsAsync(dto.Email))
-                throw new ApiExceptionResponse("Email already exists.", 409);
+            if (account.Status == AccountStatus.Suspended || account.Status == AccountStatus.Inactive)
+                throw new ApiExceptionResponse("Cannot assign an inactive account as manager.", 409);
 
-            var account = new Account
-            {
-                Id = Guid.NewGuid(),
-                UserName = dto.UserName,
-                Email = dto.Email,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
-                Role = AccountRole.User,            // system role: User (Manager là per-project)
-                Status = AccountStatus.Active,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-
-            await _unitOfWork.AccountRepository.CreateAsync(account);
-
+            var oldManagerId = project.ManagerAccountId;
             project.ManagerAccountId = account.Id;
-            // Project được EF track sẵn -> mutate là đủ, không cần repo.Update
 
             await _unitOfWork.CommitAsync();
 
@@ -67,46 +54,66 @@ namespace Application.Services
                 linkType: "Project",
                 linkId: project.Id.ToString());
 
-            return new ProjectManagerCreatedResponseDTO
+            if (oldManagerId.HasValue && oldManagerId.Value != account.Id)
             {
-                ProjectId = project.Id,
-                ManagerAccountId = account.Id,
-                UserName = account.UserName,
-                Email = account.Email
-            };
+                await _notification.NotifyAsync(
+                    oldManagerId.Value,
+                    $"Bạn đã được thay khỏi vai trò Project Manager của dự án {project.ProjectName}",
+                    senderName: _currentUser.UserName ?? "Admin",
+                    linkType: "Project",
+                    linkId: project.Id.ToString());
+            }
+
+            return _mapper.Map<ProjectResponseDTO>(project);
         }
 
-        // PM gọi: thêm bên tham gia (Organization và/hoặc Group) vô project
-        public async Task<ParticipantResponseDTO> AddParticipantAsync(
-            Guid projectId, AddParticipantDTO dto)
+        // PM gọi: add nhiều bên tham gia 1 lúc (department/team/organization).
+        // Mỗi item phải đúng 1 trong 3 FK; service tạo các ProjectParticipant rows trong 1 transaction.
+        public async Task<List<ParticipantResponseDTO>> AddParticipantsAsync(
+            Guid projectId, AddParticipantsBulkDTO dto)
         {
-            if (dto.OrganizationId == null && dto.GroupId == null)
-                throw new ApiExceptionResponse("Must provide OrganizationId or GroupId.", 400);
+            if (dto.Participants == null || dto.Participants.Count == 0)
+                throw new ApiExceptionResponse("Participants list is empty.", 400);
 
             var project = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId)
                 ?? throw new ApiExceptionResponse("Project not found.", 404);
 
-            // Chỉ PM của project (hoặc Admin) mới được add bên tham gia
             var actor = _currentUser.AccountId
                 ?? throw new ApiExceptionResponse("Authentication required.", 401);
             if (_currentUser.SystemRole != AccountRole.Admin.ToString()
                 && project.ManagerAccountId != actor)
                 throw new ApiExceptionResponse("Only the project manager or Admin can add participants.", 403);
 
-            var participant = new ProjectParticipant
+            var now = DateTime.UtcNow;
+            var created = new List<ProjectParticipant>(dto.Participants.Count);
+
+            for (int i = 0; i < dto.Participants.Count; i++)
             {
-                Id = Guid.NewGuid(),
-                ProjectId = projectId,
-                OrganizationId = dto.OrganizationId,
-                GroupId = dto.GroupId,
-                Role = dto.Role,
-                JoinedAt = DateTime.UtcNow
-            };
+                var p = dto.Participants[i];
+                var setCount =
+                    (p.DepartmentId.HasValue ? 1 : 0) +
+                    (p.OrganizationId.HasValue ? 1 : 0) +
+                    (p.GroupId.HasValue ? 1 : 0);
+                if (setCount != 1)
+                    throw new ApiExceptionResponse(
+                        $"Participants[{i}]: must provide exactly one of DepartmentId, OrganizationId, GroupId.", 400);
 
-            await _unitOfWork.Repository<ProjectParticipant>().CreateAsync(participant);
+                var entity = new ProjectParticipant
+                {
+                    Id = Guid.NewGuid(),
+                    ProjectId = projectId,
+                    DepartmentId = p.DepartmentId,
+                    OrganizationId = p.OrganizationId,
+                    GroupId = p.GroupId,
+                    Role = p.Role,
+                    JoinedAt = now
+                };
+                await _unitOfWork.Repository<ProjectParticipant>().CreateAsync(entity);
+                created.Add(entity);
+            }
+
             await _unitOfWork.CommitAsync();
-
-            return _mapper.Map<ParticipantResponseDTO>(participant);
+            return created.Select(_mapper.Map<ParticipantResponseDTO>).ToList();
         }
     }
 }
