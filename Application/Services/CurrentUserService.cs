@@ -35,16 +35,16 @@ namespace Application.Services
 
         public string? SystemRole => User?.FindFirst(ClaimTypes.Role)?.Value;
 
-        // Multi-valued claim "DepartmentRole" với value "<departmentId>:<role>".
-        public IReadOnlyList<DepartmentMembership> DepartmentMemberships
+        // Multi-valued claim "Group" với value = GroupId
+        public IReadOnlyList<Guid> GroupMemberships
         {
             get
             {
-                if (User == null) return Array.Empty<DepartmentMembership>();
-                return User.FindAll("DepartmentRole")
-                    .Select(c => c.Value.Split(':', 2))
-                    .Where(parts => parts.Length == 2 && Guid.TryParse(parts[0], out _))
-                    .Select(parts => new DepartmentMembership(Guid.Parse(parts[0]), parts[1]))
+                if (User == null) return Array.Empty<Guid>();
+                return User.FindAll("Group")
+                    .Select(c => Guid.TryParse(c.Value, out var g) ? (Guid?)g : null)
+                    .Where(g => g.HasValue)
+                    .Select(g => g!.Value)
                     .ToList();
             }
         }

@@ -9,9 +9,7 @@ namespace Application.Interfaces.IServices
         string? UserName { get; }
         string? Email { get; }
         string? SystemRole { get; }
-        IReadOnlyList<DepartmentMembership> DepartmentMemberships { get; }
+        // Danh sách Group account thuộc (lấy từ claim "Group" multi-valued)
+        IReadOnlyList<Guid> GroupMemberships { get; }
     }
-
-    // 1 account có thể có nhiều "Employee" rows (mỗi row = 1 phòng ban + role)
-    public record DepartmentMembership(Guid DepartmentId, string Role);
 }

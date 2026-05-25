@@ -38,8 +38,8 @@ namespace Application.Services
             };
 
             await _unitOfWork.AccountRepository.CreateAsync(account);
-            // Account vừa tạo chưa có Employee row -> employments rỗng
-            var response = await IssueTokensAsync(account, Array.Empty<Employee>());
+            // Account vừa tạo chưa có GroupMember -> empty
+            var response = await IssueTokensAsync(account, Array.Empty<GroupMember>());
             await _unitOfWork.CommitAsync();
             return response;
         }
@@ -53,8 +53,8 @@ namespace Application.Services
             if (account.Status == AccountStatus.Suspended || account.Status == AccountStatus.Inactive)
                 throw new ApiExceptionResponse("Account is not active.", 403);
 
-            var employments = await LoadEmploymentsAsync(account.Id);
-            var response = await IssueTokensAsync(account, employments);
+            var memberships = await LoadGroupMembershipsAsync(account.Id);
+            var response = await IssueTokensAsync(account, memberships);
             await _unitOfWork.CommitAsync();
             return response;
         }
@@ -70,9 +70,9 @@ namespace Application.Services
             var account = await _unitOfWork.AccountRepository.GetByIdAsync(stored.AccountId)
                 ?? throw new ApiExceptionResponse("Account not found.", 401);
 
-            // Refresh -> reload employments để claim luôn cập nhật role mới nhất
-            var employments = await LoadEmploymentsAsync(account.Id);
-            var response = await IssueTokensAsync(account, employments);
+            // Refresh -> reload memberships để claim luôn cập nhật nhóm mới nhất
+            var memberships = await LoadGroupMembershipsAsync(account.Id);
+            var response = await IssueTokensAsync(account, memberships);
             stored.RevokedAt = DateTime.UtcNow;
             stored.ReplacedByToken = response.RefreshToken;
 
@@ -92,10 +92,10 @@ namespace Application.Services
             }
         }
 
-        // Sinh access (kèm DepartmentRole claims) + refresh token, lưu refresh token vào DB.
-        private async Task<AuthResponseDTO> IssueTokensAsync(Account account, IEnumerable<Employee> employments)
+        // Sinh access (kèm Group claims) + refresh token, lưu refresh token vào DB.
+        private async Task<AuthResponseDTO> IssueTokensAsync(Account account, IEnumerable<GroupMember> memberships)
         {
-            var accessToken = _jwtService.GenerateAccessToken(account, employments);
+            var accessToken = _jwtService.GenerateAccessToken(account, memberships);
             var refreshToken = _jwtService.GenerateRefreshToken();
             var now = DateTime.UtcNow;
 
@@ -121,10 +121,10 @@ namespace Application.Services
             };
         }
 
-        private async Task<List<Employee>> LoadEmploymentsAsync(Guid accountId)
+        private async Task<List<GroupMember>> LoadGroupMembershipsAsync(Guid accountId)
         {
-            var all = await _unitOfWork.Repository<Employee>().GetAllAsync();
-            return all.Where(e => e.AccountId == accountId).ToList();
+            var all = await _unitOfWork.Repository<GroupMember>().GetAllAsync();
+            return all.Where(gm => gm.AccountId == accountId).ToList();
         }
     }
 }
