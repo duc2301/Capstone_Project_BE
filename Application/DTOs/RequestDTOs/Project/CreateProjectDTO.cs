@@ -1,0 +1,23 @@
+using System.ComponentModel.DataAnnotations;
+using Domain.Enum.Project;
+
+namespace Application.DTOs.RequestDTOs.Project
+{
+    public class CreateProjectDTO
+    {
+        [Required]
+        [StringLength(250)]
+        public string ProjectName { get; set; } = null!;
+
+        [StringLength(2000)]
+        public string? ProjectDescription { get; set; }
+
+        [Required]
+        public Guid DepartmentId { get; set; }
+
+        public Guid? ManagerAccountId { get; set; }
+
+        public ProjectStatus Status { get; set; } = ProjectStatus.Planning;
+        public ProjectPhase Phase { get; set; } = ProjectPhase.Concept;
+    }
+}
