@@ -9,11 +9,13 @@ using Application.DTOs.RequestDTOs.FileItem;
 using Application.DTOs.RequestDTOs.Folder;
 using Application.DTOs.RequestDTOs.FolderTemplate;
 using Application.DTOs.RequestDTOs.Group;
+using Application.DTOs.RequestDTOs.Invitation;
 using Application.DTOs.RequestDTOs.Issue;
 using Application.DTOs.RequestDTOs.LandParcel;
 using Application.DTOs.RequestDTOs.ModelFile;
 using Application.DTOs.RequestDTOs.Notification;
 using Application.DTOs.RequestDTOs.Organization;
+using Application.DTOs.RequestDTOs.OrganizationType;
 using Application.DTOs.RequestDTOs.ProgressReport;
 using Application.DTOs.RequestDTOs.Project;
 using Application.DTOs.RequestDTOs.ProjectModel;
@@ -31,11 +33,13 @@ using Application.DTOs.ResponseDTOs.FileItem;
 using Application.DTOs.ResponseDTOs.Folder;
 using Application.DTOs.ResponseDTOs.FolderTemplate;
 using Application.DTOs.ResponseDTOs.Group;
+using Application.DTOs.ResponseDTOs.Invitation;
 using Application.DTOs.ResponseDTOs.Issue;
 using Application.DTOs.ResponseDTOs.LandParcel;
 using Application.DTOs.ResponseDTOs.ModelFile;
 using Application.DTOs.ResponseDTOs.Notification;
 using Application.DTOs.ResponseDTOs.Organization;
+using Application.DTOs.ResponseDTOs.OrganizationType;
 using Application.DTOs.ResponseDTOs.ProgressReport;
 using Application.DTOs.ResponseDTOs.Project;
 using Application.DTOs.ResponseDTOs.ProjectModel;
@@ -69,6 +73,7 @@ namespace Application.Mapping
             // --- Đã có sẵn + Module A/B ---
             Crud<Department, CreateDepartmentDTO, UpdateDepartmentDTO, DepartmentResponseDTO>();
             Crud<Employee, CreateEmployeeDTO, UpdateEmployeeDTO, EmployeeResponseDTO>();
+            Crud<OrganizationType, CreateOrganizationTypeDTO, UpdateOrganizationTypeDTO, OrganizationTypeResponseDTO>();
             Crud<Organization, CreateOrganizationDTO, UpdateOrganizationDTO, OrganizationResponseDTO>();
             Crud<Group, CreateGroupDTO, UpdateGroupDTO, GroupResponseDTO>();
             Crud<Project, CreateProjectDTO, UpdateProjectDTO, ProjectResponseDTO>();
@@ -89,6 +94,13 @@ namespace Application.Mapping
             Crud<Submittal, CreateSubmittalDTO, UpdateSubmittalDTO, SubmittalResponseDTO>();
             Crud<Discussion, CreateDiscussionDTO, UpdateDiscussionDTO, DiscussionResponseDTO>();
             Crud<Issue, CreateIssueDTO, UpdateIssueDTO, IssueResponseDTO>();
+
+            // Invitation: chỉ map InviteRequest -> entity (cho service dùng) + entity -> response
+            CreateMap<ProjectInvitation, InvitationResponseDTO>();
+            CreateMap<InviteRequestDTO, ProjectInvitation>();
+
+            // ProjectParticipant -> ParticipantResponseDTO (cho POST /api/projects/{id}/participants)
+            CreateMap<ProjectParticipant, ParticipantResponseDTO>();
 
             // --- Module I/J/K/L/M ---
             Crud<Schedule, CreateScheduleDTO, UpdateScheduleDTO, ScheduleResponseDTO>();

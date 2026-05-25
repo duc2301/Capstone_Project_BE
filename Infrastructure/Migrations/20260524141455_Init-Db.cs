@@ -3,10 +3,12 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
+#pragma warning disable CA1814 // Prefer jagged arrays over multidimensional
+
 namespace Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class Init_db : Migration
+    public partial class InitDb : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -79,23 +81,39 @@ namespace Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "Organizations",
+                name: "OrganizationTypes",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    TaxCode = table.Column<string>(type: "text", nullable: false),
-                    LegalName = table.Column<string>(type: "text", nullable: false),
-                    DisplayName = table.Column<string>(type: "text", nullable: true),
-                    Type = table.Column<int>(type: "integer", nullable: false),
-                    Address = table.Column<string>(type: "text", nullable: true),
-                    Phone = table.Column<string>(type: "text", nullable: true),
-                    Email = table.Column<string>(type: "text", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                    Code = table.Column<string>(type: "text", nullable: false),
+                    Name = table.Column<string>(type: "text", nullable: false),
+                    Description = table.Column<string>(type: "text", nullable: true),
+                    IsActive = table.Column<bool>(type: "boolean", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Organizations", x => x.Id);
+                    table.PrimaryKey("PK_OrganizationTypes", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "ProjectInvitations",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    ProjectId = table.Column<Guid>(type: "uuid", nullable: false),
+                    InvitedAccountId = table.Column<Guid>(type: "uuid", nullable: true),
+                    InvitedGroupId = table.Column<Guid>(type: "uuid", nullable: true),
+                    InvitedByAccountId = table.Column<Guid>(type: "uuid", nullable: true),
+                    Token = table.Column<string>(type: "text", nullable: false),
+                    Status = table.Column<int>(type: "integer", nullable: false),
+                    ExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    RespondedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    Note = table.Column<string>(type: "text", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ProjectInvitations", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -106,7 +124,9 @@ namespace Infrastructure.Migrations
                     ProjectName = table.Column<string>(type: "text", nullable: false),
                     ProjectDescription = table.Column<string>(type: "text", nullable: false),
                     DepartmentId = table.Column<Guid>(type: "uuid", nullable: false),
-                    ManagerAccountId = table.Column<Guid>(type: "uuid", nullable: true)
+                    ManagerAccountId = table.Column<Guid>(type: "uuid", nullable: true),
+                    Status = table.Column<int>(type: "integer", nullable: false),
+                    Phase = table.Column<int>(type: "integer", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -153,7 +173,9 @@ namespace Infrastructure.Migrations
                     SendAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     SenderName = table.Column<string>(type: "text", nullable: false),
                     IsRead = table.Column<bool>(type: "boolean", nullable: false),
-                    AccountId = table.Column<Guid>(type: "uuid", nullable: false)
+                    AccountId = table.Column<Guid>(type: "uuid", nullable: false),
+                    LinkType = table.Column<string>(type: "text", nullable: true),
+                    LinkId = table.Column<string>(type: "text", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -189,23 +211,29 @@ namespace Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "Groups",
+                name: "Organizations",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    Name = table.Column<string>(type: "text", nullable: false),
-                    Description = table.Column<string>(type: "text", nullable: true),
-                    OrganizationId = table.Column<Guid>(type: "uuid", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                    TaxCode = table.Column<string>(type: "text", nullable: false),
+                    LegalName = table.Column<string>(type: "text", nullable: false),
+                    DisplayName = table.Column<string>(type: "text", nullable: true),
+                    OrganizationTypeId = table.Column<Guid>(type: "uuid", nullable: false),
+                    Address = table.Column<string>(type: "text", nullable: true),
+                    Phone = table.Column<string>(type: "text", nullable: true),
+                    Email = table.Column<string>(type: "text", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Groups", x => x.Id);
+                    table.PrimaryKey("PK_Organizations", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_Groups_Organizations_OrganizationId",
-                        column: x => x.OrganizationId,
-                        principalTable: "Organizations",
-                        principalColumn: "Id");
+                        name: "FK_Organizations_OrganizationTypes_OrganizationTypeId",
+                        column: x => x.OrganizationTypeId,
+                        principalTable: "OrganizationTypes",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -241,7 +269,7 @@ namespace Infrastructure.Migrations
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     Name = table.Column<string>(type: "text", nullable: false),
-                    Type = table.Column<int>(type: "integer", nullable: false),
+                    Type = table.Column<string>(type: "text", nullable: false),
                     ProjectId = table.Column<Guid>(type: "uuid", nullable: true)
                 },
                 constraints: table =>
@@ -323,7 +351,8 @@ namespace Infrastructure.Migrations
                         name: "FK_Folders_Folders_ParentFolderId",
                         column: x => x.ParentFolderId,
                         principalTable: "Folders",
-                        principalColumn: "Id");
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "FK_Folders_Projects_ProjectId",
                         column: x => x.ProjectId,
@@ -409,61 +438,23 @@ namespace Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "GroupMembers",
+                name: "Groups",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    GroupId = table.Column<Guid>(type: "uuid", nullable: false),
-                    AccountId = table.Column<Guid>(type: "uuid", nullable: false),
-                    JoinedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_GroupMembers", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_GroupMembers_Accounts_AccountId",
-                        column: x => x.AccountId,
-                        principalTable: "Accounts",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_GroupMembers_Groups_GroupId",
-                        column: x => x.GroupId,
-                        principalTable: "Groups",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "ProjectParticipants",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    ProjectId = table.Column<Guid>(type: "uuid", nullable: false),
+                    Name = table.Column<string>(type: "text", nullable: false),
+                    Description = table.Column<string>(type: "text", nullable: true),
                     OrganizationId = table.Column<Guid>(type: "uuid", nullable: true),
-                    GroupId = table.Column<Guid>(type: "uuid", nullable: true),
-                    Role = table.Column<int>(type: "integer", nullable: false),
-                    JoinedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_ProjectParticipants", x => x.Id);
+                    table.PrimaryKey("PK_Groups", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_ProjectParticipants_Groups_GroupId",
-                        column: x => x.GroupId,
-                        principalTable: "Groups",
-                        principalColumn: "Id");
-                    table.ForeignKey(
-                        name: "FK_ProjectParticipants_Organizations_OrganizationId",
+                        name: "FK_Groups_Organizations_OrganizationId",
                         column: x => x.OrganizationId,
                         principalTable: "Organizations",
                         principalColumn: "Id");
-                    table.ForeignKey(
-                        name: "FK_ProjectParticipants_Projects_ProjectId",
-                        column: x => x.ProjectId,
-                        principalTable: "Projects",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -614,7 +605,8 @@ namespace Infrastructure.Migrations
                         name: "FK_Submittals_Submittals_ParentSubmittalId",
                         column: x => x.ParentSubmittalId,
                         principalTable: "Submittals",
-                        principalColumn: "Id");
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -707,7 +699,8 @@ namespace Infrastructure.Migrations
                         name: "FK_DiscussionMessages_DiscussionMessages_ReplyToMessageId",
                         column: x => x.ReplyToMessageId,
                         principalTable: "DiscussionMessages",
-                        principalColumn: "Id");
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "FK_DiscussionMessages_Discussions_DiscussionId",
                         column: x => x.DiscussionId,
@@ -763,43 +756,6 @@ namespace Infrastructure.Migrations
                         principalTable: "Folders",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "FolderPermissions",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    FolderId = table.Column<Guid>(type: "uuid", nullable: false),
-                    GroupId = table.Column<Guid>(type: "uuid", nullable: true),
-                    OrganizationId = table.Column<Guid>(type: "uuid", nullable: true),
-                    CanView = table.Column<bool>(type: "boolean", nullable: false),
-                    CanEdit = table.Column<bool>(type: "boolean", nullable: false),
-                    CanUpdate = table.Column<bool>(type: "boolean", nullable: false),
-                    CanDownload = table.Column<bool>(type: "boolean", nullable: false),
-                    CanVerify = table.Column<bool>(type: "boolean", nullable: false),
-                    CanApprove = table.Column<bool>(type: "boolean", nullable: false),
-                    InheritFromParent = table.Column<bool>(type: "boolean", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_FolderPermissions", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_FolderPermissions_Folders_FolderId",
-                        column: x => x.FolderId,
-                        principalTable: "Folders",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_FolderPermissions_Groups_GroupId",
-                        column: x => x.GroupId,
-                        principalTable: "Groups",
-                        principalColumn: "Id");
-                    table.ForeignKey(
-                        name: "FK_FolderPermissions_Organizations_OrganizationId",
-                        column: x => x.OrganizationId,
-                        principalTable: "Organizations",
-                        principalColumn: "Id");
                 });
 
             migrationBuilder.CreateTable(
@@ -920,6 +876,101 @@ namespace Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "FolderPermissions",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    FolderId = table.Column<Guid>(type: "uuid", nullable: false),
+                    GroupId = table.Column<Guid>(type: "uuid", nullable: true),
+                    OrganizationId = table.Column<Guid>(type: "uuid", nullable: true),
+                    CanView = table.Column<bool>(type: "boolean", nullable: false),
+                    CanEdit = table.Column<bool>(type: "boolean", nullable: false),
+                    CanUpdate = table.Column<bool>(type: "boolean", nullable: false),
+                    CanDownload = table.Column<bool>(type: "boolean", nullable: false),
+                    CanVerify = table.Column<bool>(type: "boolean", nullable: false),
+                    CanApprove = table.Column<bool>(type: "boolean", nullable: false),
+                    InheritFromParent = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_FolderPermissions", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_FolderPermissions_Folders_FolderId",
+                        column: x => x.FolderId,
+                        principalTable: "Folders",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_FolderPermissions_Groups_GroupId",
+                        column: x => x.GroupId,
+                        principalTable: "Groups",
+                        principalColumn: "Id");
+                    table.ForeignKey(
+                        name: "FK_FolderPermissions_Organizations_OrganizationId",
+                        column: x => x.OrganizationId,
+                        principalTable: "Organizations",
+                        principalColumn: "Id");
+                });
+
+            migrationBuilder.CreateTable(
+                name: "GroupMembers",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    GroupId = table.Column<Guid>(type: "uuid", nullable: false),
+                    AccountId = table.Column<Guid>(type: "uuid", nullable: false),
+                    JoinedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_GroupMembers", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_GroupMembers_Accounts_AccountId",
+                        column: x => x.AccountId,
+                        principalTable: "Accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_GroupMembers_Groups_GroupId",
+                        column: x => x.GroupId,
+                        principalTable: "Groups",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "ProjectParticipants",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    ProjectId = table.Column<Guid>(type: "uuid", nullable: false),
+                    OrganizationId = table.Column<Guid>(type: "uuid", nullable: true),
+                    GroupId = table.Column<Guid>(type: "uuid", nullable: true),
+                    Role = table.Column<int>(type: "integer", nullable: false),
+                    JoinedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ProjectParticipants", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ProjectParticipants_Groups_GroupId",
+                        column: x => x.GroupId,
+                        principalTable: "Groups",
+                        principalColumn: "Id");
+                    table.ForeignKey(
+                        name: "FK_ProjectParticipants_Organizations_OrganizationId",
+                        column: x => x.OrganizationId,
+                        principalTable: "Organizations",
+                        principalColumn: "Id");
+                    table.ForeignKey(
+                        name: "FK_ProjectParticipants_Projects_ProjectId",
+                        column: x => x.ProjectId,
+                        principalTable: "Projects",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "BillItems",
                 columns: table => new
                 {
@@ -946,7 +997,8 @@ namespace Infrastructure.Migrations
                         name: "FK_BillItems_BillItems_ParentBillItemId",
                         column: x => x.ParentBillItemId,
                         principalTable: "BillItems",
-                        principalColumn: "Id");
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "FK_BillItems_Contracts_ContractId",
                         column: x => x.ContractId,
@@ -1038,7 +1090,8 @@ namespace Infrastructure.Migrations
                         name: "FK_WorkTasks_WorkTasks_ParentWorkTaskId",
                         column: x => x.ParentWorkTaskId,
                         principalTable: "WorkTasks",
-                        principalColumn: "Id");
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -1362,6 +1415,21 @@ namespace Infrastructure.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
+            migrationBuilder.InsertData(
+                table: "OrganizationTypes",
+                columns: new[] { "Id", "Code", "Description", "IsActive", "Name" },
+                values: new object[,]
+                {
+                    { new Guid("11111111-1111-1111-1111-111111111111"), "Client", null, true, "Chủ đầu tư" },
+                    { new Guid("22222222-2222-2222-2222-222222222222"), "ProjectManagementUnit", null, true, "Ban quản lý dự án" },
+                    { new Guid("33333333-3333-3333-3333-333333333333"), "Surveyor", null, true, "Tư vấn giám sát" },
+                    { new Guid("44444444-4444-4444-4444-444444444444"), "Consultant", null, true, "Tư vấn (thiết kế/BIM)" },
+                    { new Guid("55555555-5555-5555-5555-555555555555"), "MainContractor", null, true, "Nhà thầu chính" },
+                    { new Guid("66666666-6666-6666-6666-666666666666"), "Subcontractor", null, true, "Nhà thầu phụ" },
+                    { new Guid("77777777-7777-7777-7777-777777777777"), "Supplier", null, true, "Nhà cung cấp" },
+                    { new Guid("88888888-8888-8888-8888-888888888888"), "FacilityManagement", null, true, "Đơn vị vận hành" }
+                });
+
             migrationBuilder.CreateIndex(
                 name: "IX_BillItems_ContractId",
                 table: "BillItems",
@@ -1566,6 +1634,17 @@ namespace Infrastructure.Migrations
                 name: "IX_Notifications_AccountId",
                 table: "Notifications",
                 column: "AccountId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Organizations_OrganizationTypeId",
+                table: "Organizations",
+                column: "OrganizationTypeId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_OrganizationTypes_Code",
+                table: "OrganizationTypes",
+                column: "Code",
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_PackageAssignments_ContractPackageId",
@@ -1775,6 +1854,9 @@ namespace Infrastructure.Migrations
                 name: "ProgressReportItems");
 
             migrationBuilder.DropTable(
+                name: "ProjectInvitations");
+
+            migrationBuilder.DropTable(
                 name: "ProjectLocations");
 
             migrationBuilder.DropTable(
@@ -1869,6 +1951,9 @@ namespace Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "ProjectModels");
+
+            migrationBuilder.DropTable(
+                name: "OrganizationTypes");
 
             migrationBuilder.DropTable(
                 name: "ContractPackages");

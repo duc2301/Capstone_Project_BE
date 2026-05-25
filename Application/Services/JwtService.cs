@@ -9,7 +9,8 @@ using System.Text;
 
 namespace Application.Services
 {
-    // Giống JwtService của ChemXLab, thích ứng entity Account + bổ sung refresh token.
+    // Giống JwtService của ChemXLab, thích ứng entity Account + bổ sung refresh token
+    // và multi-valued "DepartmentRole" claim cho từng phòng ban account thuộc.
     public class JwtService : IJwtService
     {
         private readonly string _key;
@@ -28,16 +29,26 @@ namespace Application.Services
             RefreshTokenDays = int.Parse(config["Jwt:RefreshTokenDays"] ?? "7");
         }
 
-        public string GenerateAccessToken(Account account)
+        public string GenerateAccessToken(Account account, IEnumerable<Employee>? employments = null)
         {
-            var claims = new[]
+            var claims = new List<Claim>
             {
-                new Claim(ClaimTypes.NameIdentifier, account.Id.ToString()),
-                new Claim(JwtRegisteredClaimNames.Email, account.Email),
-                new Claim("UserName", account.UserName),
-                new Claim(ClaimTypes.Role, account.Role?.ToString() ?? "User"),
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+                new(ClaimTypes.NameIdentifier, account.Id.ToString()),
+                new(JwtRegisteredClaimNames.Email, account.Email),
+                new("UserName", account.UserName),
+                new(ClaimTypes.Role, account.Role?.ToString() ?? "User"),
+                new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
+
+            // Mỗi Employee row có DepartmentId -> claim "DepartmentRole" = "<deptId>:<role>"
+            if (employments != null)
+            {
+                foreach (var e in employments)
+                {
+                    if (e.DepartmentId.HasValue)
+                        claims.Add(new Claim("DepartmentRole", $"{e.DepartmentId}:{e.Role}"));
+                }
+            }
 
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_key));
             var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);

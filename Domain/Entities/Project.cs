@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 
 using Domain.Common;
+using Domain.Enum.Project;
 
 namespace Domain.Entities
 {
@@ -13,6 +14,8 @@ namespace Domain.Entities
         public string ProjectDescription { get; set; }
         public Guid DepartmentId { get; set; }
         public Guid? ManagerAccountId { get; set; }   // Manager dự án (Admin cấp tài khoản & gán)
+        public ProjectStatus Status { get; set; }     // Planning/Active/OnHold/Completed/Closed - cho Admin close/archive
+        public ProjectPhase Phase { get; set; }       // Concept/Design/Construction/Handover/Operation - toàn vòng đời
         public ICollection<Department> Departments { get; set; }
     }
 }

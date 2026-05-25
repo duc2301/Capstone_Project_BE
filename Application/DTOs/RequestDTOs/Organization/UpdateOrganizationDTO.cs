@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using Domain.Enum.Department;
 
 namespace Application.DTOs.RequestDTOs.Organization
 {
@@ -14,7 +13,7 @@ namespace Application.DTOs.RequestDTOs.Organization
         [StringLength(300)]
         public string? DisplayName { get; set; }
 
-        public DepartmentType? Type { get; set; }
+        public Guid? OrganizationTypeId { get; set; }
 
         [StringLength(300)]
         public string? Address { get; set; }

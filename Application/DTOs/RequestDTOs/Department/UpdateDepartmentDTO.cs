@@ -8,6 +8,6 @@ namespace Application.DTOs.RequestDTOs.Department
         [StringLength(150)]
         public string? Name { get; set; }
 
-        public DepartmentType? Type { get; set; }
+        public string? Type { get; set; }
     }
 }

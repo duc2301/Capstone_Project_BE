@@ -1,11 +1,12 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace Application.DTOs.RequestDTOs.Account
+namespace Application.DTOs.RequestDTOs.Project
 {
-    public class CreateAccountDTO
+    // Admin gọi: tạo account làm Project Manager + gán vào project trong 1 transaction.
+    public class CreateProjectManagerDTO
     {
         [Required]
-        [StringLength(100)]
+        [StringLength(100, MinimumLength = 3)]
         public string UserName { get; set; } = null!;
 
         [Required]
@@ -15,8 +16,5 @@ namespace Application.DTOs.RequestDTOs.Account
         [Required]
         [MinLength(6)]
         public string Password { get; set; } = null!;
-
-        // Role hệ thống không nhận từ client — service ép AccountRole.User.
-        // Muốn cấp Admin -> đổi trực tiếp ở quản trị (UPDATE Account).
     }
 }

@@ -10,6 +10,6 @@ namespace Application.DTOs.RequestDTOs.Department
         public string Name { get; set; } = null!;
 
         [Required]
-        public DepartmentType Type { get; set; }
+        public string Type { get; set; }
     }
 }

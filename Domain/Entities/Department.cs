@@ -11,7 +11,7 @@ namespace Domain.Entities
     {
         public Guid Id { get; set; }
         public string Name { get; set; }
-        public DepartmentType Type { get; set; }
+        public string Type { get; set; }
         public ICollection<Employee> Employees { get; set; } = new List<Employee>();
 
     }

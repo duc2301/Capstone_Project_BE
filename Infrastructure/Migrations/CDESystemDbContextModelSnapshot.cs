@@ -310,8 +310,9 @@ namespace Infrastructure.Migrations
                     b.Property<Guid?>("ProjectId")
                         .HasColumnType("uuid");
 
-                    b.Property<int>("Type")
-                        .HasColumnType("integer");
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -1120,6 +1121,12 @@ namespace Infrastructure.Migrations
                     b.Property<bool>("IsRead")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("LinkId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("LinkType")
+                        .HasColumnType("text");
+
                     b.Property<string>("Message")
                         .IsRequired()
                         .HasColumnType("text");
@@ -1160,6 +1167,9 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<Guid>("OrganizationTypeId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Phone")
                         .HasColumnType("text");
 
@@ -1167,15 +1177,100 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<int>("Type")
-                        .HasColumnType("integer");
-
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
+                    b.HasIndex("OrganizationTypeId");
+
                     b.ToTable("Organizations");
+                });
+
+            modelBuilder.Entity("Domain.Entities.OrganizationType", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("OrganizationTypes");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("11111111-1111-1111-1111-111111111111"),
+                            Code = "Client",
+                            IsActive = true,
+                            Name = "Chủ đầu tư"
+                        },
+                        new
+                        {
+                            Id = new Guid("22222222-2222-2222-2222-222222222222"),
+                            Code = "ProjectManagementUnit",
+                            IsActive = true,
+                            Name = "Ban quản lý dự án"
+                        },
+                        new
+                        {
+                            Id = new Guid("33333333-3333-3333-3333-333333333333"),
+                            Code = "Surveyor",
+                            IsActive = true,
+                            Name = "Tư vấn giám sát"
+                        },
+                        new
+                        {
+                            Id = new Guid("44444444-4444-4444-4444-444444444444"),
+                            Code = "Consultant",
+                            IsActive = true,
+                            Name = "Tư vấn (thiết kế/BIM)"
+                        },
+                        new
+                        {
+                            Id = new Guid("55555555-5555-5555-5555-555555555555"),
+                            Code = "MainContractor",
+                            IsActive = true,
+                            Name = "Nhà thầu chính"
+                        },
+                        new
+                        {
+                            Id = new Guid("66666666-6666-6666-6666-666666666666"),
+                            Code = "Subcontractor",
+                            IsActive = true,
+                            Name = "Nhà thầu phụ"
+                        },
+                        new
+                        {
+                            Id = new Guid("77777777-7777-7777-7777-777777777777"),
+                            Code = "Supplier",
+                            IsActive = true,
+                            Name = "Nhà cung cấp"
+                        },
+                        new
+                        {
+                            Id = new Guid("88888888-8888-8888-8888-888888888888"),
+                            Code = "FacilityManagement",
+                            IsActive = true,
+                            Name = "Đơn vị vận hành"
+                        });
                 });
 
             modelBuilder.Entity("Domain.Entities.PackageAssignment", b =>
@@ -1336,6 +1431,9 @@ namespace Infrastructure.Migrations
                     b.Property<Guid?>("ManagerAccountId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("Phase")
+                        .HasColumnType("integer");
+
                     b.Property<string>("ProjectDescription")
                         .IsRequired()
                         .HasColumnType("text");
@@ -1344,9 +1442,54 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.ToTable("Projects");
+                });
+
+            modelBuilder.Entity("Domain.Entities.ProjectInvitation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("InvitedAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("InvitedByAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("InvitedGroupId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("RespondedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ProjectInvitations");
                 });
 
             modelBuilder.Entity("Domain.Entities.ProjectLocation", b =>
@@ -1863,7 +2006,8 @@ namespace Infrastructure.Migrations
 
                     b.HasOne("Domain.Entities.BillItem", "ParentBillItem")
                         .WithMany("ChildBillItems")
-                        .HasForeignKey("ParentBillItemId");
+                        .HasForeignKey("ParentBillItemId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Contract");
 
@@ -1972,7 +2116,8 @@ namespace Infrastructure.Migrations
 
                     b.HasOne("Domain.Entities.DiscussionMessage", "ReplyToMessage")
                         .WithMany("Replies")
-                        .HasForeignKey("ReplyToMessageId");
+                        .HasForeignKey("ReplyToMessageId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Discussion");
 
@@ -2044,7 +2189,8 @@ namespace Infrastructure.Migrations
                 {
                     b.HasOne("Domain.Entities.Folder", "ParentFolder")
                         .WithMany("ChildFolders")
-                        .HasForeignKey("ParentFolderId");
+                        .HasForeignKey("ParentFolderId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Domain.Entities.Project", "Project")
                         .WithMany()
@@ -2249,6 +2395,17 @@ namespace Infrastructure.Migrations
                     b.Navigation("Account");
                 });
 
+            modelBuilder.Entity("Domain.Entities.Organization", b =>
+                {
+                    b.HasOne("Domain.Entities.OrganizationType", "OrganizationType")
+                        .WithMany("Organizations")
+                        .HasForeignKey("OrganizationTypeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("OrganizationType");
+                });
+
             modelBuilder.Entity("Domain.Entities.PackageAssignment", b =>
                 {
                     b.HasOne("Domain.Entities.ContractPackage", "ContractPackage")
@@ -2395,7 +2552,8 @@ namespace Infrastructure.Migrations
 
                     b.HasOne("Domain.Entities.Submittal", "ParentSubmittal")
                         .WithMany("ChildSubmittals")
-                        .HasForeignKey("ParentSubmittalId");
+                        .HasForeignKey("ParentSubmittalId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Domain.Entities.Project", "Project")
                         .WithMany()
@@ -2463,7 +2621,8 @@ namespace Infrastructure.Migrations
                 {
                     b.HasOne("Domain.Entities.WorkTask", "ParentWorkTask")
                         .WithMany("ChildWorkTasks")
-                        .HasForeignKey("ParentWorkTaskId");
+                        .HasForeignKey("ParentWorkTaskId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Domain.Entities.Schedule", "Schedule")
                         .WithMany("WorkTasks")
@@ -2602,6 +2761,11 @@ namespace Infrastructure.Migrations
                     b.Navigation("PackageAssignments");
 
                     b.Navigation("ProjectParticipations");
+                });
+
+            modelBuilder.Entity("Domain.Entities.OrganizationType", b =>
+                {
+                    b.Navigation("Organizations");
                 });
 
             modelBuilder.Entity("Domain.Entities.ProgressReport", b =>

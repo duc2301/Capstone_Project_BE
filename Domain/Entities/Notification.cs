@@ -14,6 +14,11 @@ namespace Domain.Entities
         public string SenderName { get; set; }
         public bool IsRead { get; set; } = true;
         public Guid AccountId { get; set; }
+
+        // Liên kết tới đối tượng nguồn (Submittal/Discussion/Issue/FileVersion...) -> FE bấm vô nhảy đúng chỗ
+        public string? LinkType { get; set; }
+        public string? LinkId { get; set; }
+
         public Account Account { get; set; }
     }
 }

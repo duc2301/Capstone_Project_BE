@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Domain.Enum.Project;
 
 namespace Application.DTOs.RequestDTOs.Project
 {
@@ -12,5 +13,7 @@ namespace Application.DTOs.RequestDTOs.Project
 
         public Guid? DepartmentId { get; set; }
         public Guid? ManagerAccountId { get; set; }
+        public ProjectStatus? Status { get; set; }
+        public ProjectPhase? Phase { get; set; }
     }
 }

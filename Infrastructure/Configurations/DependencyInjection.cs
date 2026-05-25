@@ -34,6 +34,19 @@ namespace Infrastructure.Configurations
             services.AddScoped<IJwtService, JwtService>();
             services.AddScoped<IAuthService, AuthService>();
 
+            // Notification dispatcher (event -> tạo Notification rows)
+            services.AddScoped<INotificationService, NotificationService>();
+
+            // HttpContextAccessor + ICurrentUserService (đọc AccountId / system role / department roles từ JWT)
+            services.AddHttpContextAccessor();
+            services.AddScoped<ICurrentUserService, CurrentUserService>();
+
+            // Invitation flow: Manager mời account vô dự án -> accept tạo ProjectParticipant
+            services.AddScoped<IInvitationService, InvitationService>();
+
+            // Project flow (custom, ngoài CRUD generic): Admin tạo PM cho project, PM add bên tham gia
+            services.AddScoped<IProjectFlowService, ProjectFlowService>();
+
             return services;
         }
     }

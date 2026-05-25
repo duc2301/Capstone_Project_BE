@@ -6,6 +6,6 @@ namespace Application.DTOs.ResponseDTOs.Department
     {
         public Guid Id { get; set; }
         public string Name { get; set; } = null!;
-        public DepartmentType Type { get; set; }
+        public string Type { get; set; }
     }
 }

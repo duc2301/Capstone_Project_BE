@@ -1,3 +1,5 @@
+using Domain.Enum.Project;
+
 namespace Application.DTOs.ResponseDTOs.Project
 {
     public class ProjectResponseDTO : IResponseDto
@@ -7,5 +9,7 @@ namespace Application.DTOs.ResponseDTOs.Project
         public string ProjectDescription { get; set; } = null!;
         public Guid DepartmentId { get; set; }
         public Guid? ManagerAccountId { get; set; }
+        public ProjectStatus Status { get; set; }
+        public ProjectPhase Phase { get; set; }
     }
 }

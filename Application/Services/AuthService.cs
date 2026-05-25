@@ -38,7 +38,8 @@ namespace Application.Services
             };
 
             await _unitOfWork.AccountRepository.CreateAsync(account);
-            var response = await IssueTokensAsync(account);
+            // Account vừa tạo chưa có Employee row -> employments rỗng
+            var response = await IssueTokensAsync(account, Array.Empty<Employee>());
             await _unitOfWork.CommitAsync();
             return response;
         }
@@ -52,7 +53,8 @@ namespace Application.Services
             if (account.Status == AccountStatus.Suspended || account.Status == AccountStatus.Inactive)
                 throw new ApiExceptionResponse("Account is not active.", 403);
 
-            var response = await IssueTokensAsync(account);
+            var employments = await LoadEmploymentsAsync(account.Id);
+            var response = await IssueTokensAsync(account, employments);
             await _unitOfWork.CommitAsync();
             return response;
         }
@@ -68,8 +70,9 @@ namespace Application.Services
             var account = await _unitOfWork.AccountRepository.GetByIdAsync(stored.AccountId)
                 ?? throw new ApiExceptionResponse("Account not found.", 401);
 
-            // Xoay vòng: revoke token cũ, phát token mới (entity đang được EF theo dõi).
-            var response = await IssueTokensAsync(account);
+            // Refresh -> reload employments để claim luôn cập nhật role mới nhất
+            var employments = await LoadEmploymentsAsync(account.Id);
+            var response = await IssueTokensAsync(account, employments);
             stored.RevokedAt = DateTime.UtcNow;
             stored.ReplacedByToken = response.RefreshToken;
 
@@ -89,10 +92,10 @@ namespace Application.Services
             }
         }
 
-        // Sinh access + refresh token, lưu refresh token vào DB (chưa Commit).
-        private async Task<AuthResponseDTO> IssueTokensAsync(Account account)
+        // Sinh access (kèm DepartmentRole claims) + refresh token, lưu refresh token vào DB.
+        private async Task<AuthResponseDTO> IssueTokensAsync(Account account, IEnumerable<Employee> employments)
         {
-            var accessToken = _jwtService.GenerateAccessToken(account);
+            var accessToken = _jwtService.GenerateAccessToken(account, employments);
             var refreshToken = _jwtService.GenerateRefreshToken();
             var now = DateTime.UtcNow;
 
@@ -116,6 +119,12 @@ namespace Application.Services
                 RefreshToken = refreshToken,
                 RefreshTokenExpiresAt = now.AddDays(_jwtService.RefreshTokenDays)
             };
+        }
+
+        private async Task<List<Employee>> LoadEmploymentsAsync(Guid accountId)
+        {
+            var all = await _unitOfWork.Repository<Employee>().GetAllAsync();
+            return all.Where(e => e.AccountId == accountId).ToList();
         }
     }
 }
