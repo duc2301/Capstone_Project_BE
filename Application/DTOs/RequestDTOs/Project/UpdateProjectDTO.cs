@@ -11,7 +11,6 @@ namespace Application.DTOs.RequestDTOs.Project
         [StringLength(2000)]
         public string? ProjectDescription { get; set; }
 
-        public Guid? DepartmentId { get; set; }
         public Guid? ManagerAccountId { get; set; }
         public ProjectStatus? Status { get; set; }
         public ProjectPhase? Phase { get; set; }

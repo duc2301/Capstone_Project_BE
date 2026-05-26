@@ -1,10 +1,8 @@
 using Application.DTOs.RequestDTOs.Account;
 using Application.DTOs.RequestDTOs.ContractPackage;
 using Application.DTOs.RequestDTOs.Contract;
-using Application.DTOs.RequestDTOs.Department;
 using Application.DTOs.RequestDTOs.DigitalSite;
 using Application.DTOs.RequestDTOs.Discussion;
-using Application.DTOs.RequestDTOs.Employee;
 using Application.DTOs.RequestDTOs.FileItem;
 using Application.DTOs.RequestDTOs.Folder;
 using Application.DTOs.RequestDTOs.FolderTemplate;
@@ -25,10 +23,8 @@ using Application.DTOs.RequestDTOs.WorkTask;
 using Application.DTOs.ResponseDTOs.Account;
 using Application.DTOs.ResponseDTOs.ContractPackage;
 using Application.DTOs.ResponseDTOs.Contract;
-using Application.DTOs.ResponseDTOs.Department;
 using Application.DTOs.ResponseDTOs.DigitalSite;
 using Application.DTOs.ResponseDTOs.Discussion;
-using Application.DTOs.ResponseDTOs.Employee;
 using Application.DTOs.ResponseDTOs.FileItem;
 using Application.DTOs.ResponseDTOs.Folder;
 using Application.DTOs.ResponseDTOs.FolderTemplate;
@@ -70,9 +66,7 @@ namespace Application.Mapping
             CreateMap<UpdateAccountDTO, Account>()
                 .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
 
-            // --- Đã có sẵn + Module A/B ---
-            Crud<Department, CreateDepartmentDTO, UpdateDepartmentDTO, DepartmentResponseDTO>();
-            Crud<Employee, CreateEmployeeDTO, UpdateEmployeeDTO, EmployeeResponseDTO>();
+            // --- Module A/B ---
             Crud<OrganizationType, CreateOrganizationTypeDTO, UpdateOrganizationTypeDTO, OrganizationTypeResponseDTO>();
             Crud<Organization, CreateOrganizationDTO, UpdateOrganizationDTO, OrganizationResponseDTO>();
             Crud<Group, CreateGroupDTO, UpdateGroupDTO, GroupResponseDTO>();
@@ -95,11 +89,11 @@ namespace Application.Mapping
             Crud<Discussion, CreateDiscussionDTO, UpdateDiscussionDTO, DiscussionResponseDTO>();
             Crud<Issue, CreateIssueDTO, UpdateIssueDTO, IssueResponseDTO>();
 
-            // Invitation: chỉ map InviteRequest -> entity (cho service dùng) + entity -> response
+            // Invitation
             CreateMap<ProjectInvitation, InvitationResponseDTO>();
             CreateMap<InviteRequestDTO, ProjectInvitation>();
 
-            // ProjectParticipant -> ParticipantResponseDTO (cho POST /api/projects/{id}/participants)
+            // ProjectParticipant -> ParticipantResponseDTO
             CreateMap<ProjectParticipant, ParticipantResponseDTO>();
 
             // --- Module I/J/K/L/M ---

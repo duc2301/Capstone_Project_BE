@@ -10,7 +10,7 @@ namespace Domain.Entities
         public Guid OrganizationId { get; set; }
         public PackageRole Role { get; set; }
         public string? ContractNumber { get; set; }
-        public Guid? RepresentativeEmployeeId { get; set; }  // người đại diện
+        public Guid? RepresentativeAccountId { get; set; }   // người đại diện (Account)
         public string? Position { get; set; }                // chức danh
         public string? VatCode { get; set; }
         public DateTime? CreatedAt { get; set; }

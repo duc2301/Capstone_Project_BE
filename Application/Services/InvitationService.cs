@@ -7,12 +7,12 @@ using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using Domain.Entities;
 using Domain.Enum.Invitation;
-using Domain.Enum.Project;
 
 namespace Application.Services
 {
-    // Luồng "tạo nhóm và mời thành viên" trong sơ đồ.
-    // Người thực hiện (Manager mời / Member accept) lấy từ JWT qua ICurrentUserService — không nhận trong body.
+    // Luồng "mời thành viên vào group" theo sơ đồ.
+    // Invite = mời account X vào group Y; Accept = tạo GroupMember(X, Y).
+    // Người thực hiện lấy từ JWT qua ICurrentUserService.
     public class InvitationService : IInvitationService
     {
         private readonly IUnitOfWork _unitOfWork;
@@ -34,14 +34,15 @@ namespace Application.Services
 
         public async Task<InvitationResponseDTO> InviteAsync(InviteRequestDTO dto)
         {
-            if (dto.InvitedAccountId == null && dto.InvitedGroupId == null)
-                throw new ApiExceptionResponse("Must provide InvitedAccountId or InvitedGroupId.", 400);
-
             var inviter = _currentUser.AccountId
                 ?? throw new ApiExceptionResponse("Authentication required.", 401);
 
             var project = await _unitOfWork.Repository<Project>().GetByIdAsync(dto.ProjectId)
                 ?? throw new ApiExceptionResponse("Project not found.", 404);
+
+            // Validate group tồn tại
+            _ = await _unitOfWork.Repository<Group>().GetByIdAsync(dto.InvitedGroupId)
+                ?? throw new ApiExceptionResponse("Group not found.", 404);
 
             var invitation = _mapper.Map<ProjectInvitation>(dto);
             invitation.Id = Guid.NewGuid();
@@ -54,15 +55,12 @@ namespace Application.Services
             await _unitOfWork.Repository<ProjectInvitation>().CreateAsync(invitation);
             await _unitOfWork.CommitAsync();
 
-            if (dto.InvitedAccountId.HasValue)
-            {
-                await _notification.NotifyAsync(
-                    dto.InvitedAccountId.Value,
-                    $"Bạn được mời tham gia dự án {project.ProjectName}",
-                    senderName: _currentUser.UserName ?? "System",
-                    linkType: "ProjectInvitation",
-                    linkId: invitation.Id.ToString());
-            }
+            await _notification.NotifyAsync(
+                dto.InvitedAccountId,
+                $"Bạn được mời vào nhóm thuộc dự án {project.ProjectName}",
+                senderName: _currentUser.UserName ?? "System",
+                linkType: "ProjectInvitation",
+                linkId: invitation.Id.ToString());
 
             return _mapper.Map<InvitationResponseDTO>(invitation);
         }
@@ -77,15 +75,23 @@ namespace Application.Services
             if (invitation.InvitedAccountId.HasValue && invitation.InvitedAccountId.Value != accountId)
                 throw new ApiExceptionResponse("This invitation is for a different account.", 403);
 
-            await _unitOfWork.Repository<ProjectParticipant>().CreateAsync(new ProjectParticipant
+            if (!invitation.InvitedGroupId.HasValue)
+                throw new ApiExceptionResponse("Invitation is missing target group.", 400);
+
+            // Kiểm trùng — account đã ở trong group rồi thì khỏi tạo
+            var existing = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
+                .Any(gm => gm.GroupId == invitation.InvitedGroupId.Value && gm.AccountId == accountId);
+
+            if (!existing)
             {
-                Id = Guid.NewGuid(),
-                ProjectId = invitation.ProjectId,
-                OrganizationId = null,
-                GroupId = invitation.InvitedGroupId,
-                Role = ProjectParticipantRole.Member,
-                JoinedAt = DateTime.UtcNow
-            });
+                await _unitOfWork.Repository<GroupMember>().CreateAsync(new GroupMember
+                {
+                    Id = Guid.NewGuid(),
+                    GroupId = invitation.InvitedGroupId.Value,
+                    AccountId = accountId,
+                    JoinedAt = DateTime.UtcNow
+                });
+            }
 
             invitation.Status = InvitationStatus.Accepted;
             invitation.RespondedAt = DateTime.UtcNow;

@@ -1,17 +1,41 @@
+using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Discussion;
-using Application.DTOs.ResponseDTOs.Discussion;
 using Application.Interfaces.IServices;
-using Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
     [Route("api/discussions")]
-    public class DiscussionsController
-        : BaseCrudController<Discussion, CreateDiscussionDTO, UpdateDiscussionDTO, DiscussionResponseDTO>
+    public class DiscussionsController : ControllerBase
     {
-        public DiscussionsController(
-            IGenericService<Discussion, CreateDiscussionDTO, UpdateDiscussionDTO, DiscussionResponseDTO> service)
-            : base(service) { }
+        private readonly IDiscussionService _service;
+
+        public DiscussionsController(IDiscussionService service)
+        {
+            _service = service;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetAll()
+            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAllAsync()));
+
+        [HttpGet("{id:guid}")]
+        public async Task<IActionResult> GetById(Guid id)
+            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByIdAsync(id)));
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] CreateDiscussionDTO dto)
+            => Ok(ApiResponse.Success("Created successfully", await _service.CreateAsync(dto)));
+
+        [HttpPut("{id:guid}")]
+        public async Task<IActionResult> Update(Guid id, [FromBody] UpdateDiscussionDTO dto)
+            => Ok(ApiResponse.Success("Updated successfully", await _service.UpdateAsync(id, dto)));
+
+        [HttpDelete("{id:guid}")]
+        public async Task<IActionResult> Delete(Guid id)
+        {
+            await _service.DeleteAsync(id);
+            return Ok(ApiResponse.Success("Deleted successfully"));
+        }
     }
 }

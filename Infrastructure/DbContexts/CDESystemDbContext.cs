@@ -11,8 +11,6 @@ namespace Infrastructure.DbContexts
 
         // --- Đã có sẵn ---
         public virtual DbSet<Account> Accounts { get; set; }
-        public virtual DbSet<Employee> Employees { get; set; }
-        public virtual DbSet<Department> Departments { get; set; }
         public virtual DbSet<Project> Projects { get; set; }
         public virtual DbSet<Notification> Notifications { get; set; }
         public virtual DbSet<Document> Documents { get; set; }

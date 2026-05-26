@@ -67,8 +67,8 @@ namespace Application.Services
             return _mapper.Map<ProjectResponseDTO>(project);
         }
 
-        // PM gọi: add nhiều bên tham gia 1 lúc (department/team/organization).
-        // Mỗi item phải đúng 1 trong 3 FK; service tạo các ProjectParticipant rows trong 1 transaction.
+        // PM gọi: add nhiều Group vô project trong 1 transaction.
+        // (Org info suy ra qua Group.OrganizationId — không nhận trực tiếp Organization)
         public async Task<List<ParticipantResponseDTO>> AddParticipantsAsync(
             Guid projectId, AddParticipantsBulkDTO dto)
         {
@@ -90,20 +90,13 @@ namespace Application.Services
             for (int i = 0; i < dto.Participants.Count; i++)
             {
                 var p = dto.Participants[i];
-                var setCount =
-                    (p.DepartmentId.HasValue ? 1 : 0) +
-                    (p.OrganizationId.HasValue ? 1 : 0) +
-                    (p.GroupId.HasValue ? 1 : 0);
-                if (setCount != 1)
-                    throw new ApiExceptionResponse(
-                        $"Participants[{i}]: must provide exactly one of DepartmentId, OrganizationId, GroupId.", 400);
+                if (p.GroupId == Guid.Empty)
+                    throw new ApiExceptionResponse($"Participants[{i}]: GroupId is required.", 400);
 
                 var entity = new ProjectParticipant
                 {
                     Id = Guid.NewGuid(),
                     ProjectId = projectId,
-                    DepartmentId = p.DepartmentId,
-                    OrganizationId = p.OrganizationId,
                     GroupId = p.GroupId,
                     Role = p.Role,
                     JoinedAt = now

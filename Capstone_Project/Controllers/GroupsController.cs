@@ -1,17 +1,41 @@
+using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Group;
-using Application.DTOs.ResponseDTOs.Group;
 using Application.Interfaces.IServices;
-using Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
     [Route("api/groups")]
-    public class GroupsController
-        : BaseCrudController<Group, CreateGroupDTO, UpdateGroupDTO, GroupResponseDTO>
+    public class GroupsController : ControllerBase
     {
-        public GroupsController(
-            IGenericService<Group, CreateGroupDTO, UpdateGroupDTO, GroupResponseDTO> service)
-            : base(service) { }
+        private readonly IGroupService _service;
+
+        public GroupsController(IGroupService service)
+        {
+            _service = service;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetAll()
+            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAllAsync()));
+
+        [HttpGet("{id:guid}")]
+        public async Task<IActionResult> GetById(Guid id)
+            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByIdAsync(id)));
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] CreateGroupDTO dto)
+            => Ok(ApiResponse.Success("Created successfully", await _service.CreateAsync(dto)));
+
+        [HttpPut("{id:guid}")]
+        public async Task<IActionResult> Update(Guid id, [FromBody] UpdateGroupDTO dto)
+            => Ok(ApiResponse.Success("Updated successfully", await _service.UpdateAsync(id, dto)));
+
+        [HttpDelete("{id:guid}")]
+        public async Task<IActionResult> Delete(Guid id)
+        {
+            await _service.DeleteAsync(id);
+            return Ok(ApiResponse.Success("Deleted successfully"));
+        }
     }
 }

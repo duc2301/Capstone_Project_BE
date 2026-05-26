@@ -4,7 +4,6 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
-using BCrypt.Net;
 using Domain.Entities;
 using Domain.Enum.Account;
 
@@ -23,20 +22,19 @@ namespace Application.Services
 
         public async Task<IEnumerable<AccountResponseDTO>> GetAllAsync()
         {
-            var accounts = await _unitOfWork.AccountRepository.GetAllAsync();
-            return _mapper.Map<IEnumerable<AccountResponseDTO>>(accounts);
+            var items = await _unitOfWork.AccountRepository.GetAllAsync();
+            return _mapper.Map<IEnumerable<AccountResponseDTO>>(items);
         }
 
         public async Task<AccountResponseDTO?> GetByIdAsync(Guid id)
         {
-            var account = await _unitOfWork.AccountRepository.GetByIdAsync(id);
-            return account == null ? null : _mapper.Map<AccountResponseDTO>(account);
+            var entity = await _unitOfWork.AccountRepository.GetByIdAsync(id);
+            return entity == null ? null : _mapper.Map<AccountResponseDTO>(entity);
         }
 
         public async Task<AccountResponseDTO> CreateAsync(CreateAccountDTO dto)
         {
-            var emailExists = await _unitOfWork.AccountRepository.EmailExistsAsync(dto.Email);
-            if (emailExists)
+            if (await _unitOfWork.AccountRepository.EmailExistsAsync(dto.Email))
                 throw new ApiExceptionResponse("Email already exists.", 409);
 
             var account = _mapper.Map<Account>(dto);
@@ -55,24 +53,24 @@ namespace Application.Services
 
         public async Task<AccountResponseDTO> UpdateAsync(Guid id, UpdateAccountDTO dto)
         {
-            var account = await _unitOfWork.AccountRepository.GetByIdAsync(id)
+            var entity = await _unitOfWork.AccountRepository.GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Account with ID {id} not found.", 404);
 
-            _mapper.Map(dto, account);
-            account.UpdatedAt = DateTime.UtcNow;
+            _mapper.Map(dto, entity);
+            entity.UpdatedAt = DateTime.UtcNow;
 
-            _unitOfWork.AccountRepository.Update(account);
+            _unitOfWork.AccountRepository.Update(entity);
             await _unitOfWork.CommitAsync();
 
-            return _mapper.Map<AccountResponseDTO>(account);
+            return _mapper.Map<AccountResponseDTO>(entity);
         }
 
         public async Task DeleteAsync(Guid id)
         {
-            var account = await _unitOfWork.AccountRepository.GetByIdAsync(id)
+            var entity = await _unitOfWork.AccountRepository.GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Account with ID {id} not found.", 404);
 
-            _unitOfWork.AccountRepository.Delete(account);
+            _unitOfWork.AccountRepository.Delete(entity);
             await _unitOfWork.CommitAsync();
         }
     }
