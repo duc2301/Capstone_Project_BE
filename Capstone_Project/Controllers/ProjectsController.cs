@@ -9,15 +9,12 @@ using Microsoft.AspNetCore.Mvc;
 namespace Capstone_Project.Controllers
 {
     [Route("api/projects")]
-    public class ProjectsController
-        : BaseCrudController<Project, CreateProjectDTO, UpdateProjectDTO, ProjectResponseDTO>
+    public class ProjectsController : ControllerBase
     {
         private readonly IProjectFlowService _projectFlow;
 
-        public ProjectsController(
-            IGenericService<Project, CreateProjectDTO, UpdateProjectDTO, ProjectResponseDTO> service,
+        public ProjectsController(            
             IProjectFlowService projectFlow)
-            : base(service)
         {
             _projectFlow = projectFlow;
         }
@@ -41,5 +38,7 @@ namespace Capstone_Project.Controllers
             var result = await _projectFlow.AddParticipantsAsync(id, dto);
             return Ok(ApiResponse.Success($"{result.Count} participant(s) added", result));
         }
+
+        
     }
 }

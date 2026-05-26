@@ -1,17 +1,41 @@
+using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.ContractPackage;
-using Application.DTOs.ResponseDTOs.ContractPackage;
 using Application.Interfaces.IServices;
-using Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
     [Route("api/contract-packages")]
-    public class ContractPackagesController
-        : BaseCrudController<ContractPackage, CreateContractPackageDTO, UpdateContractPackageDTO, ContractPackageResponseDTO>
+    public class ContractPackagesController : ControllerBase
     {
-        public ContractPackagesController(
-            IGenericService<ContractPackage, CreateContractPackageDTO, UpdateContractPackageDTO, ContractPackageResponseDTO> service)
-            : base(service) { }
+        private readonly IContractPackageService _service;
+
+        public ContractPackagesController(IContractPackageService service)
+        {
+            _service = service;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetAll()
+            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAllAsync()));
+
+        [HttpGet("{id:guid}")]
+        public async Task<IActionResult> GetById(Guid id)
+            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByIdAsync(id)));
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] CreateContractPackageDTO dto)
+            => Ok(ApiResponse.Success("Created successfully", await _service.CreateAsync(dto)));
+
+        [HttpPut("{id:guid}")]
+        public async Task<IActionResult> Update(Guid id, [FromBody] UpdateContractPackageDTO dto)
+            => Ok(ApiResponse.Success("Updated successfully", await _service.UpdateAsync(id, dto)));
+
+        [HttpDelete("{id:guid}")]
+        public async Task<IActionResult> Delete(Guid id)
+        {
+            await _service.DeleteAsync(id);
+            return Ok(ApiResponse.Success("Deleted successfully"));
+        }
     }
 }

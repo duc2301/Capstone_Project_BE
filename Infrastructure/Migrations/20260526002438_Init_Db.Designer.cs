@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    [Migration("20260525120750_Seed_RealisticGuids")]
-    partial class Seed_RealisticGuids
+    [Migration("20260526002438_Init_Db")]
+    partial class Init_Db
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -300,30 +300,6 @@ namespace Infrastructure.Migrations
                     b.ToTable("ContractPackages");
                 });
 
-            modelBuilder.Entity("Domain.Entities.Department", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid?>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("Departments");
-                });
-
             modelBuilder.Entity("Domain.Entities.DigitalSite", b =>
                 {
                     b.Property<Guid>("Id")
@@ -503,30 +479,6 @@ namespace Infrastructure.Migrations
                     b.HasIndex("DocumentId");
 
                     b.ToTable("DocumentChunks");
-                });
-
-            modelBuilder.Entity("Domain.Entities.Employee", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("AccountId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("DepartmentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Role")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AccountId");
-
-                    b.HasIndex("DepartmentId");
-
-                    b.ToTable("Employees");
                 });
 
             modelBuilder.Entity("Domain.Entities.FileItem", b =>
@@ -1297,7 +1249,7 @@ namespace Infrastructure.Migrations
                     b.Property<string>("Position")
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("RepresentativeEmployeeId")
+                    b.Property<Guid?>("RepresentativeAccountId")
                         .HasColumnType("uuid");
 
                     b.Property<int>("Role")
@@ -1428,9 +1380,6 @@ namespace Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("DepartmentId")
-                        .HasColumnType("uuid");
-
                     b.Property<Guid?>("ManagerAccountId")
                         .HasColumnType("uuid");
 
@@ -1438,7 +1387,6 @@ namespace Infrastructure.Migrations
                         .HasColumnType("integer");
 
                     b.Property<string>("ProjectDescription")
-                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("ProjectName")
@@ -1558,10 +1506,7 @@ namespace Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("DepartmentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("GroupId")
+                    b.Property<Guid>("GroupId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime?>("JoinedAt")
@@ -1577,8 +1522,6 @@ namespace Infrastructure.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("DepartmentId");
 
                     b.HasIndex("GroupId");
 
@@ -2066,13 +2009,6 @@ namespace Infrastructure.Migrations
                     b.Navigation("Project");
                 });
 
-            modelBuilder.Entity("Domain.Entities.Department", b =>
-                {
-                    b.HasOne("Domain.Entities.Project", null)
-                        .WithMany("Departments")
-                        .HasForeignKey("ProjectId");
-                });
-
             modelBuilder.Entity("Domain.Entities.DigitalSite", b =>
                 {
                     b.HasOne("Domain.Entities.Project", "Project")
@@ -2141,23 +2077,6 @@ namespace Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Document");
-                });
-
-            modelBuilder.Entity("Domain.Entities.Employee", b =>
-                {
-                    b.HasOne("Domain.Entities.Account", "Account")
-                        .WithMany()
-                        .HasForeignKey("AccountId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Domain.Entities.Department", "Department")
-                        .WithMany("Employees")
-                        .HasForeignKey("DepartmentId");
-
-                    b.Navigation("Account");
-
-                    b.Navigation("Department");
                 });
 
             modelBuilder.Entity("Domain.Entities.FileItem", b =>
@@ -2498,15 +2417,13 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Domain.Entities.ProjectParticipant", b =>
                 {
-                    b.HasOne("Domain.Entities.Department", "Department")
-                        .WithMany()
-                        .HasForeignKey("DepartmentId");
-
                     b.HasOne("Domain.Entities.Group", "Group")
                         .WithMany()
-                        .HasForeignKey("GroupId");
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
-                    b.HasOne("Domain.Entities.Organization", "Organization")
+                    b.HasOne("Domain.Entities.Organization", null)
                         .WithMany("ProjectParticipations")
                         .HasForeignKey("OrganizationId");
 
@@ -2516,11 +2433,7 @@ namespace Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Department");
-
                     b.Navigation("Group");
-
-                    b.Navigation("Organization");
 
                     b.Navigation("Project");
                 });
@@ -2711,11 +2624,6 @@ namespace Infrastructure.Migrations
                     b.Navigation("Assignments");
                 });
 
-            modelBuilder.Entity("Domain.Entities.Department", b =>
-                {
-                    b.Navigation("Employees");
-                });
-
             modelBuilder.Entity("Domain.Entities.DigitalSite", b =>
                 {
                     b.Navigation("Annotations");
@@ -2785,11 +2693,6 @@ namespace Infrastructure.Migrations
             modelBuilder.Entity("Domain.Entities.ProgressReport", b =>
                 {
                     b.Navigation("Items");
-                });
-
-            modelBuilder.Entity("Domain.Entities.Project", b =>
-                {
-                    b.Navigation("Departments");
                 });
 
             modelBuilder.Entity("Domain.Entities.ProjectModel", b =>

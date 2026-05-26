@@ -8,15 +8,11 @@ using Microsoft.AspNetCore.Mvc;
 namespace Capstone_Project.Controllers
 {
     [Route("api/notifications")]
-    public class NotificationsController
-        : BaseCrudController<Notification, CreateNotificationDTO, UpdateNotificationDTO, NotificationResponseDTO>
+    public class NotificationsController : ControllerBase
     {
         private readonly INotificationService _notificationService;
 
-        public NotificationsController(
-            IGenericService<Notification, CreateNotificationDTO, UpdateNotificationDTO, NotificationResponseDTO> service,
-            INotificationService notificationService)
-            : base(service)
+        public NotificationsController(INotificationService notificationService)
         {
             _notificationService = notificationService;
         }

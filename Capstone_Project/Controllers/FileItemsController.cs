@@ -1,17 +1,41 @@
+using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.FileItem;
-using Application.DTOs.ResponseDTOs.FileItem;
 using Application.Interfaces.IServices;
-using Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
     [Route("api/file-items")]
-    public class FileItemsController
-        : BaseCrudController<FileItem, CreateFileItemDTO, UpdateFileItemDTO, FileItemResponseDTO>
+    public class FileItemsController : ControllerBase
     {
-        public FileItemsController(
-            IGenericService<FileItem, CreateFileItemDTO, UpdateFileItemDTO, FileItemResponseDTO> service)
-            : base(service) { }
+        private readonly IFileItemService _service;
+
+        public FileItemsController(IFileItemService service)
+        {
+            _service = service;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetAll()
+            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAllAsync()));
+
+        [HttpGet("{id:guid}")]
+        public async Task<IActionResult> GetById(Guid id)
+            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByIdAsync(id)));
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] CreateFileItemDTO dto)
+            => Ok(ApiResponse.Success("Created successfully", await _service.CreateAsync(dto)));
+
+        [HttpPut("{id:guid}")]
+        public async Task<IActionResult> Update(Guid id, [FromBody] UpdateFileItemDTO dto)
+            => Ok(ApiResponse.Success("Updated successfully", await _service.UpdateAsync(id, dto)));
+
+        [HttpDelete("{id:guid}")]
+        public async Task<IActionResult> Delete(Guid id)
+        {
+            await _service.DeleteAsync(id);
+            return Ok(ApiResponse.Success("Deleted successfully"));
+        }
     }
 }

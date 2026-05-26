@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class InitDb : Migration
+    public partial class Init_Db : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -122,8 +122,7 @@ namespace Infrastructure.Migrations
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     ProjectName = table.Column<string>(type: "text", nullable: false),
-                    ProjectDescription = table.Column<string>(type: "text", nullable: false),
-                    DepartmentId = table.Column<Guid>(type: "uuid", nullable: false),
+                    ProjectDescription = table.Column<string>(type: "text", nullable: true),
                     ManagerAccountId = table.Column<Guid>(type: "uuid", nullable: true),
                     Status = table.Column<int>(type: "integer", nullable: false),
                     Phase = table.Column<int>(type: "integer", nullable: false)
@@ -261,25 +260,6 @@ namespace Infrastructure.Migrations
                         principalTable: "Projects",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Departments",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    Name = table.Column<string>(type: "text", nullable: false),
-                    Type = table.Column<string>(type: "text", nullable: false),
-                    ProjectId = table.Column<Guid>(type: "uuid", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Departments", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Departments_Projects_ProjectId",
-                        column: x => x.ProjectId,
-                        principalTable: "Projects",
-                        principalColumn: "Id");
                 });
 
             migrationBuilder.CreateTable(
@@ -523,7 +503,7 @@ namespace Infrastructure.Migrations
                     OrganizationId = table.Column<Guid>(type: "uuid", nullable: false),
                     Role = table.Column<int>(type: "integer", nullable: false),
                     ContractNumber = table.Column<string>(type: "text", nullable: true),
-                    RepresentativeEmployeeId = table.Column<Guid>(type: "uuid", nullable: true),
+                    RepresentativeAccountId = table.Column<Guid>(type: "uuid", nullable: true),
                     Position = table.Column<string>(type: "text", nullable: true),
                     VatCode = table.Column<string>(type: "text", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
@@ -607,31 +587,6 @@ namespace Infrastructure.Migrations
                         principalTable: "Submittals",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Employees",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    AccountId = table.Column<Guid>(type: "uuid", nullable: false),
-                    DepartmentId = table.Column<Guid>(type: "uuid", nullable: true),
-                    Role = table.Column<int>(type: "integer", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Employees", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Employees_Accounts_AccountId",
-                        column: x => x.AccountId,
-                        principalTable: "Accounts",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_Employees_Departments_DepartmentId",
-                        column: x => x.DepartmentId,
-                        principalTable: "Departments",
-                        principalColumn: "Id");
                 });
 
             migrationBuilder.CreateTable(
@@ -944,10 +899,10 @@ namespace Infrastructure.Migrations
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     ProjectId = table.Column<Guid>(type: "uuid", nullable: false),
-                    OrganizationId = table.Column<Guid>(type: "uuid", nullable: true),
-                    GroupId = table.Column<Guid>(type: "uuid", nullable: true),
+                    GroupId = table.Column<Guid>(type: "uuid", nullable: false),
                     Role = table.Column<int>(type: "integer", nullable: false),
-                    JoinedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                    JoinedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    OrganizationId = table.Column<Guid>(type: "uuid", nullable: true)
                 },
                 constraints: table =>
                 {
@@ -956,7 +911,8 @@ namespace Infrastructure.Migrations
                         name: "FK_ProjectParticipants_Groups_GroupId",
                         column: x => x.GroupId,
                         principalTable: "Groups",
-                        principalColumn: "Id");
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
                         name: "FK_ProjectParticipants_Organizations_OrganizationId",
                         column: x => x.OrganizationId,
@@ -1420,14 +1376,14 @@ namespace Infrastructure.Migrations
                 columns: new[] { "Id", "Code", "Description", "IsActive", "Name" },
                 values: new object[,]
                 {
-                    { new Guid("11111111-1111-1111-1111-111111111111"), "Client", null, true, "Chủ đầu tư" },
-                    { new Guid("22222222-2222-2222-2222-222222222222"), "ProjectManagementUnit", null, true, "Ban quản lý dự án" },
-                    { new Guid("33333333-3333-3333-3333-333333333333"), "Surveyor", null, true, "Tư vấn giám sát" },
-                    { new Guid("44444444-4444-4444-4444-444444444444"), "Consultant", null, true, "Tư vấn (thiết kế/BIM)" },
-                    { new Guid("55555555-5555-5555-5555-555555555555"), "MainContractor", null, true, "Nhà thầu chính" },
-                    { new Guid("66666666-6666-6666-6666-666666666666"), "Subcontractor", null, true, "Nhà thầu phụ" },
-                    { new Guid("77777777-7777-7777-7777-777777777777"), "Supplier", null, true, "Nhà cung cấp" },
-                    { new Guid("88888888-8888-8888-8888-888888888888"), "FacilityManagement", null, true, "Đơn vị vận hành" }
+                    { new Guid("3fe93ed9-2e6a-47a6-90cf-6e5aac24c645"), "Supplier", null, true, "Nhà cung cấp" },
+                    { new Guid("7f947ce1-e7c6-49b2-aa41-f9b30292917a"), "Client", null, true, "Chủ đầu tư" },
+                    { new Guid("8c0dcb7d-87fe-413e-b8d6-83eb91171cbe"), "Subcontractor", null, true, "Nhà thầu phụ" },
+                    { new Guid("ad4c917e-b170-4ff8-bca3-10764641c8d9"), "Surveyor", null, true, "Tư vấn giám sát" },
+                    { new Guid("ad5b98c7-b28f-4c40-861a-5a363b84eb00"), "ProjectManagementUnit", null, true, "Ban quản lý dự án" },
+                    { new Guid("ae2fd257-cca8-4bb4-8f90-c0c45100702b"), "MainContractor", null, true, "Nhà thầu chính" },
+                    { new Guid("d692eaa8-4cf1-4a12-8bf8-4d0e1529acb5"), "Consultant", null, true, "Tư vấn (thiết kế/BIM)" },
+                    { new Guid("e48c6618-c877-46bf-9d6d-7d9fb92a50e9"), "FacilityManagement", null, true, "Đơn vị vận hành" }
                 });
 
             migrationBuilder.CreateIndex(
@@ -1459,11 +1415,6 @@ namespace Infrastructure.Migrations
                 name: "IX_Contracts_ContractPackageId",
                 table: "Contracts",
                 column: "ContractPackageId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Departments_ProjectId",
-                table: "Departments",
-                column: "ProjectId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_DigitalSites_ProjectId",
@@ -1499,16 +1450,6 @@ namespace Infrastructure.Migrations
                 name: "IX_DocumentChunks_DocumentId",
                 table: "DocumentChunks",
                 column: "DocumentId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Employees_AccountId",
-                table: "Employees",
-                column: "AccountId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Employees_DepartmentId",
-                table: "Employees",
-                column: "DepartmentId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_FileItems_FolderId",
@@ -1806,9 +1747,6 @@ namespace Infrastructure.Migrations
                 name: "DocumentChunks");
 
             migrationBuilder.DropTable(
-                name: "Employees");
-
-            migrationBuilder.DropTable(
                 name: "FileNotes");
 
             migrationBuilder.DropTable(
@@ -1894,9 +1832,6 @@ namespace Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "Documents");
-
-            migrationBuilder.DropTable(
-                name: "Departments");
 
             migrationBuilder.DropTable(
                 name: "Issues");

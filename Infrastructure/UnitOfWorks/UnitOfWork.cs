@@ -4,7 +4,7 @@ using Infrastructure.DbContexts;
 using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore.Storage;
 
-namespace Infrastructure.UnitOfWork
+namespace Infrastructure.UnitOfWorks
 {
     public class UnitOfWork : IUnitOfWork
     {

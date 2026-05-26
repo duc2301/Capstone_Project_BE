@@ -1,17 +1,41 @@
+using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.ProgressReport;
-using Application.DTOs.ResponseDTOs.ProgressReport;
 using Application.Interfaces.IServices;
-using Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
     [Route("api/progress-reports")]
-    public class ProgressReportsController
-        : BaseCrudController<ProgressReport, CreateProgressReportDTO, UpdateProgressReportDTO, ProgressReportResponseDTO>
+    public class ProgressReportsController : ControllerBase
     {
-        public ProgressReportsController(
-            IGenericService<ProgressReport, CreateProgressReportDTO, UpdateProgressReportDTO, ProgressReportResponseDTO> service)
-            : base(service) { }
+        private readonly IProgressReportService _service;
+
+        public ProgressReportsController(IProgressReportService service)
+        {
+            _service = service;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetAll()
+            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAllAsync()));
+
+        [HttpGet("{id:guid}")]
+        public async Task<IActionResult> GetById(Guid id)
+            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByIdAsync(id)));
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] CreateProgressReportDTO dto)
+            => Ok(ApiResponse.Success("Created successfully", await _service.CreateAsync(dto)));
+
+        [HttpPut("{id:guid}")]
+        public async Task<IActionResult> Update(Guid id, [FromBody] UpdateProgressReportDTO dto)
+            => Ok(ApiResponse.Success("Updated successfully", await _service.UpdateAsync(id, dto)));
+
+        [HttpDelete("{id:guid}")]
+        public async Task<IActionResult> Delete(Guid id)
+        {
+            await _service.DeleteAsync(id);
+            return Ok(ApiResponse.Success("Deleted successfully"));
+        }
     }
 }

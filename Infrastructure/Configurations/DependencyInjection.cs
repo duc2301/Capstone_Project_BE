@@ -3,6 +3,7 @@ using Application.Interfaces.IUnitOfWork;
 using Application.Mapping;
 using Application.Services;
 using Infrastructure.DbContexts;
+using Infrastructure.UnitOfWorks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,12 +24,29 @@ namespace Infrastructure.Configurations
 
             services.AddAutoMapper(cfg => cfg.AddProfile<MappingProfile>());
 
-            services.AddScoped<IUnitOfWork, Infrastructure.UnitOfWork.UnitOfWork>();
+            services.AddScoped<IUnitOfWork, UnitOfWork>();
 
-            // CRUD generic cho mọi aggregate root — đăng ký 1 lần (open generic)
-            services.AddScoped(typeof(IGenericService<,,,>), typeof(GenericService<,,,>));
-
+            // CRUD per-entity services
             services.AddScoped<IAccountService, AccountService>();
+            services.AddScoped<IOrganizationTypeService, OrganizationTypeService>();
+            services.AddScoped<IOrganizationService, OrganizationService>();
+            services.AddScoped<IGroupService, GroupService>();
+            services.AddScoped<IProjectService, ProjectService>();
+            services.AddScoped<IContractPackageService, ContractPackageService>();
+            services.AddScoped<IFolderService, FolderService>();
+            services.AddScoped<IFileItemService, FileItemService>();
+            services.AddScoped<IFolderTemplateService, FolderTemplateService>();
+            services.AddScoped<ISubmittalService, SubmittalService>();
+            services.AddScoped<IDiscussionService, DiscussionService>();
+            services.AddScoped<IIssueService, IssueService>();
+            services.AddScoped<IScheduleService, ScheduleService>();
+            services.AddScoped<IWorkTaskService, WorkTaskService>();
+            services.AddScoped<IProgressReportService, ProgressReportService>();
+            services.AddScoped<IContractService, ContractService>();
+            services.AddScoped<IProjectModelService, ProjectModelService>();
+            services.AddScoped<IModelFileService, ModelFileService>();
+            services.AddScoped<IDigitalSiteService, DigitalSiteService>();
+            services.AddScoped<ILandParcelService, LandParcelService>();
 
             // Auth (giống ChemXLab) + refresh token
             services.AddScoped<IJwtService, JwtService>();
