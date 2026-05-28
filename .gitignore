@@ -6,6 +6,9 @@
 # dotenv files
 .env
 
+# Local session notes — không commit
+session-notes.md
+
 
 
 # User-specific files
