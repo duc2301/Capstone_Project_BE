@@ -24,5 +24,27 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("Registration successful", result));
         }
 
+        [HttpGet]
+        public async Task<IActionResult> GetAll()
+        {
+            var result = await _accountService.GetAllAsync();
+            return Ok(ApiResponse.Success("Accounts retrieved successfully", result));
+
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(Guid id, [FromBody] UpdateAccountDTO dto)
+        {
+            var result = await _accountService.UpdateAsync(id, dto);
+            return Ok(ApiResponse.Success("Account updated successfully", result));
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(Guid id)
+        {
+            await _accountService.DeleteAsync(id);
+            return Ok(ApiResponse.Success("Account deleted successfully"));
+
+        }
     }
 }
