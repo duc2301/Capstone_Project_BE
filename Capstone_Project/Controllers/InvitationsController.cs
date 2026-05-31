@@ -8,7 +8,7 @@ namespace Capstone_Project.Controllers
 {
     [Route("api/project-invitations")]
     [ApiController]
-    [Authorize]   // AccountId/InvitedBy lấy từ JWT trong header, không nhận trong body
+    [Authorize]   // AccountId/InvitedBy lấy từ JWT, không nhận trong body
     public class InvitationsController : ControllerBase
     {
         private readonly IInvitationService _invitationService;
@@ -18,6 +18,7 @@ namespace Capstone_Project.Controllers
             _invitationService = invitationService;
         }
 
+        // PM mời 1 account vào 1 group với role Leader/Member
         [HttpPost]
         public async Task<IActionResult> Invite([FromBody] InviteRequestDTO dto)
         {
@@ -26,18 +27,26 @@ namespace Capstone_Project.Controllers
                 ApiResponse.Success("Invitation created", result));
         }
 
-        // Token nằm trên URL (RESTful), account lấy từ JWT -> không cần body.
-        [HttpPost("{token}/accept")]
-        public async Task<IActionResult> Accept(string token)
+        // Lời mời Pending của user hiện tại (UI "Lời mời của tôi")
+        [HttpGet("me")]
+        public async Task<IActionResult> GetMine()
         {
-            var result = await _invitationService.AcceptAsync(token);
+            var result = await _invitationService.GetMyPendingAsync();
+            return Ok(ApiResponse.Success("Pending invitations retrieved", result));
+        }
+
+        // Accept by InvitationId — JWT chứng minh danh tính, không cần token URL
+        [HttpPost("{id:guid}/accept")]
+        public async Task<IActionResult> Accept(Guid id)
+        {
+            var result = await _invitationService.AcceptAsync(id);
             return Ok(ApiResponse.Success("Invitation accepted", result));
         }
 
-        [HttpPost("{token}/reject")]
-        public async Task<IActionResult> Reject(string token)
+        [HttpPost("{id:guid}/reject")]
+        public async Task<IActionResult> Reject(Guid id)
         {
-            var result = await _invitationService.RejectAsync(token);
+            var result = await _invitationService.RejectAsync(id);
             return Ok(ApiResponse.Success("Invitation rejected", result));
         }
     }
