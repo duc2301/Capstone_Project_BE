@@ -1,6 +1,9 @@
+using Application.Interfaces.IServices;
 using Capstone_Project.DataHandler.Exceptions;
 using Capstone_Project.Extensions;
+using Capstone_Project.SignalR;
 using Infrastructure.Configurations;
+using Microsoft.AspNetCore.SignalR;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,18 +19,23 @@ builder.Services.AddInfrastructureService(builder.Configuration);
 // Validation
 builder.Services.AddGlobalValidation(builder.Configuration);
 
-// Authentication + Swagger
+// Authentication + Swagger (JWT cũng được nhận trên SignalR query ?access_token)
 builder.Services.AuthenticationServices(builder);
 builder.Services.SwaggerServices(builder);
 
-// CORS
+// SignalR
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<IUserIdProvider, NameIdentifierUserIdProvider>();
+builder.Services.AddScoped<INotificationPusher, SignalRNotificationPusher>();
+
+// CORS — withCredentials cần cho SignalR
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
         var feBaseUrl = builder.Configuration["FrontendBaseUrl"];
         policy
-            .WithOrigins(feBaseUrl.ToString())
+            .WithOrigins(feBaseUrl!.ToString())
             .AllowAnyHeader()
             .AllowCredentials()
             .AllowAnyMethod();
@@ -53,5 +61,6 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHub<NotificationHub>("/hubs/notifications");
 
 app.Run();

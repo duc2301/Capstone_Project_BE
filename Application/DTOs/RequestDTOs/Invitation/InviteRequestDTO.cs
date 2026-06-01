@@ -1,9 +1,9 @@
 using System.ComponentModel.DataAnnotations;
+using Domain.Enum.Group;
 
 namespace Application.DTOs.RequestDTOs.Invitation
 {
-    // Mời 1 account cụ thể vào 1 group cụ thể (group đó đã/sẽ tham gia project).
-    // Group muốn add cả nhóm vô project -> dùng /api/projects/{id}/participants/bulk thay vì invite.
+    // PM mời 1 account vào 1 group thuộc 1 project, với role Leader/Member.
     public class InviteRequestDTO
     {
         [Required]
@@ -14,6 +14,9 @@ namespace Application.DTOs.RequestDTOs.Invitation
 
         [Required]
         public Guid InvitedGroupId { get; set; }
+
+        [Required]
+        public GroupMemberRole Role { get; set; } = GroupMemberRole.Member;
 
         public int ExpireDays { get; set; } = 7;
 

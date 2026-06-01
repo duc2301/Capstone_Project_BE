@@ -70,6 +70,10 @@ namespace Application.Mapping
             Crud<OrganizationType, CreateOrganizationTypeDTO, UpdateOrganizationTypeDTO, OrganizationTypeResponseDTO>();
             Crud<Organization, CreateOrganizationDTO, UpdateOrganizationDTO, OrganizationResponseDTO>();
             Crud<Group, CreateGroupDTO, UpdateGroupDTO, GroupResponseDTO>();
+            // Member sub-DTO (Group.Members trong response build thủ công ở service)
+            CreateMap<GroupMember, GroupMemberDTO>()
+                .ForMember(d => d.UserName, o => o.MapFrom(s => s.Account != null ? s.Account.UserName : ""))
+                .ForMember(d => d.Email, o => o.MapFrom(s => s.Account != null ? s.Account.Email : null));
             Crud<Project, CreateProjectDTO, UpdateProjectDTO, ProjectResponseDTO>();
             Crud<ContractPackage, CreateContractPackageDTO, UpdateContractPackageDTO, ContractPackageResponseDTO>();
 

@@ -25,7 +25,27 @@ namespace Capstone_Project.Extensions
                         ValidIssuer = builder.Configuration["Jwt:Issuer"],
                         ValidAudience = builder.Configuration["Jwt:Audience"],
                         IssuerSigningKey = new SymmetricSecurityKey(
-                            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!))
+                            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!)),
+                        // Mặc định JWT Bearer cộng 5 phút clock skew -> token expired vẫn còn dùng được trong 5 phút.
+                        // Đặt 0 để hết hạn là hết, refresh token mới được kích hoạt đúng lúc.
+                        ClockSkew = TimeSpan.Zero
+                    };
+
+                    // SignalR (WebSocket) không gửi được Authorization header chuẩn —
+                    // chấp nhận access_token qua query string khi URL bắt đầu bằng /hubs/.
+                    options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
+                    {
+                        OnMessageReceived = context =>
+                        {
+                            var accessToken = context.Request.Query["access_token"];
+                            var path = context.HttpContext.Request.Path;
+                            if (!string.IsNullOrEmpty(accessToken) &&
+                                path.StartsWithSegments("/hubs"))
+                            {
+                                context.Token = accessToken;
+                            }
+                            return Task.CompletedTask;
+                        }
                     };
                 });
         }

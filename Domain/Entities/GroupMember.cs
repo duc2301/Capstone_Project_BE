@@ -1,3 +1,5 @@
+using Domain.Enum.Group;
+
 namespace Domain.Entities
 {
     public class GroupMember
@@ -5,6 +7,7 @@ namespace Domain.Entities
         public Guid Id { get; set; }
         public Guid GroupId { get; set; }
         public Guid AccountId { get; set; }
+        public GroupMemberRole Role { get; set; }   // Leader hoặc Member trong group này
         public DateTime? JoinedAt { get; set; }
 
         public Group Group { get; set; } = null!;
