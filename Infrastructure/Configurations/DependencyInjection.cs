@@ -52,6 +52,9 @@ namespace Infrastructure.Configurations
             services.AddScoped<IJwtService, JwtService>();
             services.AddScoped<IAuthService, AuthService>();
 
+            // Profile self-service (GET/PUT/change-password trên chính user hiện tại)
+            services.AddScoped<IProfileService, ProfileService>();
+
             // Notification dispatcher (event -> tạo Notification rows)
             services.AddScoped<INotificationService, NotificationService>();
 
