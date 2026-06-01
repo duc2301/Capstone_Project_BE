@@ -1,13 +1,13 @@
 using Application.DTOs.ApiResponseDTO;
-using Application.DTOs.RequestDTOs.Notification;
-using Application.DTOs.ResponseDTOs.Notification;
 using Application.Interfaces.IServices;
-using Domain.Entities;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
     [Route("api/notifications")]
+    [ApiController]
+    [Authorize]
     public class NotificationsController : ControllerBase
     {
         private readonly INotificationService _notificationService;
@@ -17,15 +17,23 @@ namespace Capstone_Project.Controllers
             _notificationService = notificationService;
         }
 
-        // Dispatcher — emit notification tới một hoặc nhiều account (vd từ mention, approval, ...).
-        // Các service nghiệp vụ có thể gọi INotificationService trực tiếp thay vì qua endpoint này;
-        // endpoint này phục vụ test/admin push thủ công.
-        [HttpPost("dispatch")]
-        public async Task<IActionResult> Dispatch([FromBody] DispatchNotificationDTO dto)
+        // Notification của user hiện tại (JWT) — không nhận accountId từ ngoài
+        [HttpGet("me")]
+        public async Task<IActionResult> GetMine()
         {
-            await _notificationService.NotifyManyAsync(
-                dto.AccountIds, dto.Message, dto.SenderName, dto.LinkType, dto.LinkId);
-            return Ok(ApiResponse.Success("Notifications dispatched"));
+            var result = await _notificationService.GetMyAsync();
+            return Ok(ApiResponse.Success("Notifications retrieved", result));
         }
+
+        // Đánh dấu đã đọc 1 notification (chỉ chính chủ)
+        [HttpPost("{id:guid}/read")]
+        public async Task<IActionResult> MarkRead(Guid id)
+        {
+            await _notificationService.MarkReadAsync(id);
+            return Ok(ApiResponse.Success("Notification marked as read"));
+        }
+
+        // Note: endpoint /dispatch đã bỏ. Notification được phát tự động từ các service nghiệp vụ
+        // (InvitationService, SubmittalService, DiscussionService...) thông qua INotificationService + SignalR.
     }
 }

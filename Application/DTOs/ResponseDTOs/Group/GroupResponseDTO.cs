@@ -7,5 +7,7 @@ namespace Application.DTOs.ResponseDTOs.Group
         public string? Description { get; set; }
         public Guid? OrganizationId { get; set; }
         public DateTime? CreatedAt { get; set; }
+
+        public IList<GroupMemberDTO> Members { get; set; } = new List<GroupMemberDTO>();
     }
 }

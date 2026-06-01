@@ -1,7 +1,10 @@
+using Application.DTOs.ResponseDTOs.Notification;
+
 namespace Application.Interfaces.IServices
 {
     // Dispatcher tạo Notification từ event của các luồng nghiệp vụ
-    // (mention trong thảo luận/issue, submittal trình nộp, file approval...).
+    // (mention trong thảo luận/issue, submittal trình nộp, file approval, invitation...).
+    // Khi save xong, đẩy realtime qua INotificationPusher (SignalR).
     public interface INotificationService
     {
         Task NotifyAsync(
@@ -17,5 +20,11 @@ namespace Application.Interfaces.IServices
             string? senderName = null,
             string? linkType = null,
             string? linkId = null);
+
+        // GET /api/notifications/me — list của user hiện tại
+        Task<IEnumerable<NotificationResponseDTO>> GetMyAsync();
+
+        // POST /api/notifications/{id}/read
+        Task MarkReadAsync(Guid notificationId);
     }
 }

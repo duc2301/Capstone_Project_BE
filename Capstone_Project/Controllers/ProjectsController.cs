@@ -12,12 +12,14 @@ namespace Capstone_Project.Controllers
     public class ProjectsController : ControllerBase
     {
         private readonly IProjectFlowService _projectFlow;
+        private readonly IProjectService _projectService;
 
-        public ProjectsController(            
-            IProjectFlowService projectFlow)
+        public ProjectsController(IProjectFlowService projectFlow, IProjectService projectService)
         {
             _projectFlow = projectFlow;
+            _projectService = projectService;
         }
+
 
         // Admin gán 1 account hiện có làm Project Manager.
         // 1 account có thể làm PM nhiều dự án.
@@ -39,6 +41,36 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success($"{result.Count} participant(s) added", result));
         }
 
-        
+        [HttpPost]
+        [Authorize]
+        public async Task<IActionResult> Create([FromBody] CreateProjectDTO dto)
+        {
+            var result = await _projectService.CreateAsync(dto);
+            return Ok(ApiResponse.Success("Project created", result));
+        }
+
+        [HttpGet]
+        [Authorize]
+        public async Task<IActionResult> GetAll()
+        {
+            var result = await _projectService.GetAllAsync();
+            return Ok(ApiResponse.Success("Projects retrieved", result));
+        }
+
+        [HttpPut("{id:guid}")]
+        [Authorize]
+        public async Task<IActionResult> Update(Guid id, [FromBody] UpdateProjectDTO dto)
+        {
+            var result = await _projectService.UpdateAsync(id, dto);
+            return Ok(ApiResponse.Success("Project updated", result));
+        }
+
+        [HttpDelete("{id:guid}")]
+        [Authorize]
+        public async Task<IActionResult> Delete(Guid id)
+        {
+            await _projectService.DeleteAsync(id);
+            return Ok(ApiResponse.Success("Project deleted"));
+        }
     }
 }
