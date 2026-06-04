@@ -68,6 +68,15 @@ namespace Infrastructure.Configurations
             // Project flow (custom, ngoài CRUD generic): Admin tạo PM cho project, PM add bên tham gia
             services.AddScoped<IProjectFlowService, ProjectFlowService>();
 
+            services.AddMemoryCache();
+            services.AddHttpClient<IViewerService, ViewerService>((sp, client) =>
+            {
+                var config = sp.GetRequiredService<IConfiguration>();
+                var baseUrl = config["Aps:BaseUrl"] ?? "https://developer.api.autodesk.com";
+                client.BaseAddress = new Uri(baseUrl);
+                client.Timeout = TimeSpan.FromMinutes(10);   // upload file CAD/BIM lớn
+            });
+
             return services;
         }
     }
