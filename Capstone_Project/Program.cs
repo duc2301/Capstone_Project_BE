@@ -33,9 +33,10 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        var feBaseUrl = builder.Configuration["FrontendBaseUrl"];
+        var feLocalBaseUrl = builder.Configuration["FrontendLocalBaseUrl"];
+        var feDeployURL = builder.Configuration["FrontendDeployBaseUrl"];
         policy
-            .WithOrigins(feBaseUrl!.ToString())
+            .WithOrigins(feLocalBaseUrl!, feDeployURL!)
             .AllowAnyHeader()
             .AllowCredentials()
             .AllowAnyMethod();
