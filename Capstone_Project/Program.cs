@@ -35,13 +35,19 @@ builder.Services.AddCors(options =>
     {
         var feLocalBaseUrl = builder.Configuration["FrontendLocalBaseUrl"];
         var feDeployURL = builder.Configuration["FrontendDeployBaseUrl"];
-        policy
-            .WithOrigins(feLocalBaseUrl!, feDeployURL!)
-            .AllowAnyHeader()
-            .AllowCredentials()
-            .AllowAnyMethod();
+        var allowedOrigins = new[] { feLocalBaseUrl, feDeployURL }
+                            .Where(url => !string.IsNullOrEmpty(url))
+                            .ToArray();
+
+        if (allowedOrigins.Length > 0)
+        {
+            policy.WithOrigins(allowedOrigins)
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+        }
     });
 });
+
 
 builder.Services.AddOpenApi();
 
