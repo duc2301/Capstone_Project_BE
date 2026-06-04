@@ -21,8 +21,8 @@ jobs:
         run: dotnet build --configuration Release
 
       - name: dotnet publish
-        # THAY ĐƯỜNG DẪN TỚI FILE .CSPROJ CỦA PROJECT API TẠI ĐÂY:
-        run: dotnet publish "Application/Application.csproj" -c Release -r win-x86 --self-contained false -o "${{env.DOTNET_ROOT}}/myapp"
+        run: dotnet publish "Capstone_Project\Capstone_Project.csproj" -c Release -r win-x86 --self-contained false -o "${{env.DOTNET_ROOT}}/myapp"
+        
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
