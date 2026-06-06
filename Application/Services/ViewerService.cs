@@ -40,12 +40,13 @@ namespace Application.Services
         public async Task<UploadModelResponseDTO> UploadAndTranslateAsync(
             Stream content, string fileName, CancellationToken ct = default)
         {
-            var objectKey = $"{Guid.NewGuid():N}_{fileName}";
+            var safeFileName = Path.GetFileName(fileName);
+            var objectKey = $"{Guid.NewGuid():N}_{safeFileName}";
             await EnsureBucketAsync(ct);
             var objectId = await SignedUploadAsync(objectKey, content, ct);
             var urn = ToBase64Url(objectId);
             await StartTranslationAsync(urn, ct);
-            return new UploadModelResponseDTO { Urn = urn, FileName = fileName };
+            return new UploadModelResponseDTO { Urn = urn, FileName = safeFileName };
         }
 
         public async Task<TranslationStatusResponseDTO> GetStatusAsync(string urn, CancellationToken ct = default)
