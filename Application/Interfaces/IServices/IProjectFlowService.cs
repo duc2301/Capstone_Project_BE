@@ -10,5 +10,6 @@ namespace Application.Interfaces.IServices
     {
         Task<ProjectResponseDTO> AssignManagerAsync(Guid projectId, AssignProjectManagerDTO dto);
         Task<List<ParticipantResponseDTO>> AddParticipantsAsync(Guid projectId, AddParticipantsBulkDTO dto);
+        Task<List<ParticipantResponseDTO>> GetParticipantsAsync(Guid projectId);
     }
 }

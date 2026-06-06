@@ -108,5 +108,17 @@ namespace Application.Services
             await _unitOfWork.CommitAsync();
             return created.Select(_mapper.Map<ParticipantResponseDTO>).ToList();
         }
+
+        public async Task<List<ParticipantResponseDTO>> GetParticipantsAsync(Guid projectId)
+        {
+            _ = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId)
+                ?? throw new ApiExceptionResponse("Project not found.", 404);
+
+            var participants = (await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync())
+                .Where(p => p.ProjectId == projectId)
+                .ToList();
+
+            return participants.Select(_mapper.Map<ParticipantResponseDTO>).ToList();
+        }
     }
 }
