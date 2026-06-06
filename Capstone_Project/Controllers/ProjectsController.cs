@@ -31,15 +31,21 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("Manager assigned", result));
         }
 
-        // PM add nhiều bên tham gia (department/team/organization) cho project trong 1 transaction.
-        // Mỗi item phải đúng 1 trong 3 (DepartmentId / OrganizationId / GroupId).
-        //[HttpPost("{id:guid}/participants/bulk")]
-        //[Authorize]
-        //public async Task<IActionResult> AddParticipants(Guid id, [FromBody] AddParticipantsBulkDTO dto)
-        //{
-        //    var result = await _projectFlow.AddParticipantsAsync(id, dto);
-        //    return Ok(ApiResponse.Success($"{result.Count} participant(s) added", result));
-        //}
+        [HttpPost("{id:guid}/participants/bulk")]
+        [Authorize]
+        public async Task<IActionResult> AddParticipants(Guid id, [FromBody] AddParticipantsBulkDTO dto)
+        {
+            var result = await _projectFlow.AddParticipantsAsync(id, dto);
+            return Ok(ApiResponse.Success($"{result.Count} participant(s) added", result));
+        }
+
+        [HttpGet("{id:guid}/participants")]
+        [Authorize]
+        public async Task<IActionResult> GetParticipants(Guid id)
+        {
+            var result = await _projectFlow.GetParticipantsAsync(id);
+            return Ok(ApiResponse.Success("Participants retrieved", result));
+        }
 
         [HttpPost]
         [Authorize]
