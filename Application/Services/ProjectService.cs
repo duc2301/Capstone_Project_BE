@@ -13,11 +13,13 @@ namespace Application.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
+        private readonly IFolderBootstrapService _folderBootstrap;
 
-        public ProjectService(IUnitOfWork unitOfWork, IMapper mapper)
+        public ProjectService(IUnitOfWork unitOfWork, IMapper mapper, IFolderBootstrapService folderBootstrap)
         {
             _unitOfWork = unitOfWork;
             _mapper = mapper;
+            _folderBootstrap = folderBootstrap;
         }
 
         public async Task<IEnumerable<ProjectResponseDTO>> GetAllAsync()
@@ -37,6 +39,10 @@ namespace Application.Services
             if (entity is IAuditable a) { var now = DateTime.UtcNow; a.CreatedAt = now; a.UpdatedAt = now; }
             await _unitOfWork.Repository<Project>().CreateAsync(entity);
             await _unitOfWork.CommitAsync();
+
+            // Dựng 4 khu vực CDE gốc (WIP/Shared/Published/Archived) ngay khi tạo dự án.
+            await _folderBootstrap.InitializeRootFoldersAsync(entity.Id);
+
             return _mapper.Map<ProjectResponseDTO>(entity);
         }
 

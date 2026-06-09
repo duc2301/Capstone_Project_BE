@@ -34,6 +34,8 @@ namespace Infrastructure.Configurations
             services.AddScoped<IProjectService, ProjectService>();
             services.AddScoped<IContractPackageService, ContractPackageService>();
             services.AddScoped<IFolderService, FolderService>();
+            services.AddScoped<IFolderBootstrapService, FolderBootstrapService>();
+            services.AddScoped<IFolderPermissionService, FolderPermissionService>();
             services.AddScoped<IFileItemService, FileItemService>();
             services.AddScoped<IFolderTemplateService, FolderTemplateService>();
             services.AddScoped<ISubmittalService, SubmittalService>();

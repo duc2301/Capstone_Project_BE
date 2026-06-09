@@ -21,17 +21,20 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly INotificationService _notification;
         private readonly ICurrentUserService _currentUser;
+        private readonly IFolderBootstrapService _folderBootstrap;
         private readonly IMapper _mapper;
 
         public InvitationService(
             IUnitOfWork unitOfWork,
             INotificationService notification,
             ICurrentUserService currentUser,
+            IFolderBootstrapService folderBootstrap,
             IMapper mapper)
         {
             _unitOfWork = unitOfWork;
             _notification = notification;
             _currentUser = currentUser;
+            _folderBootstrap = folderBootstrap;
             _mapper = mapper;
         }
 
@@ -134,6 +137,10 @@ namespace Application.Services
             invitation.RespondedAt = DateTime.UtcNow;
 
             await _unitOfWork.CommitAsync();
+
+            // Group lần đầu vào dự án -> dựng "ô" thư mục CDE cho bên này (idempotent).
+            if (!existsParticipant)
+                await _folderBootstrap.ScaffoldParticipantFoldersAsync(projectId, groupId);
 
             // Báo lại cho PM đã mời
             if (invitation.InvitedByAccountId.HasValue)
