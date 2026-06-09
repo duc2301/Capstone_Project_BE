@@ -1,41 +1,107 @@
 using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Folder;
+using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
+using Domain.Enum.Cde;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
     [Route("api/folders")]
+    [Authorize]
     public class FoldersController : ControllerBase
     {
         private readonly IFolderService _service;
+        private readonly IFolderPermissionService _permission;
+        private readonly ICurrentUserService _currentUser;
 
-        public FoldersController(IFolderService service)
+        public FoldersController(
+            IFolderService service,
+            IFolderPermissionService permission,
+            ICurrentUserService currentUser)
         {
             _service = service;
+            _permission = permission;
+            _currentUser = currentUser;
         }
 
-        [HttpGet]
-        public async Task<IActionResult> GetAll()
-            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAllAsync()));
+        // Cây thư mục CDE của 1 dự án, đã lọc theo quyền View của người gọi.
+        // Lọc theo khu vực qua ?area=Wip|Shared|Published|Archived (tùy chọn).
+        [HttpGet("tree")]
+        public async Task<IActionResult> GetTree([FromQuery] Guid projectId, [FromQuery] CdeArea? area)
+        {
+            var actor = RequireActor();
+            var tree = await _permission.GetTreeAsync(projectId, actor, area);
+            return Ok(ApiResponse.Success("CDE tree retrieved", tree));
+        }
 
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetById(Guid id)
-            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByIdAsync(id)));
+        {
+            var actor = RequireActor();
+            await _permission.RequireAsync(actor, id, FolderAction.View);
+            return Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByIdAsync(id)));
+        }
 
+        // Tạo thư mục con: cần quyền Sửa trên thư mục cha. 4 khu vực gốc do hệ thống tự tạo.
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateFolderDTO dto)
-            => Ok(ApiResponse.Success("Created successfully", await _service.CreateAsync(dto)));
+        {
+            var actor = RequireActor();
+
+            if (!dto.ParentFolderId.HasValue)
+                throw new ApiExceptionResponse(
+                    "Root CDE areas are created automatically. Provide a ParentFolderId to add a subfolder.", 400);
+
+            await _permission.RequireAsync(actor, dto.ParentFolderId.Value, FolderAction.Edit);
+            return Ok(ApiResponse.Success("Created successfully", await _service.CreateAsync(dto)));
+        }
 
         [HttpPut("{id:guid}")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateFolderDTO dto)
-            => Ok(ApiResponse.Success("Updated successfully", await _service.UpdateAsync(id, dto)));
+        {
+            var actor = RequireActor();
+            await _permission.RequireAsync(actor, id, FolderAction.Edit);
+            return Ok(ApiResponse.Success("Updated successfully", await _service.UpdateAsync(id, dto)));
+        }
 
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> Delete(Guid id)
         {
+            var actor = RequireActor();
+            await _permission.RequireAsync(actor, id, FolderAction.Edit);
             await _service.DeleteAsync(id);
             return Ok(ApiResponse.Success("Deleted successfully"));
         }
+
+        // Quyền hiệu lực của chính người gọi trên 1 folder.
+        [HttpGet("{id:guid}/permissions/me")]
+        public async Task<IActionResult> GetMyPermission(Guid id)
+        {
+            var actor = RequireActor();
+            var perm = await _permission.EvaluateAsync(actor, id);
+            return Ok(ApiResponse.Success("Effective permission retrieved", perm));
+        }
+
+        // ACL override tường minh (Admin/PM). Liệt kê / set / xóa.
+        [HttpGet("{id:guid}/permissions")]
+        public async Task<IActionResult> GetPermissions(Guid id)
+            => Ok(ApiResponse.Success("Permissions retrieved", await _permission.GetPermissionsAsync(id)));
+
+        [HttpPut("{id:guid}/permissions")]
+        public async Task<IActionResult> SetPermission(Guid id, [FromBody] SetFolderPermissionDTO dto)
+            => Ok(ApiResponse.Success("Permission saved", await _permission.SetPermissionAsync(id, dto)));
+
+        [HttpDelete("{id:guid}/permissions/{permissionId:guid}")]
+        public async Task<IActionResult> DeletePermission(Guid id, Guid permissionId)
+        {
+            await _permission.DeletePermissionAsync(id, permissionId);
+            return Ok(ApiResponse.Success("Permission removed"));
+        }
+
+        private Guid RequireActor()
+            => _currentUser.AccountId
+               ?? throw new ApiExceptionResponse("Authentication required.", 401);
     }
 }

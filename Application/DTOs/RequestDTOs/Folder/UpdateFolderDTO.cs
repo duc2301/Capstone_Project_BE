@@ -12,6 +12,7 @@ namespace Application.DTOs.RequestDTOs.Folder
 
         public CdeArea? Area { get; set; }
         public Guid? OwnerOrganizationId { get; set; }
+        public Guid? OwnerGroupId { get; set; }
         public bool? IsTemplate { get; set; }
     }
 }

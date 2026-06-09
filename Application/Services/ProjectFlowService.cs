@@ -14,17 +14,20 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly INotificationService _notification;
         private readonly ICurrentUserService _currentUser;
+        private readonly IFolderBootstrapService _folderBootstrap;
         private readonly IMapper _mapper;
 
         public ProjectFlowService(
             IUnitOfWork unitOfWork,
             INotificationService notification,
             ICurrentUserService currentUser,
+            IFolderBootstrapService folderBootstrap,
             IMapper mapper)
         {
             _unitOfWork = unitOfWork;
             _notification = notification;
             _currentUser = currentUser;
+            _folderBootstrap = folderBootstrap;
             _mapper = mapper;
         }
 
@@ -106,6 +109,11 @@ namespace Application.Services
             }
 
             await _unitOfWork.CommitAsync();
+
+            // Tạo "ô" thư mục CDE cho từng bên vừa thêm (WIP/Shared/Published/Archived).
+            foreach (var groupId in created.Select(c => c.GroupId).Distinct())
+                await _folderBootstrap.ScaffoldParticipantFoldersAsync(projectId, groupId);
+
             return created.Select(_mapper.Map<ParticipantResponseDTO>).ToList();
         }
 

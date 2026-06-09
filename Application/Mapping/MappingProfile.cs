@@ -100,6 +100,9 @@ namespace Application.Mapping
             // ProjectParticipant -> ParticipantResponseDTO
             CreateMap<ProjectParticipant, ParticipantResponseDTO>();
 
+            // ACL thư mục: 1 dòng override -> response
+            CreateMap<FolderPermission, FolderPermissionResponseDTO>();
+
             // --- Module I/J/K/L/M ---
             Crud<Schedule, CreateScheduleDTO, UpdateScheduleDTO, ScheduleResponseDTO>();
             Crud<WorkTask, CreateWorkTaskDTO, UpdateWorkTaskDTO, WorkTaskResponseDTO>();
