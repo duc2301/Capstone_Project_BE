@@ -1,3 +1,5 @@
+using Application.DTOs.ResponseDTOs.Folder;
+
 namespace Application.Interfaces.IServices
 {
     // Khởi tạo cấu trúc thư mục CDE theo nghiệp vụ ISO 19650:
@@ -12,5 +14,9 @@ namespace Application.Interfaces.IServices
         // Tạo 4 thư mục con (1 cho mỗi khu vực) cho 1 Group tham gia dự án.
         // Tự đảm bảo 4 folder gốc tồn tại trước.
         Task ScaffoldParticipantFoldersAsync(Guid projectId, Guid groupId);
+
+        // Team Leader (hoặc PM/Admin) tạo thư mục con để tổ chức file.
+        // Kế thừa Area/OwnerGroup/OwnerOrganization từ folder cha.
+        Task<FolderResponseDTO> CreateChildFolderAsync(Guid parentFolderId, string name);
     }
 }

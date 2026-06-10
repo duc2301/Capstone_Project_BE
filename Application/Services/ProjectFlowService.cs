@@ -117,6 +117,28 @@ namespace Application.Services
             return created.Select(_mapper.Map<ParticipantResponseDTO>).ToList();
         }
 
+        public async Task<List<ProjectResponseDTO>> GetMyProjectsAsync()
+        {
+            var actor = _currentUser.AccountId
+                ?? throw new ApiExceptionResponse("Authentication required.", 401);
+
+            var myGroupIds = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
+                .Where(gm => gm.AccountId == actor)
+                .Select(gm => gm.GroupId)
+                .ToHashSet();
+
+            var participantProjectIds = (await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync())
+                .Where(pp => myGroupIds.Contains(pp.GroupId))
+                .Select(pp => pp.ProjectId)
+                .ToHashSet();
+
+            var projects = (await _unitOfWork.Repository<Project>().GetAllAsync())
+                .Where(p => participantProjectIds.Contains(p.Id) || p.ManagerAccountId == actor)
+                .ToList();
+
+            return projects.Select(_mapper.Map<ProjectResponseDTO>).ToList();
+        }
+
         public async Task<List<ParticipantResponseDTO>> GetParticipantsAsync(Guid projectId)
         {
             _ = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId)

@@ -14,15 +14,18 @@ namespace Capstone_Project.Controllers
     {
         private readonly IFolderService _service;
         private readonly IFolderPermissionService _permission;
+        private readonly IFolderBootstrapService _bootstrap;
         private readonly ICurrentUserService _currentUser;
 
         public FoldersController(
             IFolderService service,
             IFolderPermissionService permission,
+            IFolderBootstrapService bootstrap,
             ICurrentUserService currentUser)
         {
             _service = service;
             _permission = permission;
+            _bootstrap = bootstrap;
             _currentUser = currentUser;
         }
 
@@ -44,18 +47,13 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByIdAsync(id)));
         }
 
-        // Tạo thư mục con: cần quyền Sửa trên thư mục cha. 4 khu vực gốc do hệ thống tự tạo.
+        // Team Leader (hoặc PM/Admin) tạo thư mục con để tổ chức file.
+        // Area/OwnerGroup kế thừa từ folder cha. 4 khu vực gốc do hệ thống tự tạo.
         [HttpPost]
-        public async Task<IActionResult> Create([FromBody] CreateFolderDTO dto)
+        public async Task<IActionResult> Create([FromBody] CreateSubFolderDTO dto)
         {
-            var actor = RequireActor();
-
-            if (!dto.ParentFolderId.HasValue)
-                throw new ApiExceptionResponse(
-                    "Root CDE areas are created automatically. Provide a ParentFolderId to add a subfolder.", 400);
-
-            await _permission.RequireAsync(actor, dto.ParentFolderId.Value, FolderAction.Edit);
-            return Ok(ApiResponse.Success("Created successfully", await _service.CreateAsync(dto)));
+            var result = await _bootstrap.CreateChildFolderAsync(dto.ParentFolderId, dto.Name);
+            return Ok(ApiResponse.Success("Created successfully", result));
         }
 
         [HttpPut("{id:guid}")]
