@@ -39,7 +39,6 @@ namespace Infrastructure.Configurations
             services.AddScoped<IFileItemService, FileItemService>();
             services.AddSingleton<ILocalFileStorageService, LocalFileStorageService>();
             services.AddScoped<IFileUploadService, FileUploadService>();
-            services.AddScoped<IFolderTemplateService, FolderTemplateService>();
             services.AddScoped<ISubmittalService, SubmittalService>();
             services.AddScoped<IDiscussionService, DiscussionService>();
             services.AddScoped<IIssueService, IssueService>();
