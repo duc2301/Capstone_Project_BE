@@ -11,5 +11,8 @@ namespace Application.Interfaces.IServices
         Task<ProjectResponseDTO> AssignManagerAsync(Guid projectId, AssignProjectManagerDTO dto);
         Task<List<ParticipantResponseDTO>> AddParticipantsAsync(Guid projectId, AddParticipantsBulkDTO dto);
         Task<List<ParticipantResponseDTO>> GetParticipantsAsync(Guid projectId);
+
+        // Danh sách dự án người dùng hiện tại đang tham gia (qua group) hoặc làm PM.
+        Task<List<ProjectResponseDTO>> GetMyProjectsAsync();
     }
 }

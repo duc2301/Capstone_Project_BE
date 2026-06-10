@@ -5,7 +5,6 @@ using Application.DTOs.RequestDTOs.DigitalSite;
 using Application.DTOs.RequestDTOs.Discussion;
 using Application.DTOs.RequestDTOs.FileItem;
 using Application.DTOs.RequestDTOs.Folder;
-using Application.DTOs.RequestDTOs.FolderTemplate;
 using Application.DTOs.RequestDTOs.Group;
 using Application.DTOs.RequestDTOs.Invitation;
 using Application.DTOs.RequestDTOs.Issue;
@@ -27,7 +26,6 @@ using Application.DTOs.ResponseDTOs.DigitalSite;
 using Application.DTOs.ResponseDTOs.Discussion;
 using Application.DTOs.ResponseDTOs.FileItem;
 using Application.DTOs.ResponseDTOs.Folder;
-using Application.DTOs.ResponseDTOs.FolderTemplate;
 using Application.DTOs.ResponseDTOs.Group;
 using Application.DTOs.ResponseDTOs.Invitation;
 using Application.DTOs.ResponseDTOs.Issue;
@@ -94,7 +92,7 @@ namespace Application.Mapping
             // --- Module C/D/E/F ---
             Crud<Folder, CreateFolderDTO, UpdateFolderDTO, FolderResponseDTO>();
             Crud<FileItem, CreateFileItemDTO, UpdateFileItemDTO, FileItemResponseDTO>();
-            Crud<FolderTemplate, CreateFolderTemplateDTO, UpdateFolderTemplateDTO, FolderTemplateResponseDTO>();
+            CreateMap<FileVersion, FileVersionResponseDTO>();
             Crud<Submittal, CreateSubmittalDTO, UpdateSubmittalDTO, SubmittalResponseDTO>();
             Crud<Discussion, CreateDiscussionDTO, UpdateDiscussionDTO, DiscussionResponseDTO>();
             Crud<Issue, CreateIssueDTO, UpdateIssueDTO, IssueResponseDTO>();

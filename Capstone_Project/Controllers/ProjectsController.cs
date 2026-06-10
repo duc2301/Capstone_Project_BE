@@ -73,6 +73,15 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("Project retrieved", result));
         }
 
+        // Dự án người dùng hiện tại đang tham gia (qua group) hoặc làm PM.
+        [HttpGet("mine")]
+        [Authorize]
+        public async Task<IActionResult> GetMine()
+        {
+            var result = await _projectFlow.GetMyProjectsAsync();
+            return Ok(ApiResponse.Success("My projects retrieved", result));
+        }
+
         [HttpPut("{id:guid}")]
         [Authorize]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateProjectDTO dto)
