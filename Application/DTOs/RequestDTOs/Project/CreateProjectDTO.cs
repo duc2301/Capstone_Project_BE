@@ -3,9 +3,6 @@ using Domain.Enum.Project;
 
 namespace Application.DTOs.RequestDTOs.Project
 {
-    // Project RỖNG khi tạo:
-    //  - KHÔNG có DepartmentId (bên tham gia add qua POST /api/projects/{id}/participants/bulk)
-    //  - KHÔNG có ManagerAccountId (gán qua POST /api/projects/{id}/manager)
     public class CreateProjectDTO
     {
         [Required]
@@ -17,5 +14,10 @@ namespace Application.DTOs.RequestDTOs.Project
 
         public ProjectStatus Status { get; set; } = ProjectStatus.Planning;
         public ProjectPhase Phase { get; set; } = ProjectPhase.Concept;
+
+        [StringLength(500)]
+        public string? Address { get; set; }
+        public double? Latitude { get; set; }
+        public double? Longitude { get; set; }
     }
 }

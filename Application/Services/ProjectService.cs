@@ -1,5 +1,6 @@
 using Application.DTOs.RequestDTOs.Project;
 using Application.DTOs.ResponseDTOs.Project;
+using Application.DTOs.ResponseDTOs.ProjectModel;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
@@ -29,7 +30,12 @@ namespace Application.Services
         public async Task<ProjectResponseDTO?> GetByIdAsync(Guid id)
         {
             var entity = await _unitOfWork.Repository<Project>().GetByIdAsync(id);
-            return entity == null ? null : _mapper.Map<ProjectResponseDTO>(entity);
+            if (entity == null) return null;
+
+            var dto = _mapper.Map<ProjectResponseDTO>(entity);
+            dto.Location = await GetDefaultLocationAsync(id);
+            dto.Models = await GetModelsAsync(id);
+            return dto;
         }
 
         public async Task<ProjectResponseDTO> CreateAsync(CreateProjectDTO dto)
@@ -38,12 +44,47 @@ namespace Application.Services
             entity.Id = Guid.NewGuid();
             if (entity is IAuditable a) { var now = DateTime.UtcNow; a.CreatedAt = now; a.UpdatedAt = now; }
             await _unitOfWork.Repository<Project>().CreateAsync(entity);
+
+            if (!string.IsNullOrWhiteSpace(dto.Address) || dto.Latitude.HasValue || dto.Longitude.HasValue)
+            {
+                await _unitOfWork.Repository<ProjectLocation>().CreateAsync(new ProjectLocation
+                {
+                    Id = Guid.NewGuid(),
+                    ProjectId = entity.Id,
+                    Address = dto.Address,
+                    Latitude = dto.Latitude,
+                    Longitude = dto.Longitude,
+                    IsDefault = true,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
             await _unitOfWork.CommitAsync();
 
             // Dựng 4 khu vực CDE gốc (WIP/Shared/Published/Archived) ngay khi tạo dự án.
             await _folderBootstrap.InitializeRootFoldersAsync(entity.Id);
 
-            return _mapper.Map<ProjectResponseDTO>(entity);
+            var result = _mapper.Map<ProjectResponseDTO>(entity);
+            result.Location = await GetDefaultLocationAsync(entity.Id);
+            return result;
+        }
+
+        private async Task<ProjectLocationResponseDTO?> GetDefaultLocationAsync(Guid projectId)
+        {
+            var locations = (await _unitOfWork.Repository<ProjectLocation>().GetAllAsync())
+                .Where(l => l.ProjectId == projectId)
+                .ToList();
+            var location = locations.FirstOrDefault(l => l.IsDefault) ?? locations.FirstOrDefault();
+            return location == null ? null : _mapper.Map<ProjectLocationResponseDTO>(location);
+        }
+
+        private async Task<List<ProjectModelResponseDTO>> GetModelsAsync(Guid projectId)
+        {
+            var models = (await _unitOfWork.Repository<ProjectModel>().GetAllAsync())
+                .Where(m => m.ProjectId == projectId)
+                .OrderByDescending(m => m.CreatedAt)
+                .ToList();
+            return _mapper.Map<List<ProjectModelResponseDTO>>(models);
         }
 
         public async Task<ProjectResponseDTO> UpdateAsync(Guid id, UpdateProjectDTO dto)
