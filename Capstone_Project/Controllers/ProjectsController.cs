@@ -1,6 +1,7 @@
 using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Project;
 using Application.DTOs.ResponseDTOs.Project;
+using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
@@ -61,6 +62,15 @@ namespace Capstone_Project.Controllers
         {
             var result = await _projectService.GetAllAsync();
             return Ok(ApiResponse.Success("Projects retrieved", result));
+        }
+
+        [HttpGet("{id:guid}")]
+        [Authorize]
+        public async Task<IActionResult> GetById(Guid id)
+        {
+            var result = await _projectService.GetByIdAsync(id)
+                ?? throw new ApiExceptionResponse("Project not found.", 404);
+            return Ok(ApiResponse.Success("Project retrieved", result));
         }
 
         [HttpPut("{id:guid}")]

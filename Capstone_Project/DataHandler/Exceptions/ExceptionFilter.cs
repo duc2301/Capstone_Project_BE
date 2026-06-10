@@ -23,7 +23,23 @@ namespace Capstone_Project.DataHandler.Exceptions
                 };
 
                 context.ExceptionHandled = true;
+                return;
             }
+
+            var inner = context.Exception.InnerException?.Message;
+            context.Result = new ObjectResult(new
+            {
+                isSuccess = false,
+                statusCode = 500,
+                message = context.Exception.Message,
+                detail = inner,
+                data = (object?)null
+            })
+            {
+                StatusCode = 500
+            };
+
+            context.ExceptionHandled = true;
         }
     }
 }
