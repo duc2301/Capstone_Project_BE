@@ -5,7 +5,6 @@ using Application.DTOs.RequestDTOs.DigitalSite;
 using Application.DTOs.RequestDTOs.Discussion;
 using Application.DTOs.RequestDTOs.FileItem;
 using Application.DTOs.RequestDTOs.Folder;
-using Application.DTOs.RequestDTOs.FolderTemplate;
 using Application.DTOs.RequestDTOs.Group;
 using Application.DTOs.RequestDTOs.Invitation;
 using Application.DTOs.RequestDTOs.Issue;
@@ -27,7 +26,6 @@ using Application.DTOs.ResponseDTOs.DigitalSite;
 using Application.DTOs.ResponseDTOs.Discussion;
 using Application.DTOs.ResponseDTOs.FileItem;
 using Application.DTOs.ResponseDTOs.Folder;
-using Application.DTOs.ResponseDTOs.FolderTemplate;
 using Application.DTOs.ResponseDTOs.Group;
 using Application.DTOs.ResponseDTOs.Invitation;
 using Application.DTOs.ResponseDTOs.Issue;
@@ -74,7 +72,13 @@ namespace Application.Mapping
             CreateMap<GroupMember, GroupMemberDTO>()
                 .ForMember(d => d.UserName, o => o.MapFrom(s => s.Account != null ? s.Account.UserName : ""))
                 .ForMember(d => d.Email, o => o.MapFrom(s => s.Account != null ? s.Account.Email : null));
-            Crud<Project, CreateProjectDTO, UpdateProjectDTO, ProjectResponseDTO>();
+            CreateMap<Project, ProjectResponseDTO>()
+                .ForMember(d => d.Location, o => o.Ignore())
+                .ForMember(d => d.Models, o => o.Ignore());
+            CreateMap<CreateProjectDTO, Project>();
+            CreateMap<UpdateProjectDTO, Project>()
+                .ForAllMembers(o => o.Condition((src, dest, val) => val != null));
+            CreateMap<ProjectLocation, ProjectLocationResponseDTO>();
             Crud<ContractPackage, CreateContractPackageDTO, UpdateContractPackageDTO, ContractPackageResponseDTO>();
 
             // Notification: set thời điểm gửi + chưa đọc khi tạo
@@ -88,7 +92,7 @@ namespace Application.Mapping
             // --- Module C/D/E/F ---
             Crud<Folder, CreateFolderDTO, UpdateFolderDTO, FolderResponseDTO>();
             Crud<FileItem, CreateFileItemDTO, UpdateFileItemDTO, FileItemResponseDTO>();
-            Crud<FolderTemplate, CreateFolderTemplateDTO, UpdateFolderTemplateDTO, FolderTemplateResponseDTO>();
+            CreateMap<FileVersion, FileVersionResponseDTO>();
             Crud<Submittal, CreateSubmittalDTO, UpdateSubmittalDTO, SubmittalResponseDTO>();
             Crud<Discussion, CreateDiscussionDTO, UpdateDiscussionDTO, DiscussionResponseDTO>();
             Crud<Issue, CreateIssueDTO, UpdateIssueDTO, IssueResponseDTO>();

@@ -34,7 +34,6 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<FileItem> FileItems { get; set; }
         public virtual DbSet<FileVersion> FileVersions { get; set; }
         public virtual DbSet<FileNote> FileNotes { get; set; }
-        public virtual DbSet<FolderTemplate> FolderTemplates { get; set; }
 
         // --- Module D: Phiếu yêu cầu ---
         public virtual DbSet<Submittal> Submittals { get; set; }
