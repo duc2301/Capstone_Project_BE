@@ -42,14 +42,10 @@ namespace Infrastructure.Configurations
             services.AddScoped<ISubmittalService, SubmittalService>();
             services.AddScoped<IDiscussionService, DiscussionService>();
             services.AddScoped<IIssueService, IssueService>();
-            services.AddScoped<IScheduleService, ScheduleService>();
-            services.AddScoped<IWorkTaskService, WorkTaskService>();
-            services.AddScoped<IProgressReportService, ProgressReportService>();
             services.AddScoped<IContractService, ContractService>();
             services.AddScoped<IProjectModelService, ProjectModelService>();
             services.AddScoped<IModelFileService, ModelFileService>();
-            services.AddScoped<IDigitalSiteService, DigitalSiteService>();
-            services.AddScoped<ILandParcelService, LandParcelService>();
+
 
             // Auth (giống ChemXLab) + refresh token
             services.AddScoped<IJwtService, JwtService>();

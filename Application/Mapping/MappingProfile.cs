@@ -108,14 +108,10 @@ namespace Application.Mapping
             CreateMap<FolderPermission, FolderPermissionResponseDTO>();
 
             // --- Module I/J/K/L/M ---
-            Crud<Schedule, CreateScheduleDTO, UpdateScheduleDTO, ScheduleResponseDTO>();
-            Crud<WorkTask, CreateWorkTaskDTO, UpdateWorkTaskDTO, WorkTaskResponseDTO>();
-            Crud<ProgressReport, CreateProgressReportDTO, UpdateProgressReportDTO, ProgressReportResponseDTO>();
+            
             Crud<Contract, CreateContractDTO, UpdateContractDTO, ContractResponseDTO>();
             Crud<ProjectModel, CreateProjectModelDTO, UpdateProjectModelDTO, ProjectModelResponseDTO>();
             Crud<ModelFile, CreateModelFileDTO, UpdateModelFileDTO, ModelFileResponseDTO>();
-            Crud<DigitalSite, CreateDigitalSiteDTO, UpdateDigitalSiteDTO, DigitalSiteResponseDTO>();
-            Crud<LandParcel, CreateLandParcelDTO, UpdateLandParcelDTO, LandParcelResponseDTO>();
         }
     }
 }

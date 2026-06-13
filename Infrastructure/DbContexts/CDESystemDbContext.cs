@@ -59,15 +59,6 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<AuditLog> AuditLogs { get; set; }
         public virtual DbSet<DocumentChunk> DocumentChunks { get; set; }
 
-        // --- Module I: Tiến độ sản lượng ---
-        public virtual DbSet<Schedule> Schedules { get; set; }
-        public virtual DbSet<WorkTask> WorkTasks { get; set; }
-        public virtual DbSet<WorkTaskDependency> WorkTaskDependencies { get; set; }
-        public virtual DbSet<WorkTaskModelLink> WorkTaskModelLinks { get; set; }
-        public virtual DbSet<WorkTaskPermission> WorkTaskPermissions { get; set; }
-        public virtual DbSet<ProgressReport> ProgressReports { get; set; }
-        public virtual DbSet<ProgressReportItem> ProgressReportItems { get; set; }
-
         // --- Module J: Hợp đồng / Bill thầu ---
         public virtual DbSet<Contract> Contracts { get; set; }
         public virtual DbSet<ContractAppendix> ContractAppendices { get; set; }
@@ -80,14 +71,7 @@ namespace Infrastructure.DbContexts
 
         // --- Module L: Giải phóng mặt bằng / Công trường số ---
         public virtual DbSet<ProjectLocation> ProjectLocations { get; set; }
-        public virtual DbSet<DigitalSite> DigitalSites { get; set; }
-        public virtual DbSet<CaptureStage> CaptureStages { get; set; }
-        public virtual DbSet<Panorama360> Panorama360s { get; set; }
-        public virtual DbSet<SiteImage> SiteImages { get; set; }
-        public virtual DbSet<SiteAnnotation> SiteAnnotations { get; set; }
 
-        // --- Module M: Điều phối GPMB ---
-        public virtual DbSet<LandParcel> LandParcels { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -152,12 +136,6 @@ namespace Infrastructure.DbContexts
                 .HasOne(s => s.ParentSubmittal)
                 .WithMany(s => s.ChildSubmittals)
                 .HasForeignKey(s => s.ParentSubmittalId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            modelBuilder.Entity<WorkTask>()
-                .HasOne(w => w.ParentWorkTask)
-                .WithMany(w => w.ChildWorkTasks)
-                .HasForeignKey(w => w.ParentWorkTaskId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<BillItem>()
