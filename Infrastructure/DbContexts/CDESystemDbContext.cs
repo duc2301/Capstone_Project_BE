@@ -126,12 +126,6 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(p => p.GroupId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            modelBuilder.Entity<FolderPermission>()
-                .HasOne(p => p.Organization)
-                .WithMany()
-                .HasForeignKey(p => p.OrganizationId)
-                .OnDelete(DeleteBehavior.Restrict);
-
             modelBuilder.Entity<Submittal>()
                 .HasOne(s => s.ParentSubmittal)
                 .WithMany(s => s.ChildSubmittals)

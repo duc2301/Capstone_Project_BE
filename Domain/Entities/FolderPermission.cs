@@ -7,7 +7,6 @@ namespace Domain.Entities
         public Guid Id { get; set; }
         public Guid FolderId { get; set; }
         public Guid? GroupId { get; set; }
-        public Guid? OrganizationId { get; set; }
 
         public bool CanView { get; set; }
         public bool CanEdit { get; set; }       // Sửa
@@ -20,6 +19,5 @@ namespace Domain.Entities
 
         public Folder Folder { get; set; } = null!;
         public Group? Group { get; set; }
-        public Organization? Organization { get; set; }
     }
 }

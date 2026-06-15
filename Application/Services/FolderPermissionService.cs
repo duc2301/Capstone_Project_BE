@@ -151,7 +151,7 @@ namespace Application.Services
             var existing = (await _unitOfWork.Repository<FolderPermission>().GetAllAsync())
                 .FirstOrDefault(p => p.FolderId == folderId
                                   && p.GroupId == dto.GroupId
-                                  && p.OrganizationId == dto.OrganizationId);
+                                  );
 
             if (existing == null)
             {
@@ -160,7 +160,6 @@ namespace Application.Services
                     Id = Guid.NewGuid(),
                     FolderId = folderId,
                     GroupId = hasGroup ? dto.GroupId : null,
-                    OrganizationId = hasOrg ? dto.OrganizationId : null
                 };
                 ApplyFlags(existing, dto);
                 await _unitOfWork.Repository<FolderPermission>().CreateAsync(existing);
@@ -348,7 +347,7 @@ namespace Application.Services
 
         private static bool TargetsUser(FolderPermission r, UserContext ctx)
             => (r.GroupId.HasValue && ctx.GroupIds.Contains(r.GroupId.Value))
-            || (r.OrganizationId.HasValue && ctx.OrgIds.Contains(r.OrganizationId.Value));
+            ;
 
         private static void Merge(EffectivePermissionDTO p, FolderPermission r)
         {
