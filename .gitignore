@@ -504,3 +504,6 @@ appsettings.*.json
 *-firebase-adminsdk-*.json
 /EV.Presentation/appsettings.json
 /TrainProject/appsettings.json
+
+CLAUDE.md
+docs/harness/

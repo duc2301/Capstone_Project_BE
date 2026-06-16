@@ -8,6 +8,7 @@ using Domain.Common;
 using Domain.Entities;
 using Domain.Enum.Account;
 using Domain.Enum.Group;
+using Domain.Enum.Project;
 
 namespace Application.Services
 {
@@ -15,12 +16,18 @@ namespace Application.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUser;
+        private readonly INotificationService _notification;
         private readonly IMapper _mapper;
 
-        public GroupService(IUnitOfWork unitOfWork, ICurrentUserService currentUser, IMapper mapper)
+        public GroupService(
+            IUnitOfWork unitOfWork,
+            ICurrentUserService currentUser,
+            INotificationService notification,
+            IMapper mapper)
         {
             _unitOfWork = unitOfWork;
             _currentUser = currentUser;
+            _notification = notification;
             _mapper = mapper;
         }
 
@@ -103,14 +110,14 @@ namespace Application.Services
             var target = members.FirstOrDefault(gm => gm.AccountId == accountId && gm.Status == GroupMemberStatus.Active)
                 ?? throw new ApiExceptionResponse("Active member not found in this group.", 404);
 
-            // Phân quyền: chỉ Admin hệ thống hoặc Trưởng nhóm Active hiện tại.
             var currentLeader = members.FirstOrDefault(
                 gm => gm.Role == GroupMemberRole.Leader && gm.Status == GroupMemberStatus.Active);
             var isAdmin = _currentUser.SystemRole == AccountRole.Admin.ToString();
             var isLeader = currentLeader != null && currentLeader.AccountId == actor;
-            if (!isAdmin && !isLeader)
+            var isManager = await IsProjectManagerOfGroupAsync(groupId, actor);
+            if (!isAdmin && !isLeader && !isManager)
                 throw new ApiExceptionResponse(
-                    "Chỉ Trưởng nhóm hiện tại hoặc Admin mới được đổi vai trò thành viên.", 403);
+                    "Chỉ Admin, PM dự án hoặc Trưởng nhóm hiện tại mới được đổi vai trò thành viên.", 403);
 
             if (newRole == GroupMemberRole.Leader)
             {
@@ -131,6 +138,59 @@ namespace Application.Services
 
             return await GetByIdAsync(groupId)
                 ?? throw new ApiExceptionResponse("Group not found after update.", 500);
+        }
+
+        public async Task<GroupResponseDTO> ChangeMemberStatusAsync(
+            Guid groupId, Guid accountId, GroupMemberStatus newStatus)
+        {
+            var actor = _currentUser.AccountId
+                ?? throw new ApiExceptionResponse("Authentication required.", 401);
+
+            var group = await _unitOfWork.Repository<Group>().GetByIdAsync(groupId)
+                ?? throw new ApiExceptionResponse($"Group with ID {groupId} not found.", 404);
+
+            var isAdmin = _currentUser.SystemRole == AccountRole.Admin.ToString();
+            var isManager = await IsProjectManagerOfGroupAsync(groupId, actor);
+            if (!isAdmin && !isManager)
+                throw new ApiExceptionResponse(
+                    "Chỉ Admin hoặc PM dự án mới được cập nhật trạng thái thành viên.", 403);
+
+            var target = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
+                .FirstOrDefault(gm => gm.GroupId == groupId && gm.AccountId == accountId)
+                ?? throw new ApiExceptionResponse("Member not found in this group.", 404);
+
+            if (target.Status == newStatus)
+                throw new ApiExceptionResponse("Member already in the requested status.", 409);
+
+            var removed = newStatus == GroupMemberStatus.Left;
+            target.Status = newStatus;
+            await _unitOfWork.CommitAsync();
+
+            if (removed)
+            {
+                var actorName = _currentUser.UserName ?? "Quản trị viên";
+                await _notification.NotifyAsync(
+                    accountId,
+                    $"{actorName} đã đưa bạn ra khỏi nhóm \"{group.Name}\".",
+                    senderName: actorName,
+                    linkType: "Group",
+                    linkId: groupId.ToString());
+            }
+
+            return await GetByIdAsync(groupId)
+                ?? throw new ApiExceptionResponse("Group not found after update.", 500);
+        }
+
+        private async Task<bool> IsProjectManagerOfGroupAsync(Guid groupId, Guid actor)
+        {
+            var projectIds = (await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync())
+                .Where(pp => pp.GroupId == groupId && pp.Status == ProjectParticipantStatus.Active)
+                .Select(pp => pp.ProjectId)
+                .ToHashSet();
+            if (projectIds.Count == 0) return false;
+
+            return (await _unitOfWork.Repository<Project>().GetAllAsync())
+                .Any(p => projectIds.Contains(p.Id) && p.ManagerAccountId == actor);
         }
 
         // Build DTO + join members + accounts (tra dictionary trong-mem, dataset CDE nhỏ -> chấp nhận).

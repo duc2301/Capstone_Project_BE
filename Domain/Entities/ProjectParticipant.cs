@@ -10,6 +10,7 @@ namespace Domain.Entities
         public Guid ProjectId { get; set; }
         public Guid GroupId { get; set; }
         public ProjectParticipantRole Role { get; set; }
+        public ProjectParticipantStatus Status { get; set; }   // Active / Inactive (xóa mềm khỏi dự án)
         public DateTime? JoinedAt { get; set; }
 
         public Project Project { get; set; } = null!;
