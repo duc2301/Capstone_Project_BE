@@ -150,11 +150,6 @@ namespace Infrastructure.DbContexts
                 .HasOne(m => m.ReplyToMessage)
                 .WithMany(m => m.Replies)
                 .HasForeignKey(m => m.ReplyToMessageId)
-                .OnDelete(DeleteBehavior.Restrict);       
-            modelBuilder.Entity<FileVersion>()
-                .HasOne(v => v.SourceVersion)
-                .WithMany()
-                .HasForeignKey(v => v.SourceFileVersionId)
                 .OnDelete(DeleteBehavior.Restrict);
         }
     }

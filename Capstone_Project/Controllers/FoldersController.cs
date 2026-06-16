@@ -15,20 +15,17 @@ namespace Capstone_Project.Controllers
         private readonly IFolderService _service;
         private readonly IFolderPermissionService _permission;
         private readonly IFolderBootstrapService _bootstrap;
-        private readonly IFolderTransitionService _transition;
         private readonly ICurrentUserService _currentUser;
 
         public FoldersController(
             IFolderService service,
             IFolderPermissionService permission,
             IFolderBootstrapService bootstrap,
-            IFolderTransitionService transition,
             ICurrentUserService currentUser)
         {
             _service = service;
             _permission = permission;
             _bootstrap = bootstrap;
-            _transition = transition;
             _currentUser = currentUser;
         }
 
@@ -74,14 +71,6 @@ namespace Capstone_Project.Controllers
             await _permission.RequireAsync(actor, id, FolderAction.Edit);
             await _service.DeleteAsync(id);
             return Ok(ApiResponse.Success("Deleted successfully"));
-        }
-
-        // Chuyển trạng thái CDE cả thư mục (đệ quy): Wip→Shared→Published→Archived (tiến 1 bậc).
-        [HttpPost("{id:guid}/promote")]
-        public async Task<IActionResult> Promote(Guid id, [FromBody] PromoteFolderDTO dto)
-        {
-            var result = await _transition.PromoteFolderAsync(id, dto.TargetArea);
-            return Ok(ApiResponse.Success("Folder promoted", result));
         }
 
         // Quyền hiệu lực của chính người gọi trên 1 folder.
