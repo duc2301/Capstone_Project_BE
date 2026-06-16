@@ -14,6 +14,10 @@ namespace Domain.Entities
         public Guid? UploadedByAccountId { get; set; }
         public DateTime? UploadedAt { get; set; }
 
+        // Bản gốc đã copy từ đó khi chuyển trạng thái (WIP→Shared→Published). Phục vụ truy vết.
+        public Guid? SourceFileVersionId { get; set; }
+
         public FileItem FileItem { get; set; } = null!;
+        public FileVersion? SourceVersion { get; set; }
     }
 }

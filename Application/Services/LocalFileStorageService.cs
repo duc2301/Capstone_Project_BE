@@ -7,7 +7,7 @@ namespace Application.Services
 {
     // Lưu file lên đĩa local. Gốc lưu trữ lấy từ cấu hình "FileStorage:RootPath",
     // mặc định <BaseDirectory>/App_Data/uploads. Bố cục: {root}/{projectId}/{folderId}/{guid}{ext}
-    public class LocalFileStorageService : ILocalFileStorageService
+    public class LocalFileStorageService : IFileStorageService
     {
         private readonly string _root;
 
@@ -46,15 +46,14 @@ namespace Application.Services
             return new StoredFile(relative, size, checksum);
         }
 
-        public Stream OpenRead(string relativePath)
+        public Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default)
         {
-            var full = ToFullPath(relativePath);
+            var full = ToFullPath(storagePath);
             if (!File.Exists(full))
                 throw new ApiExceptionResponse("Stored file not found on disk.", 404);
-            return new FileStream(full, FileMode.Open, FileAccess.Read, FileShare.Read);
+            Stream stream = new FileStream(full, FileMode.Open, FileAccess.Read, FileShare.Read);
+            return Task.FromResult(stream);
         }
-
-        public bool Exists(string relativePath) => File.Exists(ToFullPath(relativePath));
 
         public string GetContentType(string fileNameOrExt)
         {

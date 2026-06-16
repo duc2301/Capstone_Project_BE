@@ -13,11 +13,16 @@ namespace Capstone_Project.Controllers
     {
         private readonly IFileItemService _service;
         private readonly IFileUploadService _upload;
+        private readonly IFolderTransitionService _transition;
 
-        public FileItemsController(IFileItemService service, IFileUploadService upload)
+        public FileItemsController(
+            IFileItemService service,
+            IFileUploadService upload,
+            IFolderTransitionService transition)
         {
             _service = service;
             _upload = upload;
+            _transition = transition;
         }
 
         // Luồng tải file lên (multipart/form-data): file + FolderId + FileType + (Name tùy chọn).
@@ -38,6 +43,14 @@ namespace Capstone_Project.Controllers
         {
             var dl = await _upload.OpenDownloadAsync(id, ct);
             return File(dl.Content, dl.ContentType, dl.FileName);
+        }
+
+        // Chuyển trạng thái CDE 1 tài liệu (chọn version): Wip→Shared→Published→Archived.
+        [HttpPost("{id:guid}/promote")]
+        public async Task<IActionResult> Promote(Guid id, [FromBody] PromoteFileDTO dto)
+        {
+            var result = await _transition.PromoteFileAsync(id, dto.TargetArea, dto.VersionId);
+            return Ok(ApiResponse.Success("File promoted", result));
         }
 
         [HttpGet]
