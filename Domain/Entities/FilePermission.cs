@@ -8,7 +8,7 @@ namespace Domain.Entities
     {
         public Guid Id { get; set; }
         public Guid FileItemId { get; set; }
-        public Guid? GroupId { get; set; }
+        public Guid? ProjectParticipantId { get; set; }
 
         public bool CanView { get; set; }
         public bool CanEdit { get; set; }       // Sửa
@@ -20,6 +20,6 @@ namespace Domain.Entities
         public bool InheritFromParent { get; set; }
 
         public FileItem FileItem { get; set; } = null!;
-        public Group? Group { get; set; }
+        public ProjectParticipant? ProjectParticipant { get; set; }
     }
 }

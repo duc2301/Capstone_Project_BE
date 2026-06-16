@@ -103,8 +103,6 @@ namespace Application.Services
                 ParentFolderId = f.ParentFolderId,
                 Name = f.Name,
                 Area = f.Area,
-                OwnerOrganizationId = f.OwnerOrganizationId,
-                OwnerGroupId = f.OwnerGroupId,
                 Permission = eff[f.Id]
             });
 
@@ -150,7 +148,6 @@ namespace Application.Services
             // mutate trực tiếp + Commit (tránh GenericRepository.Update vốn clear ChangeTracker).
             var existing = (await _unitOfWork.Repository<FolderPermission>().GetAllAsync())
                 .FirstOrDefault(p => p.FolderId == folderId
-                                  && p.GroupId == dto.GroupId
                                   );
 
             if (existing == null)
@@ -159,7 +156,6 @@ namespace Application.Services
                 {
                     Id = Guid.NewGuid(),
                     FolderId = folderId,
-                    GroupId = hasGroup ? dto.GroupId : null,
                 };
                 ApplyFlags(existing, dto);
                 await _unitOfWork.Repository<FolderPermission>().CreateAsync(existing);
@@ -278,10 +274,8 @@ namespace Application.Services
             if (ctx.IsAdmin || ctx.IsManager)
                 return Full(folder.Id);
 
-            var isOwner =
-                (folder.OwnerGroupId.HasValue && ctx.GroupIds.Contains(folder.OwnerGroupId.Value))
-                || (!folder.OwnerGroupId.HasValue && folder.OwnerOrganizationId.HasValue
-                        && ctx.OrgIds.Contains(folder.OwnerOrganizationId.Value));
+            var isOwner = true;
+                
 
             var p = Baseline(folder, isOwner, ctx.IsParticipant, ctx.IsSurveyor);
 
@@ -346,7 +340,7 @@ namespace Application.Services
         }
 
         private static bool TargetsUser(FolderPermission r, UserContext ctx)
-            => (r.GroupId.HasValue && ctx.GroupIds.Contains(r.GroupId.Value))
+            => true
             ;
 
         private static void Merge(EffectivePermissionDTO p, FolderPermission r)

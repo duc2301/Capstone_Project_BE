@@ -105,13 +105,6 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(f => f.ParentFolderId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            // Nhóm sở hữu "ô" thư mục (WIP/Shared/... của 1 bên tham gia).
-            // Restrict: xóa Group không kéo theo xóa cây thư mục của bên đó.
-            modelBuilder.Entity<Folder>()
-                .HasOne(f => f.OwnerGroup)
-                .WithMany()
-                .HasForeignKey(f => f.OwnerGroupId)
-                .OnDelete(DeleteBehavior.Restrict);
 
             // ACL thư mục: xóa Folder -> xóa các dòng phân quyền của nó.
             // Group được tham chiếu Restrict để tránh nhiều đường cascade.
@@ -122,9 +115,9 @@ namespace Infrastructure.DbContexts
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<FolderPermission>()
-                .HasOne(p => p.Group)
+                .HasOne(fp => fp.ProjectParticipant)
                 .WithMany()
-                .HasForeignKey(p => p.GroupId)
+                .HasForeignKey(fp => fp.ProjectParticipantId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             // ACL thư mục: xóa File -> xóa các dòng phân quyền của nó.
@@ -136,9 +129,9 @@ namespace Infrastructure.DbContexts
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<FilePermission>()
-                .HasOne(fp => fp.Group)
+                .HasOne(fp => fp.ProjectParticipant)
                 .WithMany()
-                .HasForeignKey(fp => fp.GroupId)
+                .HasForeignKey(fp => fp.ProjectParticipantId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<Submittal>()

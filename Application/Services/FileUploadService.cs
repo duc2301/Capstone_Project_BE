@@ -203,25 +203,12 @@ namespace Application.Services
             var byId = projectFolders.ToDictionary(f => f.Id);
 
             // Xác định nhóm sở hữu: chính folder hoặc tổ tiên gần nhất có OwnerGroupId.
-            Guid? ownerGroupId = folder.OwnerGroupId;
             var cur = folder;
-            while (!ownerGroupId.HasValue && cur.ParentFolderId.HasValue
-                   && byId.TryGetValue(cur.ParentFolderId.Value, out var parent))
-            {
-                ownerGroupId = parent.OwnerGroupId;
-                cur = parent;
-            }
+           
 
             var archivedRoot = projectFolders.FirstOrDefault(
                 f => f.ParentFolderId == null && f.Area == CdeArea.Archived)
                 ?? throw new ApiExceptionResponse("Archived area is missing for this project.", 500);
-
-            if (ownerGroupId.HasValue)
-            {
-                var groupArchive = projectFolders.FirstOrDefault(
-                    f => f.ParentFolderId == archivedRoot.Id && f.OwnerGroupId == ownerGroupId.Value);
-                if (groupArchive != null) return groupArchive;
-            }
 
             return archivedRoot;
         }

@@ -61,11 +61,6 @@ namespace Application.Services
 
             foreach (var root in roots)
             {
-                // Đã có "ô" của group này trong khu vực -> bỏ qua.
-                var already = existing.Any(f => f.ParentFolderId == root.Id && f.OwnerGroupId == groupId)
-                              || roots.Any(r => r.ParentFolderId == root.Id && r.OwnerGroupId == groupId);
-                if (already) continue;
-
                 await _unitOfWork.Repository<Folder>().CreateAsync(new Folder
                 {
                     Id = Guid.NewGuid(),
@@ -73,8 +68,6 @@ namespace Application.Services
                     ParentFolderId = root.Id,
                     Name = group.Name,
                     Area = root.Area,
-                    OwnerGroupId = groupId,
-                    OwnerOrganizationId = group.OrganizationId,
                     IsTemplate = false,
                     CreatedAt = now,
                     UpdatedAt = now
@@ -109,8 +102,6 @@ namespace Application.Services
                 ParentFolderId = parent.Id,
                 Name = name.Trim(),
                 Area = parent.Area,                          // kế thừa khu vực
-                OwnerGroupId = ownerGroupId,                 // kế thừa chủ sở hữu
-                OwnerOrganizationId = parent.OwnerOrganizationId,
                 IsTemplate = false,
                 CreatedByAccountId = actor,
                 CreatedAt = now,
@@ -124,7 +115,6 @@ namespace Application.Services
 
         private async Task<Guid?> ResolveOwnerGroupIdAsync(Folder folder)
         {
-            if (folder.OwnerGroupId.HasValue) return folder.OwnerGroupId;
 
             var byId = (await _unitOfWork.Repository<Folder>().GetAllAsync())
                 .Where(f => f.ProjectId == folder.ProjectId)
@@ -133,7 +123,7 @@ namespace Application.Services
             var cur = folder;
             while (cur.ParentFolderId.HasValue && byId.TryGetValue(cur.ParentFolderId.Value, out var parent))
             {
-                if (parent.OwnerGroupId.HasValue) return parent.OwnerGroupId;
+                
                 cur = parent;
             }
             return null;
@@ -185,8 +175,6 @@ namespace Application.Services
                     ParentFolderId = null,
                     Name = name,
                     Area = area,
-                    OwnerGroupId = null,
-                    OwnerOrganizationId = null,
                     IsTemplate = false,
                     CreatedAt = now,
                     UpdatedAt = now
