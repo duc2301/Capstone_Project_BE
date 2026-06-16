@@ -89,7 +89,6 @@ namespace Application.Services
             if (existingMember != null)
             {
                 existingMember.Role = dto.Role;
-                existingMember.Status = GroupMemberStatus.Pending;
                 existingMember.JoinedAt = null;
             }
             else
@@ -100,7 +99,6 @@ namespace Application.Services
                     GroupId = dto.InvitedGroupId,
                     AccountId = dto.InvitedAccountId,
                     Role = dto.Role,
-                    Status = GroupMemberStatus.Pending,
                     JoinedAt = null,
                 });
             }
@@ -219,8 +217,7 @@ namespace Application.Services
             {
                 var pending = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
                     .FirstOrDefault(gm => gm.GroupId == invitation.InvitedGroupId.Value
-                                       && gm.AccountId == accountId
-                                       && gm.Status == GroupMemberStatus.Pending);
+                                       && gm.AccountId == accountId);
                 if (pending != null) pending.Status = GroupMemberStatus.Left;
             }
 
