@@ -148,9 +148,7 @@ namespace Infrastructure.DbContexts
                 .HasOne(m => m.ReplyToMessage)
                 .WithMany(m => m.Replies)
                 .HasForeignKey(m => m.ReplyToMessageId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            // Truy vết promote: bản copy trỏ về bản nguồn. Restrict để không xóa lan.
+                .OnDelete(DeleteBehavior.Restrict);       
             modelBuilder.Entity<FileVersion>()
                 .HasOne(v => v.SourceVersion)
                 .WithMany()
