@@ -37,7 +37,13 @@ namespace Infrastructure.Configurations
             services.AddScoped<IFolderBootstrapService, FolderBootstrapService>();
             services.AddScoped<IFolderPermissionService, FolderPermissionService>();
             services.AddScoped<IFileItemService, FileItemService>();
-            services.AddSingleton<ILocalFileStorageService, LocalFileStorageService>();
+            // Kho file: chọn provider qua "FileStorage:Provider" (Local mặc định | ViettelS3).
+            var storageProvider = configuration["FileStorage:Provider"] ?? "Local";
+            if (storageProvider.Equals("ViettelS3", StringComparison.OrdinalIgnoreCase)
+                || storageProvider.Equals("S3", StringComparison.OrdinalIgnoreCase))
+                services.AddSingleton<IFileStorageService, ViettelS3FileStorageService>();
+            else
+                services.AddSingleton<IFileStorageService, LocalFileStorageService>();
             services.AddScoped<IFileUploadService, FileUploadService>();
             services.AddScoped<ISubmittalService, SubmittalService>();
             services.AddScoped<IDiscussionService, DiscussionService>();

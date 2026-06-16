@@ -6,6 +6,7 @@ using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using Domain.Entities;
+using Domain.Enum.Group;
 using Domain.Enum.Invitation;
 using Domain.Enum.Project;
 
@@ -52,11 +53,18 @@ namespace Application.Services
             _ = await _unitOfWork.Repository<Account>().GetByIdAsync(dto.InvitedAccountId)
                 ?? throw new ApiExceptionResponse("Invited account not found.", 404);
 
-            // Chống mời lại nếu đã là member group này
-            var alreadyMember = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
-                .Any(gm => gm.GroupId == dto.InvitedGroupId && gm.AccountId == dto.InvitedAccountId);
-            if (alreadyMember)
+            // Thành viên hiện có: Pending/Active -> chặn mời lại; Left -> cho mời lại (tái kích hoạt).
+            var groupMembers = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
+                .Where(gm => gm.GroupId == dto.InvitedGroupId)
+                .ToList();
+            var existingMember = groupMembers.FirstOrDefault(gm => gm.AccountId == dto.InvitedAccountId);
+            if (existingMember != null && existingMember.Status != GroupMemberStatus.Left)
                 throw new ApiExceptionResponse("Account is already a member of this group.", 409);
+
+            // Chặn sớm: không mời thêm Leader nếu nhóm đã có Leader đang hoạt động (Active).
+            if (dto.Role == GroupMemberRole.Leader
+                && groupMembers.Any(gm => gm.Role == GroupMemberRole.Leader && gm.Status == GroupMemberStatus.Active))
+                throw new ApiExceptionResponse("Nhóm đã có Trưởng nhóm (Leader). Không thể mời thêm Leader.", 409);
 
             // Chống mời trùng khi đang Pending
             var hasPending = (await _unitOfWork.Repository<ProjectInvitation>().GetAllAsync())
@@ -76,6 +84,27 @@ namespace Application.Services
             invitation.ExpiresAt = DateTime.UtcNow.AddDays(dto.ExpireDays > 0 ? dto.ExpireDays : 7);
 
             await _unitOfWork.Repository<ProjectInvitation>().CreateAsync(invitation);
+
+            // Tạo (hoặc tái kích hoạt nếu trước đó đã Left) GroupMember ở trạng thái Pending.
+            if (existingMember != null)
+            {
+                existingMember.Role = dto.Role;
+                existingMember.Status = GroupMemberStatus.Pending;
+                existingMember.JoinedAt = null;
+            }
+            else
+            {
+                await _unitOfWork.Repository<GroupMember>().CreateAsync(new GroupMember
+                {
+                    Id = Guid.NewGuid(),
+                    GroupId = dto.InvitedGroupId,
+                    AccountId = dto.InvitedAccountId,
+                    Role = dto.Role,
+                    Status = GroupMemberStatus.Pending,
+                    JoinedAt = null,
+                });
+            }
+
             await _unitOfWork.CommitAsync();
 
             await _notification.NotifyAsync(
@@ -101,11 +130,29 @@ namespace Application.Services
             var groupId = invitation.InvitedGroupId.Value;
             var projectId = invitation.ProjectId;
 
-            // 1) Tạo GroupMember nếu chưa có (idempotent)
-            var existsMember = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
-                .Any(gm => gm.GroupId == groupId && gm.AccountId == accountId);
+            // 1) Kích hoạt thành viên: Pending -> Active (tạo Active nếu chưa có row, vd invite cũ).
+            var groupMembers = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
+                .Where(gm => gm.GroupId == groupId)
+                .ToList();
+            var member = groupMembers.FirstOrDefault(gm => gm.AccountId == accountId);
 
-            if (!existsMember)
+            // Chặn nhận vai trò Leader khi nhóm đã có Leader Active khác.
+            if (invitation.Role == GroupMemberRole.Leader
+                && groupMembers.Any(gm => gm.Role == GroupMemberRole.Leader
+                                       && gm.Status == GroupMemberStatus.Active
+                                       && gm.AccountId != accountId))
+            {
+                throw new ApiExceptionResponse(
+                    "Nhóm đã có Trưởng nhóm (Leader). Không thể gia nhập với vai trò Leader.", 409);
+            }
+
+            if (member != null)
+            {
+                member.Role = invitation.Role;
+                member.Status = GroupMemberStatus.Active;
+                member.JoinedAt = DateTime.UtcNow;
+            }
+            else
             {
                 await _unitOfWork.Repository<GroupMember>().CreateAsync(new GroupMember
                 {
@@ -113,6 +160,7 @@ namespace Application.Services
                     GroupId = groupId,
                     AccountId = accountId,
                     Role = invitation.Role,
+                    Status = GroupMemberStatus.Active,
                     JoinedAt = DateTime.UtcNow
                 });
             }
@@ -165,6 +213,16 @@ namespace Application.Services
 
             invitation.Status = InvitationStatus.Rejected;
             invitation.RespondedAt = DateTime.UtcNow;
+
+            // Từ chối -> GroupMember Pending tương ứng chuyển sang Left (cho phép mời lại sau).
+            if (invitation.InvitedGroupId.HasValue)
+            {
+                var pending = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
+                    .FirstOrDefault(gm => gm.GroupId == invitation.InvitedGroupId.Value
+                                       && gm.AccountId == accountId
+                                       && gm.Status == GroupMemberStatus.Pending);
+                if (pending != null) pending.Status = GroupMemberStatus.Left;
+            }
 
             await _unitOfWork.CommitAsync();
 
