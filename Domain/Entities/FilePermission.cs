@@ -1,11 +1,13 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Text;
+
 namespace Domain.Entities
 {
-    // ACL trên thư mục, gán cho Nhóm hoặc Tổ chức.
-    // 5 cờ trong tài liệu + Xem ngầm định. Workflow phiếu yêu cầu suy quyền từ đây.
-    public class FolderPermission
+    public class FilePermission
     {
         public Guid Id { get; set; }
-        public Guid FolderId { get; set; }
+        public Guid FileItemId { get; set; }
         public Guid? ProjectParticipantId { get; set; }
 
         public bool CanView { get; set; }
@@ -17,7 +19,7 @@ namespace Domain.Entities
 
         public bool InheritFromParent { get; set; }
 
-        public Folder Folder { get; set; } = null!;
+        public FileItem FileItem { get; set; } = null!;
         public ProjectParticipant? ProjectParticipant { get; set; }
     }
 }

@@ -34,6 +34,7 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<FileItem> FileItems { get; set; }
         public virtual DbSet<FileVersion> FileVersions { get; set; }
         public virtual DbSet<FileNote> FileNotes { get; set; }
+        public virtual DbSet<FilePermission> FilePermissions { get; set; }
 
         // --- Module D: Phiếu yêu cầu ---
         public virtual DbSet<Submittal> Submittals { get; set; }
@@ -86,14 +87,14 @@ namespace Infrastructure.DbContexts
             // GUID generate thật 1 lần (Guid.NewGuid() lúc design) rồi hardcode làm constant —
             // EF Core HasData yêu cầu constant để migration reproducible giữa các môi trường.
             modelBuilder.Entity<OrganizationType>().HasData(
-                new OrganizationType { Id = new Guid("7f947ce1-e7c6-49b2-aa41-f9b30292917a"), Code = "Client",                Name = "Chủ đầu tư",            IsActive = true },
-                new OrganizationType { Id = new Guid("ad5b98c7-b28f-4c40-861a-5a363b84eb00"), Code = "ProjectManagementUnit", Name = "Ban quản lý dự án",     IsActive = true },
-                new OrganizationType { Id = new Guid("ad4c917e-b170-4ff8-bca3-10764641c8d9"), Code = "Surveyor",              Name = "Tư vấn giám sát",       IsActive = true },
-                new OrganizationType { Id = new Guid("d692eaa8-4cf1-4a12-8bf8-4d0e1529acb5"), Code = "Consultant",            Name = "Tư vấn (thiết kế/BIM)", IsActive = true },
-                new OrganizationType { Id = new Guid("ae2fd257-cca8-4bb4-8f90-c0c45100702b"), Code = "MainContractor",        Name = "Nhà thầu chính",        IsActive = true },
-                new OrganizationType { Id = new Guid("8c0dcb7d-87fe-413e-b8d6-83eb91171cbe"), Code = "Subcontractor",         Name = "Nhà thầu phụ",          IsActive = true },
-                new OrganizationType { Id = new Guid("3fe93ed9-2e6a-47a6-90cf-6e5aac24c645"), Code = "Supplier",              Name = "Nhà cung cấp",          IsActive = true },
-                new OrganizationType { Id = new Guid("e48c6618-c877-46bf-9d6d-7d9fb92a50e9"), Code = "FacilityManagement",    Name = "Đơn vị vận hành",       IsActive = true }
+                new OrganizationType { Id = new Guid("7f947ce1-e7c6-49b2-aa41-f9b30292917a"), Code = "Client", Name = "Chủ đầu tư", IsActive = true },
+                new OrganizationType { Id = new Guid("ad5b98c7-b28f-4c40-861a-5a363b84eb00"), Code = "ProjectManagementUnit", Name = "Ban quản lý dự án", IsActive = true },
+                new OrganizationType { Id = new Guid("ad4c917e-b170-4ff8-bca3-10764641c8d9"), Code = "Surveyor", Name = "Tư vấn giám sát", IsActive = true },
+                new OrganizationType { Id = new Guid("d692eaa8-4cf1-4a12-8bf8-4d0e1529acb5"), Code = "Consultant", Name = "Tư vấn (thiết kế/BIM)", IsActive = true },
+                new OrganizationType { Id = new Guid("ae2fd257-cca8-4bb4-8f90-c0c45100702b"), Code = "MainContractor", Name = "Nhà thầu chính", IsActive = true },
+                new OrganizationType { Id = new Guid("8c0dcb7d-87fe-413e-b8d6-83eb91171cbe"), Code = "Subcontractor", Name = "Nhà thầu phụ", IsActive = true },
+                new OrganizationType { Id = new Guid("3fe93ed9-2e6a-47a6-90cf-6e5aac24c645"), Code = "Supplier", Name = "Nhà cung cấp", IsActive = true },
+                new OrganizationType { Id = new Guid("e48c6618-c877-46bf-9d6d-7d9fb92a50e9"), Code = "FacilityManagement", Name = "Đơn vị vận hành", IsActive = true }
             );
 
             // Cascade Restrict cho các cây tự tham chiếu — tránh "multiple cascade paths"
@@ -104,16 +105,9 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(f => f.ParentFolderId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            // Nhóm sở hữu "ô" thư mục (WIP/Shared/... của 1 bên tham gia).
-            // Restrict: xóa Group không kéo theo xóa cây thư mục của bên đó.
-            modelBuilder.Entity<Folder>()
-                .HasOne(f => f.OwnerGroup)
-                .WithMany()
-                .HasForeignKey(f => f.OwnerGroupId)
-                .OnDelete(DeleteBehavior.Restrict);
 
             // ACL thư mục: xóa Folder -> xóa các dòng phân quyền của nó.
-            // Group/Organization được tham chiếu Restrict để tránh nhiều đường cascade.
+            // Group được tham chiếu Restrict để tránh nhiều đường cascade.
             modelBuilder.Entity<FolderPermission>()
                 .HasOne(p => p.Folder)
                 .WithMany(f => f.Permissions)
@@ -121,15 +115,23 @@ namespace Infrastructure.DbContexts
                 .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<FolderPermission>()
-                .HasOne(p => p.Group)
+                .HasOne(fp => fp.ProjectParticipant)
                 .WithMany()
-                .HasForeignKey(p => p.GroupId)
+                .HasForeignKey(fp => fp.ProjectParticipantId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            modelBuilder.Entity<FolderPermission>()
-                .HasOne(p => p.Organization)
+            // ACL thư mục: xóa File -> xóa các dòng phân quyền của nó.
+            // Group được tham chiếu Restrict để tránh nhiều đường cascade.
+            modelBuilder.Entity<FilePermission>()
+                .HasOne(fp => fp.FileItem)
+                .WithMany(f => f.Permissions)
+                .HasForeignKey(fp => fp.FileItemId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<FilePermission>()
+                .HasOne(fp => fp.ProjectParticipant)
                 .WithMany()
-                .HasForeignKey(p => p.OrganizationId)
+                .HasForeignKey(fp => fp.ProjectParticipantId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<Submittal>()
