@@ -10,7 +10,10 @@ namespace Domain.Entities
         public GroupMemberRole Role { get; set; }   // Leader hoặc Member trong group này
         public DateTime? JoinedAt { get; set; }
 
+        public GroupMemberStatus Status { get; set; }
+
         public Group Group { get; set; } = null!;
         public Account Account { get; set; } = null!;
+
     }
 }

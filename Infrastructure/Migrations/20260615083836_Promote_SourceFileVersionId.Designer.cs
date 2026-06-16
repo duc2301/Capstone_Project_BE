@@ -3,6 +3,7 @@ using System;
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    partial class CDESystemDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260615083836_Promote_SourceFileVersionId")]
+    partial class Promote_SourceFileVersionId
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -484,48 +487,6 @@ namespace Infrastructure.Migrations
                     b.ToTable("FileNotes");
                 });
 
-            modelBuilder.Entity("Domain.Entities.FilePermission", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("CanApprove")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("CanDownload")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("CanEdit")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("CanUpdate")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("CanVerify")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("CanView")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("FileItemId")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("InheritFromParent")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid?>("ProjectParticipantId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FileItemId");
-
-                    b.HasIndex("ProjectParticipantId");
-
-                    b.ToTable("FilePermissions");
-                });
-
             modelBuilder.Entity("Domain.Entities.FileVersion", b =>
                 {
                     b.Property<Guid>("Id")
@@ -595,6 +556,12 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("OwnerGroupId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("OwnerOrganizationId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid?>("ParentFolderId")
                         .HasColumnType("uuid");
 
@@ -605,6 +572,8 @@ namespace Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OwnerGroupId");
 
                     b.HasIndex("ParentFolderId");
 
@@ -640,17 +609,22 @@ namespace Infrastructure.Migrations
                     b.Property<Guid>("FolderId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("uuid");
+
                     b.Property<bool>("InheritFromParent")
                         .HasColumnType("boolean");
 
-                    b.Property<Guid?>("ProjectParticipantId")
+                    b.Property<Guid?>("OrganizationId")
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
                     b.HasIndex("FolderId");
 
-                    b.HasIndex("ProjectParticipantId");
+                    b.HasIndex("GroupId");
+
+                    b.HasIndex("OrganizationId");
 
                     b.ToTable("FolderPermissions");
                 });
@@ -1636,24 +1610,6 @@ namespace Infrastructure.Migrations
                     b.Navigation("FileVersion");
                 });
 
-            modelBuilder.Entity("Domain.Entities.FilePermission", b =>
-                {
-                    b.HasOne("Domain.Entities.FileItem", "FileItem")
-                        .WithMany("Permissions")
-                        .HasForeignKey("FileItemId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Domain.Entities.ProjectParticipant", "ProjectParticipant")
-                        .WithMany()
-                        .HasForeignKey("ProjectParticipantId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("FileItem");
-
-                    b.Navigation("ProjectParticipant");
-                });
-
             modelBuilder.Entity("Domain.Entities.FileVersion", b =>
                 {
                     b.HasOne("Domain.Entities.FileItem", "FileItem")
@@ -1674,6 +1630,11 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Domain.Entities.Folder", b =>
                 {
+                    b.HasOne("Domain.Entities.Group", "OwnerGroup")
+                        .WithMany()
+                        .HasForeignKey("OwnerGroupId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Domain.Entities.Folder", "ParentFolder")
                         .WithMany("ChildFolders")
                         .HasForeignKey("ParentFolderId")
@@ -1684,6 +1645,8 @@ namespace Infrastructure.Migrations
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("OwnerGroup");
 
                     b.Navigation("ParentFolder");
 
@@ -1698,14 +1661,21 @@ namespace Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Domain.Entities.ProjectParticipant", "ProjectParticipant")
+                    b.HasOne("Domain.Entities.Group", "Group")
                         .WithMany()
-                        .HasForeignKey("ProjectParticipantId")
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Folder");
 
-                    b.Navigation("ProjectParticipant");
+                    b.Navigation("Group");
+
+                    b.Navigation("Organization");
                 });
 
             modelBuilder.Entity("Domain.Entities.Group", b =>
@@ -2043,8 +2013,6 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Domain.Entities.FileItem", b =>
                 {
-                    b.Navigation("Permissions");
-
                     b.Navigation("Versions");
                 });
 

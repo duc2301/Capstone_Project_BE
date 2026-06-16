@@ -17,14 +17,14 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUser;
         private readonly IFolderPermissionService _permission;
-        private readonly ILocalFileStorageService _storage;
+        private readonly IFileStorageService _storage;
         private readonly IMapper _mapper;
 
         public FileUploadService(
             IUnitOfWork unitOfWork,
             ICurrentUserService currentUser,
             IFolderPermissionService permission,
-            ILocalFileStorageService storage,
+            IFileStorageService storage,
             IMapper mapper)
         {
             _unitOfWork = unitOfWork;
@@ -172,7 +172,7 @@ namespace Application.Services
             var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
 
-            var stream = _storage.OpenRead(version.StoragePath);
+            var stream = await _storage.OpenReadAsync(version.StoragePath, ct);
             var downloadName = $"{fileItem.Name}.{version.Format}";
             return new DownloadFileResult(stream, downloadName, _storage.GetContentType(version.Format));
         }
