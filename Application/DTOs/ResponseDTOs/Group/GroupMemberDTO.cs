@@ -9,6 +9,7 @@ namespace Application.DTOs.ResponseDTOs.Group
         public string UserName { get; set; } = null!;
         public string? Email { get; set; }
         public GroupMemberRole Role { get; set; }
+        public GroupMemberStatus Status { get; set; }
         public DateTime? JoinedAt { get; set; }
     }
 }
