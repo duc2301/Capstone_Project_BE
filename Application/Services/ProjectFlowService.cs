@@ -6,6 +6,7 @@ using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using Domain.Entities;
 using Domain.Enum.Account;
+using Domain.Enum.Project;
 
 namespace Application.Services
 {
@@ -90,22 +91,39 @@ namespace Application.Services
             var now = DateTime.UtcNow;
             var created = new List<ProjectParticipant>(dto.Participants.Count);
 
+            var existingParticipants = (await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync())
+                .Where(pp => pp.ProjectId == projectId)
+                .ToList();
+
             for (int i = 0; i < dto.Participants.Count; i++)
             {
                 var p = dto.Participants[i];
                 if (p.GroupId == Guid.Empty)
                     throw new ApiExceptionResponse($"Participants[{i}]: GroupId is required.", 400);
 
-                var entity = new ProjectParticipant
+                var existing = existingParticipants.FirstOrDefault(pp => pp.GroupId == p.GroupId);
+                if (existing != null)
                 {
-                    Id = Guid.NewGuid(),
-                    ProjectId = projectId,
-                    GroupId = p.GroupId,
-                    Role = p.Role,
-                    JoinedAt = now
-                };
-                await _unitOfWork.Repository<ProjectParticipant>().CreateAsync(entity);
-                created.Add(entity);
+                    existing.Status = ProjectParticipantStatus.Active;
+                    existing.Role = p.Role;
+                    existing.JoinedAt = now;
+                    created.Add(existing);
+                }
+                else
+                {
+                    var entity = new ProjectParticipant
+                    {
+                        Id = Guid.NewGuid(),
+                        ProjectId = projectId,
+                        GroupId = p.GroupId,
+                        Role = p.Role,
+                        Status = ProjectParticipantStatus.Active,
+                        JoinedAt = now
+                    };
+                    await _unitOfWork.Repository<ProjectParticipant>().CreateAsync(entity);
+                    existingParticipants.Add(entity);
+                    created.Add(entity);
+                }
             }
 
             await _unitOfWork.CommitAsync();
@@ -128,7 +146,7 @@ namespace Application.Services
                 .ToHashSet();
 
             var participantProjectIds = (await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync())
-                .Where(pp => myGroupIds.Contains(pp.GroupId))
+                .Where(pp => myGroupIds.Contains(pp.GroupId) && pp.Status == ProjectParticipantStatus.Active)
                 .Select(pp => pp.ProjectId)
                 .ToHashSet();
 
@@ -149,6 +167,22 @@ namespace Application.Services
                 .ToList();
 
             return participants.Select(_mapper.Map<ParticipantResponseDTO>).ToList();
+        }
+
+        public async Task<ParticipantResponseDTO> UpdateParticipantStatusAsync(
+            Guid projectId, Guid groupId, UpdateParticipantStatusDTO dto)
+        {
+            _ = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId)
+                ?? throw new ApiExceptionResponse("Project not found.", 404);
+
+            var participant = (await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync())
+                .FirstOrDefault(p => p.ProjectId == projectId && p.GroupId == groupId)
+                ?? throw new ApiExceptionResponse("Group is not a participant of this project.", 404);
+
+            participant.Status = dto.Status;
+            await _unitOfWork.CommitAsync();
+
+            return _mapper.Map<ParticipantResponseDTO>(participant);
         }
     }
 }

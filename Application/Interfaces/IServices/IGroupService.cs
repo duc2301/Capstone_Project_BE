@@ -10,5 +10,7 @@ namespace Application.Interfaces.IServices
     {
         // Đổi vai trò thành viên (Role=Leader => chuyển trưởng nhóm).
         Task<GroupResponseDTO> ChangeMemberRoleAsync(Guid groupId, Guid accountId, GroupMemberRole newRole);
+
+        Task<GroupResponseDTO> ChangeMemberStatusAsync(Guid groupId, Guid accountId, GroupMemberStatus newStatus);
     }
 }

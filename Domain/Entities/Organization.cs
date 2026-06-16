@@ -18,7 +18,6 @@ namespace Domain.Entities
         public DateTime? UpdatedAt { get; set; }
 
         public OrganizationType OrganizationType { get; set; } = null!;
-        public ICollection<ProjectParticipant> ProjectParticipations { get; set; } = new List<ProjectParticipant>();
         public ICollection<PackageAssignment> PackageAssignments { get; set; } = new List<PackageAssignment>();
     }
 }

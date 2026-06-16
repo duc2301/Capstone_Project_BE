@@ -47,5 +47,12 @@ namespace Capstone_Project.Controllers
             var result = await _service.ChangeMemberRoleAsync(groupId, accountId, dto.Role);
             return Ok(ApiResponse.Success("Member role updated", result));
         }
+
+        [HttpPut("{groupId:guid}/members/{accountId:guid}/status")]
+        public async Task<IActionResult> ChangeMemberStatus(Guid groupId, Guid accountId, [FromBody] ChangeMemberStatusDTO dto)
+        {
+            var result = await _service.ChangeMemberStatusAsync(groupId, accountId, dto.Status);
+            return Ok(ApiResponse.Success("Member status updated", result));
+        }
     }
 }

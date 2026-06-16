@@ -48,6 +48,15 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("Participants retrieved", result));
         }
 
+        [HttpPut("{id:guid}/participants/{groupId:guid}/status")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> UpdateParticipantStatus(
+            Guid id, Guid groupId, [FromBody] UpdateParticipantStatusDTO dto)
+        {
+            var result = await _projectFlow.UpdateParticipantStatusAsync(id, groupId, dto);
+            return Ok(ApiResponse.Success("Participant status updated", result));
+        }
+
         [HttpPost]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Create([FromBody] CreateProjectDTO dto)
