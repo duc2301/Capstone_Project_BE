@@ -12,8 +12,6 @@ namespace Domain.Entities
         public Guid? ParentFolderId { get; set; }
         public string Name { get; set; } = null!;
         public CdeArea Area { get; set; }
-        public Guid? OwnerOrganizationId { get; set; }   // tổ chức sở hữu thư mục (suy ra từ Group)
-        public Guid? OwnerGroupId { get; set; }          // nhóm/bên tham gia sở hữu "ô" thư mục này
         public bool IsTemplate { get; set; }
         public Guid? CreatedByAccountId { get; set; }
         public DateTime? CreatedAt { get; set; }
@@ -21,7 +19,6 @@ namespace Domain.Entities
 
         public Project Project { get; set; } = null!;
         public Folder? ParentFolder { get; set; }
-        public Group? OwnerGroup { get; set; }
         public ICollection<Folder> ChildFolders { get; set; } = new List<Folder>();
         public ICollection<FileItem> FileItems { get; set; } = new List<FileItem>();
         public ICollection<FolderPermission> Permissions { get; set; } = new List<FolderPermission>();

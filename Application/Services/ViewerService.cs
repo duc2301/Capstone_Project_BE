@@ -19,7 +19,7 @@ namespace Application.Services
         private readonly string _clientSecret;
         private readonly string _bucketKey;
 
-        private const string ViewerScope = "viewer:read";
+        private const string ViewerScope = "viewables:read";
         private const string InternalScope = "data:read data:write data:create bucket:create bucket:read";
 
         public ViewerService(HttpClient http, IConfiguration config, IMemoryCache cache)
