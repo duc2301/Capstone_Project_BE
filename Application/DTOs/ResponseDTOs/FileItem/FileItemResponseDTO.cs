@@ -8,6 +8,7 @@ namespace Application.DTOs.ResponseDTOs.FileItem
         public Guid FolderId { get; set; }
         public string Name { get; set; } = null!;
         public FileType FileType { get; set; }
+        public FileItemStatus Status { get; set; }
         public Guid? CurrentVersionId { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }

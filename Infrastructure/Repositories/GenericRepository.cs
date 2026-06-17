@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Application.Interfaces.IRepositories;
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
@@ -33,6 +34,11 @@ namespace Infrastructure.Repositories
         public async Task<IEnumerable<T>> GetAllAsync()
         {
             return await _context.Set<T>().ToListAsync();
+        }
+
+        public async Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate)
+        {
+            return await _context.Set<T>().Where(predicate).ToListAsync();
         }
 
         public async Task<T?> GetByIdAsync(Guid? id)

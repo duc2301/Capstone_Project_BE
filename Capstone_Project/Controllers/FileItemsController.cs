@@ -13,11 +13,13 @@ namespace Capstone_Project.Controllers
     {
         private readonly IFileItemService _service;
         private readonly IFileUploadService _upload;
+        private readonly IApprovalService _approval;
 
-        public FileItemsController(IFileItemService service, IFileUploadService upload)
+        public FileItemsController(IFileItemService service, IFileUploadService upload, IApprovalService approval)
         {
             _service = service;
             _upload = upload;
+            _approval = approval;
         }
 
         // Luồng tải file lên (multipart/form-data): file + FolderId + FileType + (Name tùy chọn).
@@ -39,6 +41,16 @@ namespace Capstone_Project.Controllers
             var dl = await _upload.OpenDownloadAsync(id, ct);
             return File(dl.Content, dl.ContentType, dl.FileName);
         }
+
+        /// <summary>
+        /// Gửi file CDE để chờ Team Leader phê duyệt.
+        /// </summary>
+        /// <remarks>
+        /// Chỉ member active trong team/project của file mới được gửi duyệt.
+        /// </remarks>
+        [HttpPost("{id:guid}/submit-approval")]
+        public async Task<IActionResult> SubmitApproval(Guid id)
+            => Ok(ApiResponse.Success("File submitted for approval", await _approval.SubmitAsync(id)));
 
         [HttpGet]
         public async Task<IActionResult> GetAll()
