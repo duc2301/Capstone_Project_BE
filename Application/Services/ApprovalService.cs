@@ -7,6 +7,7 @@ using Domain.Entities;
 using Domain.Enum.File;
 using Domain.Enum.Group;
 using Domain.Enum.Project;
+using Microsoft.Extensions.Logging;
 
 namespace Application.Services
 {
@@ -24,11 +25,16 @@ namespace Application.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUser;
+        private readonly ILogger<ApprovalService> _logger;
 
-        public ApprovalService(IUnitOfWork unitOfWork, ICurrentUserService currentUser)
+        public ApprovalService(
+            IUnitOfWork unitOfWork,
+            ICurrentUserService currentUser,
+            ILogger<ApprovalService> logger)
         {
             _unitOfWork = unitOfWork;
             _currentUser = currentUser;
+            _logger = logger;
         }
 
         #region API chính
@@ -43,8 +49,9 @@ namespace Application.Services
             await RequireGroupMemberAsync(actor, teamGroupIds);
 
             // 2. Không cho tạo thêm request nếu file đã có request pending.
-            var hasPendingRequest = (await _unitOfWork.Repository<ApprovalRequest>().GetAllAsync())
-                .Any(a => a.FileItemId == fileItem.Id && a.Status == ApprovalRequestStatus.Pending);
+            var hasPendingRequest = (await _unitOfWork.Repository<ApprovalRequest>().FindAsync(
+                    a => a.FileItemId == fileItem.Id && a.Status == ApprovalRequestStatus.Pending))
+                .Any();
             if (hasPendingRequest || fileItem.Status == FileItemStatus.PendingApproval)
                 throw new ApiExceptionResponse("File is already pending approval.", 409);
 
@@ -65,7 +72,7 @@ namespace Application.Services
             await _unitOfWork.Repository<ApprovalRequest>().CreateAsync(request);
             await _unitOfWork.CommitAsync();
 
-            return await BuildResponseAsync(request);
+            return await BuildResponseAsync(request, fileItem);
         }
 
         public async Task<IEnumerable<ApprovalRequestResponseDTO>> GetAllAsync()
@@ -79,8 +86,8 @@ namespace Application.Services
 
         public async Task<IEnumerable<ApprovalRequestResponseDTO>> GetPendingAsync()
         {
-            var pendingRequests = (await _unitOfWork.Repository<ApprovalRequest>().GetAllAsync())
-                .Where(a => a.Status == ApprovalRequestStatus.Pending)
+            var pendingRequests = (await _unitOfWork.Repository<ApprovalRequest>().FindAsync(
+                    a => a.Status == ApprovalRequestStatus.Pending))
                 .OrderByDescending(a => a.CreatedAt)
                 .ToList();
 
@@ -177,20 +184,22 @@ namespace Application.Services
 
         private async Task RequireGroupMemberAsync(Guid accountId, IReadOnlyCollection<Guid> groupIds)
         {
-            var isMember = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
-                .Any(m => groupIds.Contains(m.GroupId)
-                          && m.AccountId == accountId
-                          && m.Status == GroupMemberStatus.Active);
+            var isMember = (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                    m => groupIds.Contains(m.GroupId)
+                         && m.AccountId == accountId
+                         && m.Status == GroupMemberStatus.Active))
+                .Any();
             if (!isMember)
                 throw new ApiExceptionResponse("Only members of the file team can submit approval.", 403);
         }
 
         private async Task<bool> IsGroupLeaderAsync(Guid accountId, IReadOnlyCollection<Guid> groupIds)
-            => (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
-                .Any(m => groupIds.Contains(m.GroupId)
-                          && m.AccountId == accountId
-                          && m.Role == GroupMemberRole.Leader
-                          && m.Status == GroupMemberStatus.Active);
+            => (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                    m => groupIds.Contains(m.GroupId)
+                         && m.AccountId == accountId
+                         && m.Role == GroupMemberRole.Leader
+                         && m.Status == GroupMemberStatus.Active))
+                .Any();
 
         private async Task<bool> CanViewRequestAsync(Guid actor, ApprovalRequest request, FileItem fileItem)
         {
@@ -212,25 +221,27 @@ namespace Application.Services
             var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
                 ?? throw new ApiExceptionResponse("File folder not found.", 404);
 
-            var activeParticipants = (await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync())
-                .Where(p => p.ProjectId == folder.ProjectId && p.Status == ProjectParticipantStatus.Active)
+            var activeParticipants = (await _unitOfWork.Repository<ProjectParticipant>().FindAsync(
+                    p => p.ProjectId == folder.ProjectId && p.Status == ProjectParticipantStatus.Active))
                 .ToDictionary(p => p.Id, p => p.GroupId);
             if (activeParticipants.Count == 0)
                 throw new ApiExceptionResponse("File project has no active team.", 400);
 
             var teamGroupIds = new HashSet<Guid>();
 
-            var filePermissions = (await _unitOfWork.Repository<FilePermission>().GetAllAsync())
-                .Where(p => p.FileItemId == fileItem.Id
-                            && p.ProjectParticipantId.HasValue
-                            && (!requireApprovePermission || p.CanApprove));
+            var filePermissions = await _unitOfWork.Repository<FilePermission>().FindAsync(
+                p => p.FileItemId == fileItem.Id
+                     && p.ProjectParticipantId.HasValue
+                     && (!requireApprovePermission || p.CanApprove));
             foreach (var permission in filePermissions)
             {
                 if (activeParticipants.TryGetValue(permission.ProjectParticipantId!.Value, out var groupId))
                     teamGroupIds.Add(groupId);
             }
 
-            var folders = (await _unitOfWork.Repository<Folder>().GetAllAsync()).ToList();
+            var folders = (await _unitOfWork.Repository<Folder>().FindAsync(
+                    f => f.ProjectId == folder.ProjectId))
+                .ToList();
             var byId = folders.ToDictionary(f => f.Id);
 
             if (!byId.TryGetValue(fileItem.FolderId, out var current))
@@ -243,10 +254,10 @@ namespace Application.Services
                 current = parent;
             }
 
-            var folderPermissions = (await _unitOfWork.Repository<FolderPermission>().GetAllAsync())
-                .Where(p => folderIds.Contains(p.FolderId)
-                            && p.ProjectParticipantId.HasValue
-                            && (!requireApprovePermission || p.CanApprove));
+            var folderPermissions = await _unitOfWork.Repository<FolderPermission>().FindAsync(
+                p => folderIds.Contains(p.FolderId)
+                     && p.ProjectParticipantId.HasValue
+                     && (!requireApprovePermission || p.CanApprove));
             foreach (var permission in folderPermissions)
             {
                 if (activeParticipants.TryGetValue(permission.ProjectParticipantId!.Value, out var groupId))
@@ -267,12 +278,24 @@ namespace Application.Services
         {
             var actor = RequireActor();
             var result = new List<ApprovalRequestResponseDTO>();
+            var accounts = await GetAccountsByIdAsync();
 
             foreach (var request in requests)
             {
-                var fileItem = await GetFileItemAsync(request.FileItemId);
-                if (await CanViewRequestAsync(actor, request, fileItem))
-                    result.Add(await BuildResponseAsync(request, fileItem));
+                try
+                {
+                    var fileItem = await GetFileItemAsync(request.FileItemId);
+                    if (await CanViewRequestAsync(actor, request, fileItem))
+                        result.Add(BuildResponse(request, fileItem, accounts));
+                }
+                catch (ApiExceptionResponse ex) when (ex.StatusCode == 404)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Skipping approval request {ApprovalRequestId} because file item {FileItemId} was not found.",
+                        request.Id,
+                        request.FileItemId);
+                }
             }
 
             return result;
@@ -281,7 +304,15 @@ namespace Application.Services
         private async Task<ApprovalRequestResponseDTO> BuildResponseAsync(ApprovalRequest request, FileItem? fileItem = null)
         {
             fileItem ??= await GetFileItemAsync(request.FileItemId);
-            var accounts = (await _unitOfWork.Repository<Account>().GetAllAsync()).ToDictionary(a => a.Id);
+            var accounts = await GetAccountsByIdAsync();
+            return BuildResponse(request, fileItem, accounts);
+        }
+
+        private static ApprovalRequestResponseDTO BuildResponse(
+            ApprovalRequest request,
+            FileItem fileItem,
+            IReadOnlyDictionary<Guid, Account> accounts)
+        {
             accounts.TryGetValue(request.RequestedBy, out var requester);
             Account? approver = null;
             if (request.ApproverId.HasValue)
@@ -302,6 +333,9 @@ namespace Application.Services
                 ApprovedAt = request.ApprovedAt
             };
         }
+
+        private async Task<Dictionary<Guid, Account>> GetAccountsByIdAsync()
+            => (await _unitOfWork.Repository<Account>().GetAllAsync()).ToDictionary(a => a.Id);
 
         #endregion
     }
