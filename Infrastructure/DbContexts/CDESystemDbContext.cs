@@ -120,6 +120,18 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(fp => fp.ProjectParticipantId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            modelBuilder.Entity<FolderPermission>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+
+                entity.HasIndex(x => new
+                {
+                    x.FolderId,
+                    x.ProjectParticipantId
+                })
+                .IsUnique();
+            });
+
             // ACL thư mục: xóa File -> xóa các dòng phân quyền của nó.
             // Group được tham chiếu Restrict để tránh nhiều đường cascade.
             modelBuilder.Entity<FilePermission>()
@@ -133,6 +145,18 @@ namespace Infrastructure.DbContexts
                 .WithMany()
                 .HasForeignKey(fp => fp.ProjectParticipantId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<FilePermission>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+
+                entity.HasIndex(x => new
+                {
+                    x.FileItemId,
+                    x.ProjectParticipantId
+                })
+                .IsUnique();
+            });
 
             modelBuilder.Entity<Submittal>()
                 .HasOne(s => s.ParentSubmittal)

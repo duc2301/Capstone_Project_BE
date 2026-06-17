@@ -42,6 +42,7 @@ using Application.DTOs.ResponseDTOs.Submittal;
 using Application.DTOs.ResponseDTOs.WorkTask;
 using AutoMapper;
 using Domain.Entities;
+using Application.DTOs.ResponseDTOs.Permission;
 
 namespace Application.Mapping
 {
@@ -105,13 +106,18 @@ namespace Application.Mapping
             CreateMap<ProjectParticipant, ParticipantResponseDTO>();
 
             // ACL thư mục: 1 dòng override -> response
-            CreateMap<FolderPermission, FolderPermissionResponseDTO>();
+            //CreateMap<FolderPermission, FolderPermissionResponseDTO>();
 
             // --- Module I/J/K/L/M ---
             
             Crud<Contract, CreateContractDTO, UpdateContractDTO, ContractResponseDTO>();
             Crud<ProjectModel, CreateProjectModelDTO, UpdateProjectModelDTO, ProjectModelResponseDTO>();
             Crud<ModelFile, CreateModelFileDTO, UpdateModelFileDTO, ModelFileResponseDTO>();
+
+            //FilePermission: 1 dòng override -> response
+            CreateMap<FilePermission, GroupFilePermissionResponseDTO>()
+                .ForMember(d => d.GroupParticipantName, o => o.MapFrom(s => s.ProjectParticipant != null ? s.ProjectParticipant.Group.Name : ""))
+                .ForMember(d => d.ProjectParticipantId, o => o.MapFrom(s => s.ProjectParticipantId));
         }
     }
 }

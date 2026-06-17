@@ -45,6 +45,7 @@ namespace Infrastructure.Configurations
             services.AddScoped<IContractService, ContractService>();
             services.AddScoped<IProjectModelService, ProjectModelService>();
             services.AddScoped<IModelFileService, ModelFileService>();
+            services.AddScoped<IFilePermissionService, FilePermissionService>();
 
 
             // Auth (giống ChemXLab) + refresh token
