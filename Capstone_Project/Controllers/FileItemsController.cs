@@ -42,6 +42,14 @@ namespace Capstone_Project.Controllers
             return File(dl.Content, dl.ContentType, dl.FileName);
         }
 
+        // Link xem/tải tạm thời (pre-signed). null nếu lưu local -> dùng /download. ?minutes= để chỉnh hạn.
+        [HttpGet("{id:guid}/url")]
+        public async Task<IActionResult> GetUrl(Guid id, CancellationToken ct, [FromQuery] int minutes = 60)
+        {
+            var url = await _upload.GetViewUrlAsync(id, minutes, ct);
+            return Ok(ApiResponse.Success("File URL", new { url }));
+        }
+
         /// <summary>
         /// Gửi file CDE để chờ Team Leader phê duyệt.
         /// </summary>

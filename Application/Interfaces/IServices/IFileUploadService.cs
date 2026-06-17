@@ -14,6 +14,9 @@ namespace Application.Interfaces.IServices
 
         // Tải file về: kiểm tra quyền Download rồi mở luồng đọc phiên bản hiện hành.
         Task<DownloadFileResult> OpenDownloadAsync(Guid fileItemId, CancellationToken ct = default);
+
+        // Link xem/tải tạm thời (pre-signed) cho phiên bản hiện hành. null nếu đang lưu local.
+        Task<string?> GetViewUrlAsync(Guid fileItemId, int minutes = 60, CancellationToken ct = default);
     }
 
     public record DownloadFileResult(Stream Content, string FileName, string ContentType);
