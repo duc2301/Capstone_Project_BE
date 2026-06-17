@@ -60,6 +60,16 @@ namespace Capstone_Project.Controllers
         public async Task<IActionResult> SubmitApproval(Guid id)
             => Ok(ApiResponse.Success("File submitted for approval", await _approval.SubmitAsync(id)));
 
+        // Danh sách file trong 1 folder (FE gọi khi mở/chọn folder).
+        [HttpGet("by-folder/{folderId:guid}")]
+        public async Task<IActionResult> GetByFolder(Guid folderId)
+            => Ok(ApiResponse.Success("Files retrieved", await _service.GetByFolderAsync(folderId)));
+
+        // Tất cả phiên bản của 1 file.
+        [HttpGet("{id:guid}/versions")]
+        public async Task<IActionResult> GetVersions(Guid id)
+            => Ok(ApiResponse.Success("Versions retrieved", await _service.GetVersionsAsync(id)));
+
         [HttpGet]
         public async Task<IActionResult> GetAll()
             => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAllAsync()));
