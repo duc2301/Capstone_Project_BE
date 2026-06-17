@@ -7,6 +7,9 @@ namespace Application.DTOs.ResponseDTOs.FileItem
         public FileVersionResponseDTO Version { get; set; } = null!;
         public bool IsNewVersion { get; set; }
 
+        // Link xem/tải tạm thời (pre-signed). null nếu provider không hỗ trợ (đĩa local -> dùng endpoint /download).
+        public string? Url { get; set; }
+
         // Nếu là phiên bản mới: bản cũ được chuyển sang folder Archived dưới FileItem này.
         public Guid? ArchivedFileItemId { get; set; }
     }

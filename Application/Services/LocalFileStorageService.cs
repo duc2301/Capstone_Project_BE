@@ -55,6 +55,10 @@ namespace Application.Services
             return Task.FromResult(stream);
         }
 
+        // Đĩa local không có URL công khai -> trả null; caller dùng endpoint /download để tải qua server.
+        public Task<string?> GetPresignedUrlAsync(string storagePath, int expiryMinutes = 60, CancellationToken ct = default)
+            => Task.FromResult<string?>(null);
+
         public string GetContentType(string fileNameOrExt)
         {
             var ext = NormalizeExt(Path.GetExtension(fileNameOrExt) is { Length: > 0 } e ? e : fileNameOrExt);

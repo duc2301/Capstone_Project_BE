@@ -5,6 +5,7 @@ using Amazon.S3.Model;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Application.Services
 {
@@ -17,16 +18,20 @@ namespace Application.Services
         private readonly string _accessKey;
         private readonly string _secretKey;
         private readonly string _bucket;
+        private readonly bool _debug;
+        private readonly ILogger<ViettelS3FileStorageService> _logger;
 
         private AmazonS3Client? _client;
 
-        public ViettelS3FileStorageService(IConfiguration config)
+        public ViettelS3FileStorageService(IConfiguration config, ILogger<ViettelS3FileStorageService> logger)
         {
-            _endpoint = config["FileStorage:S3:Endpoint"] ?? "https://vcos.cloudstorage.com.vn";
+            _logger = logger;
+            _endpoint = config["FileStorage:S3:Endpoint"] ?? string.Empty;
             _region = config["FileStorage:S3:Region"] ?? "us-east-1";
             _accessKey = config["FileStorage:S3:AccessKey"] ?? string.Empty;
             _secretKey = config["FileStorage:S3:SecretKey"] ?? string.Empty;
             _bucket = config["FileStorage:S3:Bucket"] ?? string.Empty;
+            _debug = string.Equals(config["FileStorage:S3:Debug"], "true", StringComparison.OrdinalIgnoreCase);
         }
 
         // Client dùng lại (service là Singleton). Tạo lazy để báo lỗi cấu hình rõ ràng lúc dùng.
@@ -41,7 +46,13 @@ namespace Application.Services
                     ServiceURL = _endpoint,
                     ForcePathStyle = true,           // Cloudian: dùng path-style, không virtual-host
                     AuthenticationRegion = _region,
+                    // AWSSDK v4 mặc định gắn checksum CRC32 vào request -> Cloudian/S3-compatible dễ trả 400.
+                    // WHEN_REQUIRED: chỉ tính/khớp checksum khi thao tác bắt buộc -> tương thích Cloudian.
+                    RequestChecksumCalculation = Amazon.Runtime.RequestChecksumCalculation.WHEN_REQUIRED,
+                    ResponseChecksumValidation = Amazon.Runtime.ResponseChecksumValidation.WHEN_REQUIRED,
                 };
+                if (_debug)
+                    cfg.HttpClientFactory = new S3DiagnosticHttpClientFactory(_logger);
                 _client = new AmazonS3Client(_accessKey, _secretKey, cfg);
                 return _client;
             }
@@ -74,9 +85,18 @@ namespace Application.Services
                 AutoCloseStream = false,
             };
 
-            var res = await Client.PutObjectAsync(req, ct);
-            if ((int)res.HttpStatusCode >= 300)
-                throw new ApiExceptionResponse($"Upload to Object Storage failed (HTTP {(int)res.HttpStatusCode}).", 502);
+            try
+            {
+                var res = await Client.PutObjectAsync(req, ct);
+                if ((int)res.HttpStatusCode >= 300)
+                    throw new ApiExceptionResponse($"Upload to Object Storage failed (HTTP {(int)res.HttpStatusCode}).", 502);
+            }
+            catch (AmazonS3Exception ex)
+            {
+                // Body lỗi đầy đủ (CanonicalRequest/StringToSign...) đã được S3DiagnosticsHandler log khi Debug=true.
+                throw new ApiExceptionResponse(
+                    $"S3 upload failed: {ex.ErrorCode} - {ex.Message} (HTTP {(int)ex.StatusCode}, RequestId {ex.RequestId})", 502);
+            }
 
             return new StoredFile(key, size, checksum);
         }
@@ -92,6 +112,18 @@ namespace Application.Services
             {
                 throw new ApiExceptionResponse("Stored object not found.", 404);
             }
+        }
+
+        public Task<string?> GetPresignedUrlAsync(string storagePath, int expiryMinutes = 60, CancellationToken ct = default)
+        {
+            var req = new GetPreSignedUrlRequest
+            {
+                BucketName = _bucket,
+                Key = storagePath,
+                Verb = HttpVerb.GET,
+                Expires = DateTime.UtcNow.AddMinutes(expiryMinutes <= 0 ? 60 : expiryMinutes),
+            };
+            return Task.FromResult<string?>(Client.GetPreSignedURL(req));
         }
 
         public string GetContentType(string fileNameOrExt)
@@ -122,9 +154,10 @@ namespace Application.Services
 
         private void EnsureConfigured()
         {
-            if (string.IsNullOrWhiteSpace(_accessKey) || string.IsNullOrWhiteSpace(_secretKey) || string.IsNullOrWhiteSpace(_bucket))
+            if (string.IsNullOrWhiteSpace(_endpoint) || string.IsNullOrWhiteSpace(_accessKey)
+                || string.IsNullOrWhiteSpace(_secretKey) || string.IsNullOrWhiteSpace(_bucket))
                 throw new ApiExceptionResponse(
-                    "Object Storage chưa được cấu hình: thiếu FileStorage:S3:AccessKey/SecretKey/Bucket.", 500);
+                    "Object Storage chưa được cấu hình: thiếu FileStorage:S3:Endpoint/AccessKey/SecretKey/Bucket.", 500);
         }
 
         private static string NormalizeExt(string ext)
