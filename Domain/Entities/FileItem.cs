@@ -11,6 +11,7 @@ namespace Domain.Entities
         public Guid FolderId { get; set; }
         public string Name { get; set; } = null!;
         public FileType FileType { get; set; }
+        public FileItemStatus Status { get; set; } = FileItemStatus.Draft;
         public Guid? CurrentVersionId { get; set; }
         public Guid? CreatedByAccountId { get; set; }
         public DateTime? CreatedAt { get; set; }
