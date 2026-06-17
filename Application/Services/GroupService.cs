@@ -75,8 +75,15 @@ namespace Application.Services
 
         public async Task<GroupResponseDTO> UpdateAsync(Guid id, UpdateGroupDTO dto)
         {
+            var actor = _currentUser.AccountId
+                ?? throw new ApiExceptionResponse("Authentication required.", 401);
+
             var entity = await _unitOfWork.Repository<Group>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Group with ID {id} not found.", 404);
+
+            await EnsureAdminOrProjectManagerAsync(id, actor,
+                "Chỉ Admin hoặc PM dự án mới được cập nhật thông tin nhóm.");
+
             _mapper.Map(dto, entity);
             if (entity is IAuditable a) a.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<Group>().Update(entity);
@@ -88,8 +95,15 @@ namespace Application.Services
 
         public async Task DeleteAsync(Guid id)
         {
+            var actor = _currentUser.AccountId
+                ?? throw new ApiExceptionResponse("Authentication required.", 401);
+
             var entity = await _unitOfWork.Repository<Group>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Group with ID {id} not found.", 404);
+
+            await EnsureAdminOrProjectManagerAsync(id, actor,
+                "Chỉ Admin hoặc PM dự án mới được xóa nhóm.");
+
             _unitOfWork.Repository<Group>().Delete(entity);
             await _unitOfWork.CommitAsync();
         }
@@ -149,11 +163,8 @@ namespace Application.Services
             var group = await _unitOfWork.Repository<Group>().GetByIdAsync(groupId)
                 ?? throw new ApiExceptionResponse($"Group with ID {groupId} not found.", 404);
 
-            var isAdmin = _currentUser.SystemRole == AccountRole.Admin.ToString();
-            var isManager = await IsProjectManagerOfGroupAsync(groupId, actor);
-            if (!isAdmin && !isManager)
-                throw new ApiExceptionResponse(
-                    "Chỉ Admin hoặc PM dự án mới được cập nhật trạng thái thành viên.", 403);
+            await EnsureAdminOrProjectManagerAsync(groupId, actor,
+                "Chỉ Admin hoặc PM dự án mới được cập nhật trạng thái thành viên.");
 
             var target = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
                 .FirstOrDefault(gm => gm.GroupId == groupId && gm.AccountId == accountId)
@@ -179,6 +190,13 @@ namespace Application.Services
 
             return await GetByIdAsync(groupId)
                 ?? throw new ApiExceptionResponse("Group not found after update.", 500);
+        }
+
+        private async Task EnsureAdminOrProjectManagerAsync(Guid groupId, Guid actor, string message)
+        {
+            if (_currentUser.SystemRole == AccountRole.Admin.ToString()) return;
+            if (await IsProjectManagerOfGroupAsync(groupId, actor)) return;
+            throw new ApiExceptionResponse(message, 403);
         }
 
         private async Task<bool> IsProjectManagerOfGroupAsync(Guid groupId, Guid actor)
