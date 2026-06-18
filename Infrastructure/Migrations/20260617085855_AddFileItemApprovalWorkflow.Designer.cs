@@ -3,6 +3,7 @@ using System;
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    partial class CDESystemDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260617085855_AddFileItemApprovalWorkflow")]
+    partial class AddFileItemApprovalWorkflow
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -560,10 +563,9 @@ namespace Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ProjectParticipantId");
+                    b.HasIndex("FileItemId");
 
-                    b.HasIndex("FileItemId", "ProjectParticipantId")
-                        .IsUnique();
+                    b.HasIndex("ProjectParticipantId");
 
                     b.ToTable("FilePermissions");
                 });
@@ -685,10 +687,9 @@ namespace Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ProjectParticipantId");
+                    b.HasIndex("FolderId");
 
-                    b.HasIndex("FolderId", "ProjectParticipantId")
-                        .IsUnique();
+                    b.HasIndex("ProjectParticipantId");
 
                     b.ToTable("FolderPermissions");
                 });

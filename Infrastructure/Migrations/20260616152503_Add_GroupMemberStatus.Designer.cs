@@ -3,6 +3,7 @@ using System;
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    partial class CDESystemDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260616152503_Add_GroupMemberStatus")]
+    partial class Add_GroupMemberStatus
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -55,44 +58,6 @@ namespace Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Accounts");
-                });
-
-            modelBuilder.Entity("Domain.Entities.ApprovalRequest", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("ApprovedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("ApproverId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("FileItemId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("RejectReason")
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("RequestedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ApproverId");
-
-                    b.HasIndex("FileItemId");
-
-                    b.HasIndex("RequestedBy");
-
-                    b.ToTable("ApprovalRequests");
                 });
 
             modelBuilder.Entity("Domain.Entities.AuditLog", b =>
@@ -480,9 +445,6 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -560,10 +522,9 @@ namespace Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ProjectParticipantId");
+                    b.HasIndex("FileItemId");
 
-                    b.HasIndex("FileItemId", "ProjectParticipantId")
-                        .IsUnique();
+                    b.HasIndex("ProjectParticipantId");
 
                     b.ToTable("FilePermissions");
                 });
@@ -685,10 +646,9 @@ namespace Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ProjectParticipantId");
+                    b.HasIndex("FolderId");
 
-                    b.HasIndex("FolderId", "ProjectParticipantId")
-                        .IsUnique();
+                    b.HasIndex("ProjectParticipantId");
 
                     b.ToTable("FolderPermissions");
                 });
@@ -1356,18 +1316,20 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime?>("JoinedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("OrganizationId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
 
                     b.Property<int>("Role")
                         .HasColumnType("integer");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
                     b.HasKey("Id");
 
                     b.HasIndex("GroupId");
+
+                    b.HasIndex("OrganizationId");
 
                     b.HasIndex("ProjectId");
 
@@ -1541,32 +1503,6 @@ namespace Infrastructure.Migrations
                     b.HasIndex("SubmittalId");
 
                     b.ToTable("SubmittalSteps");
-                });
-
-            modelBuilder.Entity("Domain.Entities.ApprovalRequest", b =>
-                {
-                    b.HasOne("Domain.Entities.Account", "Approver")
-                        .WithMany()
-                        .HasForeignKey("ApproverId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("Domain.Entities.FileItem", "FileItem")
-                        .WithMany()
-                        .HasForeignKey("FileItemId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Domain.Entities.Account", "Requester")
-                        .WithMany()
-                        .HasForeignKey("RequestedBy")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Approver");
-
-                    b.Navigation("FileItem");
-
-                    b.Navigation("Requester");
                 });
 
             modelBuilder.Entity("Domain.Entities.BillItem", b =>
@@ -1978,6 +1914,10 @@ namespace Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("Domain.Entities.Organization", null)
+                        .WithMany("ProjectParticipations")
+                        .HasForeignKey("OrganizationId");
+
                     b.HasOne("Domain.Entities.Project", "Project")
                         .WithMany()
                         .HasForeignKey("ProjectId")
@@ -2131,6 +2071,8 @@ namespace Infrastructure.Migrations
             modelBuilder.Entity("Domain.Entities.Organization", b =>
                 {
                     b.Navigation("PackageAssignments");
+
+                    b.Navigation("ProjectParticipations");
                 });
 
             modelBuilder.Entity("Domain.Entities.OrganizationType", b =>

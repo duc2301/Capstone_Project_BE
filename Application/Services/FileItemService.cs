@@ -6,18 +6,93 @@ using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using Domain.Common;
 using Domain.Entities;
+using Domain.Enum.Cde;
 
 namespace Application.Services
 {
     public class FileItemService : IFileItemService
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly ICurrentUserService _currentUser;
+        private readonly IFolderPermissionService _permission;
         private readonly IMapper _mapper;
 
-        public FileItemService(IUnitOfWork unitOfWork, IMapper mapper)
+        public FileItemService(
+            IUnitOfWork unitOfWork,
+            ICurrentUserService currentUser,
+            IFolderPermissionService permission,
+            IMapper mapper)
         {
             _unitOfWork = unitOfWork;
+            _currentUser = currentUser;
+            _permission = permission;
             _mapper = mapper;
+        }
+
+        // Danh sách file trong 1 folder (gộp version hiện hành + tác giả). Gate quyền View.
+        public async Task<IEnumerable<FileListItemDTO>> GetByFolderAsync(Guid folderId)
+        {
+            var actor = _currentUser.AccountId
+                ?? throw new ApiExceptionResponse("Authentication required.", 401);
+            _ = await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
+                ?? throw new ApiExceptionResponse("Folder not found.", 404);
+            await _permission.RequireAsync(actor, folderId, FolderAction.View);
+
+            var files = (await _unitOfWork.Repository<FileItem>().GetAllAsync())
+                .Where(f => f.FolderId == folderId)
+                .ToList();
+            if (files.Count == 0) return Enumerable.Empty<FileListItemDTO>();
+
+            var versionsById = (await _unitOfWork.Repository<FileVersion>().GetAllAsync())
+                .Where(v => files.Any(f => f.Id == v.FileItemId))
+                .ToDictionary(v => v.Id);
+            var accounts = (await _unitOfWork.Repository<Account>().GetAllAsync())
+                .ToDictionary(a => a.Id);
+
+            return files.Select(f =>
+            {
+                FileVersion? cur = f.CurrentVersionId.HasValue && versionsById.TryGetValue(f.CurrentVersionId.Value, out var v) ? v : null;
+                return new FileListItemDTO
+                {
+                    Id = f.Id,
+                    FolderId = f.FolderId,
+                    Name = f.Name,
+                    FileType = f.FileType,
+                    Status = f.Status,
+                    CurrentVersionId = f.CurrentVersionId,
+                    CurrentVersionNumber = cur?.VersionNumber ?? 0,
+                    SizeBytes = cur?.FileSizeBytes ?? 0,
+                    Format = cur?.Format,
+                    CreatedByAccountId = f.CreatedByAccountId,
+                    AuthorName = f.CreatedByAccountId.HasValue && accounts.TryGetValue(f.CreatedByAccountId.Value, out var a) ? a.UserName : null,
+                    CreatedAt = f.CreatedAt,
+                    UpdatedAt = f.UpdatedAt,
+                };
+            }).ToList();
+        }
+
+        // Tất cả phiên bản của 1 file (mới nhất trước). Gate quyền View trên folder của file.
+        public async Task<IEnumerable<FileVersionResponseDTO>> GetVersionsAsync(Guid fileItemId)
+        {
+            var actor = _currentUser.AccountId
+                ?? throw new ApiExceptionResponse("Authentication required.", 401);
+            var file = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+                ?? throw new ApiExceptionResponse("File not found.", 404);
+            await _permission.RequireAsync(actor, file.FolderId, FolderAction.View);
+
+            var accounts = (await _unitOfWork.Repository<Account>().GetAllAsync())
+                .ToDictionary(a => a.Id);
+
+            return (await _unitOfWork.Repository<FileVersion>().GetAllAsync())
+                .Where(v => v.FileItemId == fileItemId)
+                .OrderByDescending(v => v.VersionNumber)
+                .Select(v =>
+                {
+                    var dto = _mapper.Map<FileVersionResponseDTO>(v);
+                    dto.UploadedByName = v.UploadedByAccountId.HasValue && accounts.TryGetValue(v.UploadedByAccountId.Value, out var a) ? a.UserName : null;
+                    return dto;
+                })
+                .ToList();
         }
 
         public async Task<IEnumerable<FileItemResponseDTO>> GetAllAsync()

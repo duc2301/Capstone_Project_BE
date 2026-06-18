@@ -17,14 +17,14 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUser;
         private readonly IFolderPermissionService _permission;
-        private readonly ILocalFileStorageService _storage;
+        private readonly IFileStorageService _storage;
         private readonly IMapper _mapper;
 
         public FileUploadService(
             IUnitOfWork unitOfWork,
             ICurrentUserService currentUser,
             IFolderPermissionService permission,
-            ILocalFileStorageService storage,
+            IFileStorageService storage,
             IMapper mapper)
         {
             _unitOfWork = unitOfWork;
@@ -46,10 +46,10 @@ namespace Application.Services
             // ④ Consistency: chỉ được upload vào WIP/Shared (Published/Archived là khu xuất bản/lưu trữ).
             if (folder.Area is CdeArea.Published or CdeArea.Archived)
                 throw new ApiExceptionResponse(
-                    "Cannot upload directly into Published/Archived. Use WIP or Shared.", 400);
+                    "Không thể tải file trực tiếp lên thư mục Published/Archived. Tải lên WIP hoặc Shared thay thế.", 400);
             if (folder.ParentFolderId == null)
                 throw new ApiExceptionResponse(
-                    "Cannot upload into a root area folder. Upload into a group/sub-folder.", 400);
+                    "Không thể tải file trực tiếp lên thư mục gốc. Tạo thư mục con để upload thay thế.", 400);
 
             var name = string.IsNullOrWhiteSpace(dto.Name)
                 ? Path.GetFileNameWithoutExtension(originalFileName)
@@ -77,6 +77,7 @@ namespace Application.Services
 
             // ⑦ Lưu nội dung file (đĩa local).
             var stored = await _storage.SaveAsync(content, folder.ProjectId, folder.Id, ext, ct);
+            var url = await _storage.GetPresignedUrlAsync(stored.RelativePath, 60, ct);
             var now = DateTime.UtcNow;
             var format = ext.TrimStart('.').ToLowerInvariant();
 
@@ -103,7 +104,8 @@ namespace Application.Services
                 {
                     FileItem = _mapper.Map<FileItemResponseDTO>(fileItem),
                     Version = _mapper.Map<FileVersionResponseDTO>(v1),
-                    IsNewVersion = false
+                    IsNewVersion = false,
+                    Url = url
                 };
             }
 
@@ -152,7 +154,8 @@ namespace Application.Services
                 FileItem = _mapper.Map<FileItemResponseDTO>(existing),
                 Version = _mapper.Map<FileVersionResponseDTO>(newVersion),
                 IsNewVersion = true,
-                ArchivedFileItemId = archivedFileItemId
+                ArchivedFileItemId = archivedFileItemId,
+                Url = url
             };
         }
 
@@ -172,9 +175,28 @@ namespace Application.Services
             var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
 
-            var stream = _storage.OpenRead(version.StoragePath);
+            var stream = await _storage.OpenReadAsync(version.StoragePath, ct);
             var downloadName = $"{fileItem.Name}.{version.Format}";
             return new DownloadFileResult(stream, downloadName, _storage.GetContentType(version.Format));
+        }
+
+        public async Task<string?> GetViewUrlAsync(Guid fileItemId, int minutes = 60, CancellationToken ct = default)
+        {
+            var actor = _currentUser.AccountId
+                ?? throw new ApiExceptionResponse("Authentication required.", 401);
+
+            var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+                ?? throw new ApiExceptionResponse("File not found.", 404);
+
+            await _permission.RequireAsync(actor, fileItem.FolderId, FolderAction.Download);
+
+            if (!fileItem.CurrentVersionId.HasValue)
+                throw new ApiExceptionResponse("File has no content version.", 404);
+
+            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value)
+                ?? throw new ApiExceptionResponse("Current version not found.", 404);
+
+            return await _storage.GetPresignedUrlAsync(version.StoragePath, minutes, ct);
         }
 
         // ---------- nội bộ ----------
@@ -216,11 +238,11 @@ namespace Application.Services
         private static void ValidateName(string name)
         {
             if (string.IsNullOrWhiteSpace(name))
-                throw new ApiExceptionResponse("File name is required.", 400);
+                throw new ApiExceptionResponse("Tên file là bắt buộc.", 400);
             if (name.IndexOfAny(IllegalNameChars) >= 0)
-                throw new ApiExceptionResponse("File name contains invalid characters ( \\ / : * ? \" < > | ).", 400);
+                throw new ApiExceptionResponse("Tên file chứa ký tự không hợp lệ ( \\ / : * ? \" < > | ).", 400);
             if (name.Length > 200)
-                throw new ApiExceptionResponse("File name is too long (max 200).", 400);
+                throw new ApiExceptionResponse("Tên file quá dài (tối đa 200 ký tự).", 400);
         }
 
         private static void ValidateExtensionMatchesType(string ext, FileType type)

@@ -35,6 +35,7 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<FileVersion> FileVersions { get; set; }
         public virtual DbSet<FileNote> FileNotes { get; set; }
         public virtual DbSet<FilePermission> FilePermissions { get; set; }
+        public virtual DbSet<ApprovalRequest> ApprovalRequests { get; set; }
 
         // --- Module D: Phiếu yêu cầu ---
         public virtual DbSet<Submittal> Submittals { get; set; }
@@ -174,6 +175,24 @@ namespace Infrastructure.DbContexts
                 .HasOne(m => m.ReplyToMessage)
                 .WithMany(m => m.Replies)
                 .HasForeignKey(m => m.ReplyToMessageId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ApprovalRequest>()
+                .HasOne(a => a.FileItem)
+                .WithMany()
+                .HasForeignKey(a => a.FileItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ApprovalRequest>()
+                .HasOne(a => a.Requester)
+                .WithMany()
+                .HasForeignKey(a => a.RequestedBy)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ApprovalRequest>()
+                .HasOne(a => a.Approver)
+                .WithMany()
+                .HasForeignKey(a => a.ApproverId)
                 .OnDelete(DeleteBehavior.Restrict);
         }
     }

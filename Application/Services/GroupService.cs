@@ -6,17 +6,28 @@ using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using Domain.Common;
 using Domain.Entities;
+using Domain.Enum.Account;
+using Domain.Enum.Group;
+using Domain.Enum.Project;
 
 namespace Application.Services
 {
     public class GroupService : IGroupService
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly ICurrentUserService _currentUser;
+        private readonly INotificationService _notification;
         private readonly IMapper _mapper;
 
-        public GroupService(IUnitOfWork unitOfWork, IMapper mapper)
+        public GroupService(
+            IUnitOfWork unitOfWork,
+            ICurrentUserService currentUser,
+            INotificationService notification,
+            IMapper mapper)
         {
             _unitOfWork = unitOfWork;
+            _currentUser = currentUser;
+            _notification = notification;
             _mapper = mapper;
         }
 
@@ -64,8 +75,15 @@ namespace Application.Services
 
         public async Task<GroupResponseDTO> UpdateAsync(Guid id, UpdateGroupDTO dto)
         {
+            var actor = _currentUser.AccountId
+                ?? throw new ApiExceptionResponse("Authentication required.", 401);
+
             var entity = await _unitOfWork.Repository<Group>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Group with ID {id} not found.", 404);
+
+            await EnsureAdminOrProjectManagerAsync(id, actor,
+                "Chỉ Admin hoặc PM dự án mới được cập nhật thông tin nhóm.");
+
             _mapper.Map(dto, entity);
             if (entity is IAuditable a) a.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<Group>().Update(entity);
@@ -77,10 +95,120 @@ namespace Application.Services
 
         public async Task DeleteAsync(Guid id)
         {
+            var actor = _currentUser.AccountId
+                ?? throw new ApiExceptionResponse("Authentication required.", 401);
+
             var entity = await _unitOfWork.Repository<Group>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Group with ID {id} not found.", 404);
+
+            await EnsureAdminOrProjectManagerAsync(id, actor,
+                "Chỉ Admin hoặc PM dự án mới được xóa nhóm.");
+
             _unitOfWork.Repository<Group>().Delete(entity);
             await _unitOfWork.CommitAsync();
+        }
+
+        // Đổi vai trò 1 thành viên Active. Role=Leader => chuyển trưởng nhóm (hạ Leader cũ xuống Member).
+        public async Task<GroupResponseDTO> ChangeMemberRoleAsync(Guid groupId, Guid accountId, GroupMemberRole newRole)
+        {
+            var actor = _currentUser.AccountId
+                ?? throw new ApiExceptionResponse("Authentication required.", 401);
+
+            _ = await _unitOfWork.Repository<Group>().GetByIdAsync(groupId)
+                ?? throw new ApiExceptionResponse($"Group with ID {groupId} not found.", 404);
+
+            var members = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
+                .Where(gm => gm.GroupId == groupId)
+                .ToList();
+
+            var target = members.FirstOrDefault(gm => gm.AccountId == accountId && gm.Status == GroupMemberStatus.Active)
+                ?? throw new ApiExceptionResponse("Active member not found in this group.", 404);
+
+            var currentLeader = members.FirstOrDefault(
+                gm => gm.Role == GroupMemberRole.Leader && gm.Status == GroupMemberStatus.Active);
+            var isAdmin = _currentUser.SystemRole == AccountRole.Admin.ToString();
+            var isLeader = currentLeader != null && currentLeader.AccountId == actor;
+            var isManager = await IsProjectManagerOfGroupAsync(groupId, actor);
+            if (!isAdmin && !isLeader && !isManager)
+                throw new ApiExceptionResponse(
+                    "Chỉ Admin, PM dự án hoặc Trưởng nhóm hiện tại mới được đổi vai trò thành viên.", 403);
+
+            if (newRole == GroupMemberRole.Leader)
+            {
+                // Chuyển trưởng nhóm: hạ Leader hiện tại xuống Member rồi nâng target lên Leader.
+                if (target.Role != GroupMemberRole.Leader)
+                {
+                    if (currentLeader != null && currentLeader.AccountId != target.AccountId)
+                        currentLeader.Role = GroupMemberRole.Member;
+                    target.Role = GroupMemberRole.Leader;
+                }
+            }
+            else
+            {
+                target.Role = GroupMemberRole.Member;
+            }
+
+            await _unitOfWork.CommitAsync();
+
+            return await GetByIdAsync(groupId)
+                ?? throw new ApiExceptionResponse("Group not found after update.", 500);
+        }
+
+        public async Task<GroupResponseDTO> ChangeMemberStatusAsync(
+            Guid groupId, Guid accountId, GroupMemberStatus newStatus)
+        {
+            var actor = _currentUser.AccountId
+                ?? throw new ApiExceptionResponse("Authentication required.", 401);
+
+            var group = await _unitOfWork.Repository<Group>().GetByIdAsync(groupId)
+                ?? throw new ApiExceptionResponse($"Group with ID {groupId} not found.", 404);
+
+            await EnsureAdminOrProjectManagerAsync(groupId, actor,
+                "Chỉ Admin hoặc PM dự án mới được cập nhật trạng thái thành viên.");
+
+            var target = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
+                .FirstOrDefault(gm => gm.GroupId == groupId && gm.AccountId == accountId)
+                ?? throw new ApiExceptionResponse("Member not found in this group.", 404);
+
+            if (target.Status == newStatus)
+                throw new ApiExceptionResponse("Member already in the requested status.", 409);
+
+            var removed = newStatus == GroupMemberStatus.Left;
+            target.Status = newStatus;
+            await _unitOfWork.CommitAsync();
+
+            if (removed)
+            {
+                var actorName = _currentUser.UserName ?? "Quản trị viên";
+                await _notification.NotifyAsync(
+                    accountId,
+                    $"{actorName} đã đưa bạn ra khỏi nhóm \"{group.Name}\".",
+                    senderName: actorName,
+                    linkType: "Group",
+                    linkId: groupId.ToString());
+            }
+
+            return await GetByIdAsync(groupId)
+                ?? throw new ApiExceptionResponse("Group not found after update.", 500);
+        }
+
+        private async Task EnsureAdminOrProjectManagerAsync(Guid groupId, Guid actor, string message)
+        {
+            if (_currentUser.SystemRole == AccountRole.Admin.ToString()) return;
+            if (await IsProjectManagerOfGroupAsync(groupId, actor)) return;
+            throw new ApiExceptionResponse(message, 403);
+        }
+
+        private async Task<bool> IsProjectManagerOfGroupAsync(Guid groupId, Guid actor)
+        {
+            var projectIds = (await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync())
+                .Where(pp => pp.GroupId == groupId && pp.Status == ProjectParticipantStatus.Active)
+                .Select(pp => pp.ProjectId)
+                .ToHashSet();
+            if (projectIds.Count == 0) return false;
+
+            return (await _unitOfWork.Repository<Project>().GetAllAsync())
+                .Any(p => projectIds.Contains(p.Id) && p.ManagerAccountId == actor);
         }
 
         // Build DTO + join members + accounts (tra dictionary trong-mem, dataset CDE nhỏ -> chấp nhận).
@@ -96,13 +224,14 @@ namespace Application.Services
                 OrganizationId = group.OrganizationId,
                 CreatedAt = group.CreatedAt,
                 Members = allMembers
-                    .Where(m => m.GroupId == group.Id)
+                    .Where(m => m.GroupId == group.Id && m.Status != GroupMemberStatus.Left)
                     .Select(m => new GroupMemberDTO
                     {
                         AccountId = m.AccountId,
                         UserName = accountIndex.TryGetValue(m.AccountId, out var a) ? a.UserName : "",
                         Email = accountIndex.TryGetValue(m.AccountId, out var ae) ? ae.Email : null,
                         Role = m.Role,
+                        Status = m.Status,
                         JoinedAt = m.JoinedAt
                     })
                     .ToList()

@@ -6,6 +6,7 @@ using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using Domain.Entities;
+using Domain.Enum.Group;
 using Domain.Enum.Invitation;
 using Domain.Enum.Project;
 
@@ -52,11 +53,17 @@ namespace Application.Services
             _ = await _unitOfWork.Repository<Account>().GetByIdAsync(dto.InvitedAccountId)
                 ?? throw new ApiExceptionResponse("Invited account not found.", 404);
 
-            // Chống mời lại nếu đã là member group này
-            var alreadyMember = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
-                .Any(gm => gm.GroupId == dto.InvitedGroupId && gm.AccountId == dto.InvitedAccountId);
-            if (alreadyMember)
+            var groupMembers = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
+                .Where(gm => gm.GroupId == dto.InvitedGroupId)
+                .ToList();
+            var existingMember = groupMembers.FirstOrDefault(gm => gm.AccountId == dto.InvitedAccountId);
+            if (existingMember != null && existingMember.Status != GroupMemberStatus.Left)
                 throw new ApiExceptionResponse("Account is already a member of this group.", 409);
+
+            // Chặn sớm: không mời thêm Leader nếu nhóm đã có Leader đang hoạt động (Active).
+            if (dto.Role == GroupMemberRole.Leader
+                && groupMembers.Any(gm => gm.Role == GroupMemberRole.Leader && gm.Status == GroupMemberStatus.Active))
+                throw new ApiExceptionResponse("Nhóm đã có Trưởng nhóm (Leader). Không thể mời thêm Leader.", 409);
 
             // Chống mời trùng khi đang Pending
             var hasPending = (await _unitOfWork.Repository<ProjectInvitation>().GetAllAsync())
@@ -76,12 +83,15 @@ namespace Application.Services
             invitation.ExpiresAt = DateTime.UtcNow.AddDays(dto.ExpireDays > 0 ? dto.ExpireDays : 7);
 
             await _unitOfWork.Repository<ProjectInvitation>().CreateAsync(invitation);
+
             await _unitOfWork.CommitAsync();
 
+            var inviterName = _currentUser.UserName ?? "Một người dùng";
             await _notification.NotifyAsync(
                 dto.InvitedAccountId,
-                $"Bạn được mời vào nhóm \"{group.Name}\" của dự án \"{project.ProjectName}\"",
-                senderName: _currentUser.UserName ?? "System",
+                $"{inviterName} đã mời bạn vào nhóm \"{group.Name}\" với vai trò {RoleLabel(dto.Role)} " +
+                $"thuộc dự án \"{project.ProjectName}\".",
+                senderName: inviterName,
                 linkType: "ProjectInvitation",
                 linkId: invitation.Id.ToString());
 
@@ -101,11 +111,28 @@ namespace Application.Services
             var groupId = invitation.InvitedGroupId.Value;
             var projectId = invitation.ProjectId;
 
-            // 1) Tạo GroupMember nếu chưa có (idempotent)
-            var existsMember = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
-                .Any(gm => gm.GroupId == groupId && gm.AccountId == accountId);
+            var groupMembers = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
+                .Where(gm => gm.GroupId == groupId)
+                .ToList();
+            var member = groupMembers.FirstOrDefault(gm => gm.AccountId == accountId);
 
-            if (!existsMember)
+            // Chặn nhận vai trò Leader khi nhóm đã có Leader Active khác.
+            if (invitation.Role == GroupMemberRole.Leader
+                && groupMembers.Any(gm => gm.Role == GroupMemberRole.Leader
+                                       && gm.Status == GroupMemberStatus.Active
+                                       && gm.AccountId != accountId))
+            {
+                throw new ApiExceptionResponse(
+                    "Nhóm đã có Trưởng nhóm (Leader). Không thể gia nhập với vai trò Leader.", 409);
+            }
+
+            if (member != null)
+            {
+                member.Role = invitation.Role;
+                member.Status = GroupMemberStatus.Active;
+                member.JoinedAt = DateTime.UtcNow;
+            }
+            else
             {
                 await _unitOfWork.Repository<GroupMember>().CreateAsync(new GroupMember
                 {
@@ -113,15 +140,16 @@ namespace Application.Services
                     GroupId = groupId,
                     AccountId = accountId,
                     Role = invitation.Role,
+                    Status = GroupMemberStatus.Active,
                     JoinedAt = DateTime.UtcNow
                 });
             }
 
-            // 2) Auto-link Group vào Project (idempotent) — đỡ phải nhớ bước riêng
-            var existsParticipant = (await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync())
-                .Any(p => p.ProjectId == projectId && p.GroupId == groupId);
+            var participant = (await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync())
+                .FirstOrDefault(p => p.ProjectId == projectId && p.GroupId == groupId);
+            var isNewParticipant = participant == null;
 
-            if (!existsParticipant)
+            if (participant == null)
             {
                 await _unitOfWork.Repository<ProjectParticipant>().CreateAsync(new ProjectParticipant
                 {
@@ -129,8 +157,13 @@ namespace Application.Services
                     ProjectId = projectId,
                     GroupId = groupId,
                     Role = ProjectParticipantRole.Member,
+                    Status = ProjectParticipantStatus.Active,
                     JoinedAt = DateTime.UtcNow
                 });
+            }
+            else if (participant.Status != ProjectParticipantStatus.Active)
+            {
+                participant.Status = ProjectParticipantStatus.Active;
             }
 
             invitation.Status = InvitationStatus.Accepted;
@@ -139,15 +172,17 @@ namespace Application.Services
             await _unitOfWork.CommitAsync();
 
             // Group lần đầu vào dự án -> dựng "ô" thư mục CDE cho bên này (idempotent).
-            if (!existsParticipant)
+            if (isNewParticipant)
                 await _folderBootstrap.ScaffoldParticipantFoldersAsync(projectId, groupId);
 
-            // Báo lại cho PM đã mời
             if (invitation.InvitedByAccountId.HasValue)
             {
+                var group = await _unitOfWork.Repository<Group>().GetByIdAsync(groupId);
+                var project = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId);
                 await _notification.NotifyAsync(
                     invitation.InvitedByAccountId.Value,
-                    $"{_currentUser.UserName ?? "Người dùng"} đã chấp nhận lời mời vào nhóm.",
+                    $"{_currentUser.UserName ?? "Người dùng"} đã chấp nhận lời mời vào nhóm \"{group?.Name}\" " +
+                    $"(vai trò {RoleLabel(invitation.Role)}) của dự án \"{project?.ProjectName}\".",
                     senderName: _currentUser.UserName ?? "System",
                     linkType: "ProjectInvitation",
                     linkId: invitation.Id.ToString());
@@ -170,9 +205,14 @@ namespace Application.Services
 
             if (invitation.InvitedByAccountId.HasValue)
             {
+                var group = invitation.InvitedGroupId.HasValue
+                    ? await _unitOfWork.Repository<Group>().GetByIdAsync(invitation.InvitedGroupId.Value)
+                    : null;
+                var project = await _unitOfWork.Repository<Project>().GetByIdAsync(invitation.ProjectId);
                 await _notification.NotifyAsync(
                     invitation.InvitedByAccountId.Value,
-                    $"{_currentUser.UserName ?? "Người dùng"} đã từ chối lời mời vào nhóm.",
+                    $"{_currentUser.UserName ?? "Người dùng"} đã từ chối lời mời vào nhóm \"{group?.Name}\" " +
+                    $"của dự án \"{project?.ProjectName}\".",
                     senderName: _currentUser.UserName ?? "System",
                     linkType: "ProjectInvitation",
                     linkId: invitation.Id.ToString());
@@ -180,6 +220,9 @@ namespace Application.Services
 
             return _mapper.Map<InvitationResponseDTO>(invitation);
         }
+
+        private static string RoleLabel(GroupMemberRole role)
+            => role == GroupMemberRole.Leader ? "Trưởng nhóm" : "Thành viên";
 
         public async Task<IEnumerable<MyInvitationDTO>> GetMyPendingAsync()
         {

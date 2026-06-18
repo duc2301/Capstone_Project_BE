@@ -48,8 +48,17 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("Participants retrieved", result));
         }
 
+        [HttpPut("{id:guid}/participants/{groupId:guid}/status")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> UpdateParticipantStatus(
+            Guid id, Guid groupId, [FromBody] UpdateParticipantStatusDTO dto)
+        {
+            var result = await _projectFlow.UpdateParticipantStatusAsync(id, groupId, dto);
+            return Ok(ApiResponse.Success("Participant status updated", result));
+        }
+
         [HttpPost]
-        [Authorize]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Create([FromBody] CreateProjectDTO dto)
         {
             var result = await _projectService.CreateAsync(dto);
@@ -83,7 +92,7 @@ namespace Capstone_Project.Controllers
         }
 
         [HttpPut("{id:guid}")]
-        [Authorize]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateProjectDTO dto)
         {
             var result = await _projectService.UpdateAsync(id, dto);
@@ -91,7 +100,7 @@ namespace Capstone_Project.Controllers
         }
 
         [HttpDelete("{id:guid}")]
-        [Authorize]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Delete(Guid id)
         {
             await _projectService.DeleteAsync(id);

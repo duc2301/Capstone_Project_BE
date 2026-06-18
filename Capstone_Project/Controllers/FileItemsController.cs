@@ -13,11 +13,13 @@ namespace Capstone_Project.Controllers
     {
         private readonly IFileItemService _service;
         private readonly IFileUploadService _upload;
+        private readonly IApprovalService _approval;
 
-        public FileItemsController(IFileItemService service, IFileUploadService upload)
+        public FileItemsController(IFileItemService service, IFileUploadService upload, IApprovalService approval)
         {
             _service = service;
             _upload = upload;
+            _approval = approval;
         }
 
         // Luồng tải file lên (multipart/form-data): file + FolderId + FileType + (Name tùy chọn).
@@ -39,6 +41,34 @@ namespace Capstone_Project.Controllers
             var dl = await _upload.OpenDownloadAsync(id, ct);
             return File(dl.Content, dl.ContentType, dl.FileName);
         }
+
+        // Link xem/tải tạm thời (pre-signed). null nếu lưu local -> dùng /download. ?minutes= để chỉnh hạn.
+        [HttpGet("{id:guid}/url")]
+        public async Task<IActionResult> GetUrl(Guid id, CancellationToken ct, [FromQuery] int minutes = 60)
+        {
+            var url = await _upload.GetViewUrlAsync(id, minutes, ct);
+            return Ok(ApiResponse.Success("File URL", new { url }));
+        }
+
+        /// <summary>
+        /// Gửi file CDE để chờ Team Leader phê duyệt.
+        /// </summary>
+        /// <remarks>
+        /// Chỉ member active trong team/project của file mới được gửi duyệt.
+        /// </remarks>
+        [HttpPost("{id:guid}/submit-approval")]
+        public async Task<IActionResult> SubmitApproval(Guid id)
+            => Ok(ApiResponse.Success("File submitted for approval", await _approval.SubmitAsync(id)));
+
+        // Danh sách file trong 1 folder (FE gọi khi mở/chọn folder).
+        [HttpGet("by-folder/{folderId:guid}")]
+        public async Task<IActionResult> GetByFolder(Guid folderId)
+            => Ok(ApiResponse.Success("Files retrieved", await _service.GetByFolderAsync(folderId)));
+
+        // Tất cả phiên bản của 1 file.
+        [HttpGet("{id:guid}/versions")]
+        public async Task<IActionResult> GetVersions(Guid id)
+            => Ok(ApiResponse.Success("Versions retrieved", await _service.GetVersionsAsync(id)));
 
         [HttpGet]
         public async Task<IActionResult> GetAll()

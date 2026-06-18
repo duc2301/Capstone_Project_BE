@@ -11,6 +11,7 @@ namespace Application.DTOs.ResponseDTOs.FileItem
         public string? Checksum { get; set; }
         public bool IsHidden { get; set; }
         public Guid? UploadedByAccountId { get; set; }
+        public string? UploadedByName { get; set; }
         public DateTime? UploadedAt { get; set; }
     }
 }

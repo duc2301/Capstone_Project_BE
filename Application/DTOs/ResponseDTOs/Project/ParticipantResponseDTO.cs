@@ -8,6 +8,7 @@ namespace Application.DTOs.ResponseDTOs.Project
         public Guid ProjectId { get; set; }
         public Guid GroupId { get; set; }
         public ProjectParticipantRole Role { get; set; }
+        public ProjectParticipantStatus Status { get; set; }
         public DateTime? JoinedAt { get; set; }
     }
 }
