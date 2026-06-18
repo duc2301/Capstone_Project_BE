@@ -61,10 +61,27 @@ namespace Application.Services
             return _mapper.Map<IEnumerable<GroupFilePermissionResponseDTO>>(items);
         }
 
-        public async Task<IEnumerable<GroupFilePermissionResponseDTO>> UpdatePermissionBulk(Guid fileItemId)
+        public async Task<FilePermissionsViewModelDTO> GetDataForPermissionUIAsync(Guid fileItemId)
         {
-            var items = await _unitOfWork.FilePermissionRepository.GetPartipatedGroupFilePermissionsByFileItemIdAsync(fileItemId);
-            return _mapper.Map<IEnumerable<GroupFilePermissionResponseDTO>>(items);
+            var items = await _unitOfWork.FilePermissionRepository.GetActivePartipantsByFileItemIdAsync(fileItemId);
+
+            var activeGroupOfFile = _mapper.Map<IEnumerable<GroupFilePermissionResponseDTO>>(items.Values.ToList());
+
+            var allProjectParticipants = await _unitOfWork.FilePermissionRepository.GetAllParticipantsByFileItemIdAsync(fileItemId);
+
+            var availableGroups = allProjectParticipants.Where(pp => !items.ContainsKey(pp.ProjectParticipantId)).ToList();
+
+            return new FilePermissionsViewModelDTO
+            {
+                AvailableGroups = availableGroups,
+                SelectedPermissions = activeGroupOfFile.ToList()
+            };
+        }
+
+        public async Task<IEnumerable<FilePermissionResponseDTO>> GetActiveParticipantsByFileItemId(Guid fileItemId)
+        {
+            var items = await _unitOfWork.FilePermissionRepository.GetActivePartipantsByFileItemIdAsync(fileItemId);
+            return _mapper.Map<IEnumerable<FilePermissionResponseDTO>>(items.Values.ToList());
         }
 
         #endregion

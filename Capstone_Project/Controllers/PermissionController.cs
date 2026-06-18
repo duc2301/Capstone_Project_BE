@@ -15,11 +15,27 @@ namespace Capstone_Project.Controllers
             _filePermissionService = filePermissionService;
         }
 
+        // Hàm này dùng để lấy data để test, lấy hết tất cả data liên quan đến file permission, bao gồm cả group đã bị xóa khỏi permission list
         [HttpGet("{fileItemId}")]
         public async Task<IActionResult> GetParticipatedGroupWithFilePermissionWithFileItemId(Guid fileItemId)
         {
             var result = await _filePermissionService.GetGroupFilePermissionResponsesAsync(fileItemId);
             return Ok(ApiResponse.Success("Group with permission retrieved successfully", result));
+        }
+
+        //
+        [HttpGet("{fileItemId}/group-ui")]
+        public async Task<IActionResult> GetDataForPermissionUI(Guid fileItemId)
+        {
+            var result = await _filePermissionService.GetDataForPermissionUIAsync(fileItemId);
+            return Ok(ApiResponse.Success("Group with permission retrieved successfully", result));
+        }
+
+        [HttpGet("{fileItemId}/active-groups")]
+        public async Task<IActionResult> GetActiveParticipatedGroupByFileItemId(Guid fileItemId)
+        {
+            var result = await _filePermissionService.GetActiveParticipantsByFileItemId(fileItemId);
+            return Ok(ApiResponse.Success("Active groups retrieved successfully", result));
         }
 
         [HttpPost("add-group")]
