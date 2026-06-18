@@ -209,7 +209,6 @@ namespace Application.Services
             p.CanDownload = dto.CanDownload;
             p.CanVerify = dto.CanVerify;
             p.CanApprove = dto.CanApprove;
-            p.InheritFromParent = dto.InheritFromParent;
         }
 
         private async Task<UserContext> BuildContextAsync(Guid accountId, Guid projectId)
@@ -291,7 +290,7 @@ namespace Application.Services
             {
                 if (permsByFolder.TryGetValue(parent.Id, out var pRows))
                     foreach (var r in pRows)
-                        if (r.InheritFromParent && TargetsUser(r, ctx)) Merge(p, r);
+                        if (TargetsUser(r, ctx)) Merge(p, r);
                 current = parent;
             }
 

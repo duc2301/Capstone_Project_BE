@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Domain.Enum.Permission;
+using Domain.Enum.Project;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -17,7 +19,7 @@ namespace Domain.Entities
         public bool CanVerify { get; set; }     // Thẩm tra
         public bool CanApprove { get; set; }    // Duyệt
 
-        public bool InheritFromParent { get; set; }
+        public PermissionStatus Status { get; set; }
 
         public FileItem FileItem { get; set; } = null!;
         public ProjectParticipant? ProjectParticipant { get; set; }
