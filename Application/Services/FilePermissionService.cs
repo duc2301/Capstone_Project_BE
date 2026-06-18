@@ -52,5 +52,11 @@ namespace Application.Services
             var items = await _unitOfWork.FilePermissionRepository.GetPartipatedGroupFilePermissionsByFileItemIdAsync(fileItemId);
             return _mapper.Map<IEnumerable<GroupFilePermissionResponseDTO>>(items);
         }
+
+        public async Task<IEnumerable<GroupFilePermissionResponseDTO>> UpdatePermissionBulk(Guid fileItemId)
+        {
+            var items = await _unitOfWork.FilePermissionRepository.GetPartipatedGroupFilePermissionsByFileItemIdAsync(fileItemId);
+            return _mapper.Map<IEnumerable<GroupFilePermissionResponseDTO>>(items);
+        }
     }
 }

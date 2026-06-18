@@ -1,3 +1,5 @@
+using System.Linq.Expressions;
+
 namespace Application.Interfaces.IRepositories
 {
     public interface IGenericRepository<T> where T : class
@@ -8,5 +10,6 @@ namespace Application.Interfaces.IRepositories
         void Update(T entity);
         void Delete(T entity);
         void DeleteById(Guid id);
+        IQueryable<T> FindByCondition(Expression<Func<T, bool>> expression, bool trackChanges = false);
     }
 }

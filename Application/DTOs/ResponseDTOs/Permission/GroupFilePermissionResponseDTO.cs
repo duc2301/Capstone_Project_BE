@@ -4,8 +4,10 @@ using System.Text;
 
 namespace Application.DTOs.ResponseDTOs.Permission
 {
-    public class GroupFilePermissionResponseDTO
+    public class GroupFilePermissionResponseDTO : IResponseDto
     {
+        public Guid Id { get; set; }
+
         public Guid ProjectParticipantId { get; set; }
 
         public string GroupParticipantName { get; set; } = null!;
