@@ -8,5 +8,7 @@ namespace Application.Interfaces.IServices
         : IGenericService<FilePermission, CreateFilePermissionDTO, UpdateFilePermissionDTO, FilePermissionResponseDTO>
     {
         Task<IEnumerable<GroupFilePermissionResponseDTO>> GetGroupFilePermissionResponsesAsync(Guid fileItemId);
+
+        Task<IEnumerable<FilePermissionResponseDTO>> BulkUpdateFilePermissionsAsync(AddPermissionsBulkDTO dto);
     }
 }

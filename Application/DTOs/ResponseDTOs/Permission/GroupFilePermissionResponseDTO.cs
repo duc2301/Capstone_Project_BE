@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Domain.Enum.Permission;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -24,6 +25,6 @@ namespace Application.DTOs.ResponseDTOs.Permission
 
         public bool CanApprove { get; set; }
 
-        public bool InheritFromParent { get; set; }
+        public PermissionStatus Status { get; set; }
     }
 }

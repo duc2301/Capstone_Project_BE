@@ -12,5 +12,6 @@ namespace Application.Interfaces.IRepositories
         void Delete(T entity);
         void DeleteById(Guid id);
         IQueryable<T> FindByCondition(Expression<Func<T, bool>> expression, bool trackChanges = false);
+        Task CreateRangeAsync(IEnumerable<T> entities);
     }
 }

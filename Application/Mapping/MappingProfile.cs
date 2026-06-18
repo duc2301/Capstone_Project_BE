@@ -118,6 +118,10 @@ namespace Application.Mapping
             CreateMap<FilePermission, GroupFilePermissionResponseDTO>()
                 .ForMember(d => d.GroupParticipantName, o => o.MapFrom(s => s.ProjectParticipant != null ? s.ProjectParticipant.Group.Name : ""))
                 .ForMember(d => d.ProjectParticipantId, o => o.MapFrom(s => s.ProjectParticipantId));
+
+            CreateMap<FilePermission, FilePermissionResponseDTO>()
+                .ForMember(d => d.ProjectParticipantId, o => o.MapFrom(s => s.ProjectParticipantId))
+                .ForMember(d => d.GroupParticipantName, o => o.MapFrom(s => s.ProjectParticipant != null ? s.ProjectParticipant.Group.Name : ""));
         }
     }
 }

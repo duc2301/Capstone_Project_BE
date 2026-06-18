@@ -53,6 +53,11 @@ namespace Infrastructure.Repositories
             tracker.State = EntityState.Modified;
         }
 
+        public async Task CreateRangeAsync(IEnumerable<T> entities)
+        {
+            await _context.Set<T>().AddRangeAsync(entities);
+        }
+
         /// <summary>
         /// Checks if any entity exists in the database that matches the given predicate asynchronously. Predicate is a condition to filter entities.
         /// </summary>

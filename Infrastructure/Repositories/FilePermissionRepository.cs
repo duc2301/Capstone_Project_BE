@@ -46,6 +46,28 @@ namespace Infrastructure.Repositories
                 .Where(p => p.FileItemId == fileItemId)
                 .Include(p => p.ProjectParticipant)
                 .ThenInclude(pp => pp.Group)
+                .AsNoTracking()
+                .ToListAsync();
+        }
+
+        public async Task<Dictionary<Guid, FilePermission>> GetFilePermissionsByFileItemIdAsync(Guid fileItemId, List<Guid> participantIds)
+        {
+            var existingPermissions = await _context.FilePermissions
+                .Where(fp => fp.FileItemId == fileItemId
+                          && participantIds.Contains(fp.ProjectParticipantId!.Value))
+                .ToDictionaryAsync(fp => fp.ProjectParticipantId!.Value);
+
+            return existingPermissions;
+        }
+
+        public async Task<IEnumerable<FilePermission>> GetFilePermissionsByParticipantIdsAsync(Guid fileItemId, List<Guid> listFilePermissionId)
+        {
+            return await _context.FilePermissions
+                .Where(fp => fp.FileItemId == fileItemId
+                          && listFilePermissionId.Contains(fp.ProjectParticipantId!.Value))
+                .Include(fp => fp.ProjectParticipant)
+                .ThenInclude(fp => fp.Group)
+                .AsNoTracking()
                 .ToListAsync();
         }
     }
