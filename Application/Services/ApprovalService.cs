@@ -35,7 +35,7 @@ namespace Application.Services
         /// </summary>
         public async Task<ApprovalRequestResponseDTO> SubmitAsync(
             Guid fileItemId,
-            SubmitApprovalRequestDTO? dto,
+            SubmitApprovalRequestDTO dto,
             Guid actor)
         {
             var fileItem = await GetFileItemAsync(fileItemId);
@@ -59,7 +59,7 @@ namespace Application.Services
                 CreatedAt = now
             };
 
-            fileItem.RequiresSignature = dto?.RequiresSignature ?? false;
+            fileItem.RequiresSignature = dto.RequiresSignature;
             fileItem.IsSigned = false;
             fileItem.Status = FileItemStatus.PendingApproval;
             fileItem.UpdatedAt = now;

@@ -59,7 +59,7 @@ namespace Capstone_Project.Controllers
         /// Chỉ member active trong team/project của file mới được gửi duyệt.
         /// </remarks>
         [HttpPost("{id:guid}/submit-approval")]
-        public async Task<IActionResult> SubmitApproval(Guid id, [FromBody] SubmitApprovalRequestDTO? dto)
+        public async Task<IActionResult> SubmitApproval(Guid id, [FromBody] SubmitApprovalRequestDTO dto)
             => Ok(ApiResponse.Success("File submitted for approval", await _approval.SubmitAsync(id, dto, User.GetAccountId())));
 
         // Danh sách file trong 1 folder (FE gọi khi mở/chọn folder).
