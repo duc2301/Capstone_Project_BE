@@ -1,11 +1,14 @@
 using Application.DTOs.RequestDTOs.ContractPackage;
 using Application.DTOs.ResponseDTOs.ContractPackage;
-using Domain.Entities;
 
 namespace Application.Interfaces.IServices
 {
     public interface IContractPackageService
-        : IGenericService<ContractPackage, CreateContractPackageDTO, UpdateContractPackageDTO, ContractPackageResponseDTO>
     {
+        Task<IEnumerable<ContractPackageResponseDTO>> GetAllAsync();
+        Task<ContractPackageResponseDTO?> GetByIdAsync(Guid id);
+        Task<ContractPackageResponseDTO> CreateAsync(CreateContractPackageDTO dto);
+        Task<ContractPackageResponseDTO> UpdateAsync(Guid id, UpdateContractPackageDTO dto);
+        Task DeleteAsync(Guid id);
     }
 }

@@ -1,6 +1,7 @@
 using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Invitation;
 using Application.Interfaces.IServices;
+using Capstone_Project.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -22,7 +23,7 @@ namespace Capstone_Project.Controllers
         [HttpPost]
         public async Task<IActionResult> Invite([FromBody] InviteRequestDTO dto)
         {
-            var result = await _invitationService.InviteAsync(dto);
+            var result = await _invitationService.InviteAsync(dto, User.GetAccountId(), User.GetUserName());
             return CreatedAtAction(nameof(Invite), new { id = result.Id },
                 ApiResponse.Success("Invitation created", result));
         }
@@ -31,7 +32,7 @@ namespace Capstone_Project.Controllers
         [HttpGet("me")]
         public async Task<IActionResult> GetMine()
         {
-            var result = await _invitationService.GetMyPendingAsync();
+            var result = await _invitationService.GetMyPendingAsync(User.GetAccountId());
             return Ok(ApiResponse.Success("Pending invitations retrieved", result));
         }
 
@@ -39,14 +40,14 @@ namespace Capstone_Project.Controllers
         [HttpPost("{id:guid}/accept")]
         public async Task<IActionResult> Accept(Guid id)
         {
-            var result = await _invitationService.AcceptAsync(id);
+            var result = await _invitationService.AcceptAsync(id, User.GetAccountId(), User.GetUserName());
             return Ok(ApiResponse.Success("Invitation accepted", result));
         }
 
         [HttpPost("{id:guid}/reject")]
         public async Task<IActionResult> Reject(Guid id)
         {
-            var result = await _invitationService.RejectAsync(id);
+            var result = await _invitationService.RejectAsync(id, User.GetAccountId(), User.GetUserName());
             return Ok(ApiResponse.Success("Invitation rejected", result));
         }
     }

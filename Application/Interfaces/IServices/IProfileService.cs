@@ -3,11 +3,11 @@ using Application.DTOs.ResponseDTOs.Profile;
 
 namespace Application.Interfaces.IServices
 {
-    // Profile = view/edit account của chính user hiện tại. AccountId luôn lấy từ JWT.
+    // Profile = view/edit account của chính user hiện tại. AccountId do controller lấy từ JWT truyền vào.
     public interface IProfileService
     {
-        Task<ProfileResponseDTO> GetMyProfileAsync();
-        Task<ProfileResponseDTO> UpdateMyProfileAsync(UpdateProfileDTO dto);
-        Task ChangePasswordAsync(ChangePasswordDTO dto);
+        Task<ProfileResponseDTO> GetMyProfileAsync(Guid accountId);
+        Task<ProfileResponseDTO> UpdateMyProfileAsync(Guid accountId, UpdateProfileDTO dto);
+        Task ChangePasswordAsync(Guid accountId, ChangePasswordDTO dto);
     }
 }

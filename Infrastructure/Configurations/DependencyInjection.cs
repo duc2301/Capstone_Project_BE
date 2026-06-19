@@ -64,10 +64,6 @@ namespace Infrastructure.Configurations
             // Notification dispatcher (event -> tạo Notification rows)
             services.AddScoped<INotificationService, NotificationService>();
 
-            // HttpContextAccessor + ICurrentUserService (đọc AccountId / system role / department roles từ JWT)
-            services.AddHttpContextAccessor();
-            services.AddScoped<ICurrentUserService, CurrentUserService>();
-
             // Invitation flow: Manager mời account vô dự án -> accept tạo ProjectParticipant
             services.AddScoped<IInvitationService, InvitationService>();
 

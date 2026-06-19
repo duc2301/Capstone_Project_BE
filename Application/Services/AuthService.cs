@@ -123,8 +123,9 @@ namespace Application.Services
 
         private async Task<List<GroupMember>> LoadGroupMembershipsAsync(Guid accountId)
         {
-            var all = await _unitOfWork.Repository<GroupMember>().GetAllAsync();
-            return all.Where(gm => gm.AccountId == accountId).ToList();
+            var all = await _unitOfWork.Repository<GroupMember>()
+                .FindAsync(gm => gm.AccountId == accountId);
+            return all.ToList();
         }
     }
 }

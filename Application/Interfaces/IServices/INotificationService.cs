@@ -21,10 +21,10 @@ namespace Application.Interfaces.IServices
             string? linkType = null,
             string? linkId = null);
 
-        // GET /api/notifications/me — list của user hiện tại
-        Task<IEnumerable<NotificationResponseDTO>> GetMyAsync();
+        // GET /api/notifications/me — list của user hiện tại (accountId do controller lấy từ JWT)
+        Task<IEnumerable<NotificationResponseDTO>> GetMyAsync(Guid accountId);
 
-        // POST /api/notifications/{id}/read
-        Task MarkReadAsync(Guid notificationId);
+        // POST /api/notifications/{id}/read (accountId do controller lấy từ JWT để kiểm tra chính chủ)
+        Task MarkReadAsync(Guid notificationId, Guid accountId);
     }
 }
