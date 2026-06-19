@@ -14,7 +14,6 @@ namespace Application.Services
     public class FolderBootstrapService : IFolderBootstrapService
     {
         private readonly IUnitOfWork _unitOfWork;
-        private readonly ICurrentUserService _currentUser;
         private readonly IMapper _mapper;
 
         // 4 khu vực gốc + tên hiển thị mặc định.
@@ -26,10 +25,9 @@ namespace Application.Services
             (CdeArea.Archived,  "Archived"),
         };
 
-        public FolderBootstrapService(IUnitOfWork unitOfWork, ICurrentUserService currentUser, IMapper mapper)
+        public FolderBootstrapService(IUnitOfWork unitOfWork, IMapper mapper)
         {
             _unitOfWork = unitOfWork;
-            _currentUser = currentUser;
             _mapper = mapper;
         }
 
@@ -53,8 +51,8 @@ namespace Application.Services
             var roots = await EnsureRootsAsync(projectId);
 
             // Snapshot folder hiện có của dự án để kiểm tra trùng (cả root mới tạo lẫn con đã có).
-            var existing = (await _unitOfWork.Repository<Folder>().GetAllAsync())
-                .Where(f => f.ProjectId == projectId)
+            var existing = (await _unitOfWork.Repository<Folder>()
+                    .FindAsync(f => f.ProjectId == projectId))
                 .ToList();
 
             var now = DateTime.UtcNow;
@@ -77,13 +75,10 @@ namespace Application.Services
             await _unitOfWork.CommitAsync();
         }
 
-        public async Task<FolderResponseDTO> CreateChildFolderAsync(Guid parentFolderId, string name)
+        public async Task<FolderResponseDTO> CreateChildFolderAsync(Guid parentFolderId, string name, Guid actor, string? actorRole)
         {
             if (string.IsNullOrWhiteSpace(name))
                 throw new ApiExceptionResponse("Folder name is required.", 400);
-
-            var actor = _currentUser.AccountId
-                ?? throw new ApiExceptionResponse("Authentication required.", 401);
 
             var parent = await _unitOfWork.Repository<Folder>().GetByIdAsync(parentFolderId)
                 ?? throw new ApiExceptionResponse("Parent folder not found.", 404);
@@ -92,7 +87,7 @@ namespace Application.Services
             var ownerGroupId = await ResolveOwnerGroupIdAsync(parent);
 
             // Phân quyền: Admin hệ thống / PM dự án / Team Leader của nhóm sở hữu.
-            await EnsureCanCreateSubFolderAsync(actor, parent.ProjectId, ownerGroupId);
+            await EnsureCanCreateSubFolderAsync(actor, parent.ProjectId, ownerGroupId, actorRole);
 
             var now = DateTime.UtcNow;
             var child = new Folder
@@ -116,8 +111,8 @@ namespace Application.Services
         private async Task<Guid?> ResolveOwnerGroupIdAsync(Folder folder)
         {
 
-            var byId = (await _unitOfWork.Repository<Folder>().GetAllAsync())
-                .Where(f => f.ProjectId == folder.ProjectId)
+            var byId = (await _unitOfWork.Repository<Folder>()
+                    .FindAsync(f => f.ProjectId == folder.ProjectId))
                 .ToDictionary(f => f.Id);
 
             var cur = folder;
@@ -129,9 +124,9 @@ namespace Application.Services
             return null;
         }
 
-        private async Task EnsureCanCreateSubFolderAsync(Guid actor, Guid projectId, Guid? ownerGroupId)
+        private async Task EnsureCanCreateSubFolderAsync(Guid actor, Guid projectId, Guid? ownerGroupId, string? actorRole)
         {
-            if (_currentUser.SystemRole == AccountRole.Admin.ToString())
+            if (actorRole == AccountRole.Admin.ToString())
                 return;
 
             var project = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId);
@@ -140,10 +135,11 @@ namespace Application.Services
 
             if (ownerGroupId.HasValue)
             {
-                var isLeader = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
-                    .Any(gm => gm.GroupId == ownerGroupId.Value
+                var isLeader = (await _unitOfWork.Repository<GroupMember>()
+                    .FindAsync(gm => gm.GroupId == ownerGroupId.Value
                             && gm.AccountId == actor
-                            && gm.Role == GroupMemberRole.Leader);
+                            && gm.Role == GroupMemberRole.Leader))
+                    .Any();
                 if (isLeader) return;
             }
 
@@ -154,8 +150,8 @@ namespace Application.Services
         // Đảm bảo 4 folder gốc tồn tại; trả về danh sách 4 root (cũ + mới, chưa commit).
         private async Task<List<Folder>> EnsureRootsAsync(Guid projectId)
         {
-            var projectFolders = (await _unitOfWork.Repository<Folder>().GetAllAsync())
-                .Where(f => f.ProjectId == projectId)
+            var projectFolders = (await _unitOfWork.Repository<Folder>()
+                    .FindAsync(f => f.ProjectId == projectId))
                 .ToList();
 
             var roots = projectFolders
