@@ -1,5 +1,4 @@
 ﻿using Application.DTOs.RequestDTOs.Permission;
-using Application.DTOs.ResponseDTOs.Account;
 using Application.DTOs.ResponseDTOs.Permission;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
@@ -7,9 +6,6 @@ using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using Domain.Entities;
 using Domain.Enum.Permission;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace Application.Services
 {
@@ -25,7 +21,7 @@ namespace Application.Services
         }
 
         #region CRUD có sẵn
-        public Task<FilePermissionResponseDTO> CreateAsync(CreateFilePermissionDTO dto)
+        public Task<GroupFilePermissionResponseDTO> CreateAsync(CreateFilePermissionDTO dto)
         {
             throw new NotImplementedException();
         }
@@ -35,18 +31,18 @@ namespace Application.Services
             throw new NotImplementedException();
         }
 
-        public Task<IEnumerable<FilePermissionResponseDTO>> GetAllAsync()
+        public Task<IEnumerable<GroupFilePermissionResponseDTO>> GetAllAsync()
         {
             throw new NotImplementedException();
         }
 
-        public Task<FilePermissionResponseDTO?> GetByIdAsync(Guid id)
+        public Task<GroupFilePermissionResponseDTO?> GetByIdAsync(Guid id)
         {
             throw new NotImplementedException();
         }
 
 
-        public Task<FilePermissionResponseDTO> UpdateAsync(Guid id, UpdateFilePermissionDTO dto)
+        public Task<GroupFilePermissionResponseDTO> UpdateAsync(Guid id, UpdateFilePermissionDTO dto)
         {
             throw new NotImplementedException();
         }
@@ -78,17 +74,17 @@ namespace Application.Services
             };
         }
 
-        public async Task<IEnumerable<FilePermissionResponseDTO>> GetActiveParticipantsByFileItemId(Guid fileItemId)
+        public async Task<IEnumerable<GroupFilePermissionResponseDTO>> GetActiveParticipantsByFileItemId(Guid fileItemId)
         {
             var items = await _unitOfWork.FilePermissionRepository.GetActivePartipantsByFileItemIdAsync(fileItemId);
-            return _mapper.Map<IEnumerable<FilePermissionResponseDTO>>(items.Values.ToList());
+            return _mapper.Map<IEnumerable<GroupFilePermissionResponseDTO>>(items.Values.ToList());
         }
 
         #endregion
 
         #region Create/Update permissions theo bulk
 
-        public async Task<IEnumerable<FilePermissionResponseDTO>> BulkUpdateFilePermissionsAsync(AddPermissionsBulkDTO dto)
+        public async Task<IEnumerable<GroupFilePermissionResponseDTO>> BulkUpdateFilePermissionsAsync(AddPermissionsBulkDTO dto)
         {
             //if (!dto.GroupsPermission.Any()) 
             //    throw new ApiExceptionResponse("GroupsPermission list is empty.", 400);
@@ -167,8 +163,22 @@ namespace Application.Services
 
             var permissions = await _unitOfWork.FilePermissionRepository.GetFilePermissionsByParticipantIdsAsync(dto.FileItemId, updatedParticipantIds);
 
-            return _mapper.Map<IEnumerable<FilePermissionResponseDTO>>(permissions);
+            return _mapper.Map<IEnumerable<GroupFilePermissionResponseDTO>>(permissions);
         }
+
+        #endregion
+
+        #region Check quyền
+
+        public async Task<GroupFilePermissionResponseDTO> GetFilePermissionOfParticipantByFileItemIdAndParticipantId(GetFilePermissionOfParticipantDTO dto)
+        {
+            var permission = await _unitOfWork.FilePermissionRepository.GetFilePermissionByFileItemIdAndParticipantIdAsync(dto.FileItemId, dto.ParticipantId);
+            if (permission == null)
+                throw new ApiExceptionResponse("No permission found for the specified participant and file item.", 404);
+            return _mapper.Map<GroupFilePermissionResponseDTO>(permission);
+        }
+
+
 
         #endregion
     }

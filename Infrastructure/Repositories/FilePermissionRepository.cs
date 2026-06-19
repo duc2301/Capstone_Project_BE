@@ -19,29 +19,6 @@ namespace Infrastructure.Repositories
             _context = context;
         }
 
-        //Can tach ra giua get de thay doi voi get de view
-        //Ham nay ko co AsnoTracking
-        //public async Task<IEnumerable<GroupFilePermissionResponseDTO>> GetPartipatedGroupFilePermissionsByFileItemIdAsync(Guid fileItemId)
-        //{
-        //    return await _context.FilePermissions
-        //        .Where(p => p.FileItemId == fileItemId)
-        //        .Select(p => new GroupFilePermissionResponseDTO
-        //        {
-        //            ProjectParticipantId = p.ProjectParticipant!.GroupId,
-        //            GroupParticipantName = p.ProjectParticipant.Group.Name,
-
-        //            CanView = p.CanView,
-        //            CanEdit = p.CanEdit,
-        //            CanUpdate = p.CanUpdate,
-        //            CanDownload = p.CanDownload,
-        //            CanVerify = p.CanVerify,
-        //            CanApprove = p.CanApprove,
-        //            InheritFromParent = p.InheritFromParent
-        //        })
-        //        .ToListAsync();
-        //}
-
-
 
         public async Task<IEnumerable<FilePermission>> GetPartipatedGroupFilePermissionsByFileItemIdAsync(Guid fileItemId)
         {
@@ -115,6 +92,16 @@ namespace Infrastructure.Repositories
                 .ThenInclude(fp => fp.Group)
                 .AsNoTracking()
                 .ToListAsync();
+        }
+
+        public async Task<FilePermission?> GetFilePermissionByFileItemIdAndParticipantIdAsync(Guid fileItemId, Guid participantId)
+        {
+            return await _context.FilePermissions
+                .Where(fp => fp.FileItemId == fileItemId && fp.ProjectParticipantId == participantId)
+                .Include(fp => fp.ProjectParticipant)
+                .ThenInclude(fp => fp.Group)
+                .AsNoTracking()
+                .SingleOrDefaultAsync();
         }
     }
 }

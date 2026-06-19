@@ -14,6 +14,6 @@ namespace Application.Interfaces.IRepositories
         Task<Dictionary<Guid, FilePermission>> GetActivePartipantsByFileItemIdAsync(Guid fileItemId);
         Task<IEnumerable<ParticipantItems>> GetAllParticipantsByFileItemIdAsync(Guid fileItemId);
         Task<IEnumerable<FilePermission>> GetActiveGroupsByFileItemId(Guid fileitemId);
-
+        Task<FilePermission?> GetFilePermissionByFileItemIdAndParticipantIdAsync(Guid fileItemId, Guid participantId);
     }
 }

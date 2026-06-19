@@ -47,5 +47,12 @@ namespace Capstone_Project.Controllers
             var result = await _filePermissionService.BulkUpdateFilePermissionsAsync(dto);
             return Ok(ApiResponse.Success("Permission updated successfully", result));
         }
+
+        [HttpGet("group-permission")]
+        public async Task<IActionResult> GetFilePermissionOfParticipantByFileItemIdAndParticipantId([FromQuery] GetFilePermissionOfParticipantDTO dto)
+        {
+            var result = await _filePermissionService.GetFilePermissionOfParticipantByFileItemIdAndParticipantId(dto);
+            return Ok(ApiResponse.Success("Group permission retrieved successfully", result));
+        }
     }
 }
