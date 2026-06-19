@@ -4,6 +4,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
+using Domain.Enum.Cde;
 using Domain.Enum.File;
 using Domain.Enum.Group;
 using Domain.Enum.Project;
@@ -12,15 +13,8 @@ using Microsoft.Extensions.Logging;
 namespace Application.Services
 {
     /// <summary>
-    /// Cài đặt nghiệp vụ phê duyệt file CDE.
+    /// Xử lý nghiệp vụ phê duyệt file trong hệ thống CDE.
     /// </summary>
-    /// <remarks>
-    /// Quy tắc chính:
-    /// - Chỉ member active trong team của file mới được gửi duyệt.
-    /// - Chỉ Team Leader active mới được duyệt hoặc từ chối.
-    /// - Chỉ request Pending và file PendingApproval mới được xử lý.
-    /// - Reject bắt buộc có lý do.
-    /// </remarks>
     public class ApprovalService : IApprovalService
     {
         private readonly IUnitOfWork _unitOfWork;
@@ -36,22 +30,25 @@ namespace Application.Services
 
         #region API chính
 
-        public async Task<ApprovalRequestResponseDTO> SubmitAsync(Guid fileItemId, Guid actor)
+        /// <summary>
+        /// Gửi yêu cầu phê duyệt file. Chỉ member active trong team của file mới được thực hiện.
+        /// </summary>
+        public async Task<ApprovalRequestResponseDTO> SubmitAsync(
+            Guid fileItemId,
+            SubmitApprovalRequestDTO? dto,
+            Guid actor)
         {
             var fileItem = await GetFileItemAsync(fileItemId);
             var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, requireApprovePermission: false);
 
-            // 1. Kiểm tra quyền gửi duyệt.
             await RequireGroupMemberAsync(actor, teamGroupIds);
 
-            // 2. Không cho tạo thêm request nếu file đã có request pending.
             var hasPendingRequest = (await _unitOfWork.Repository<ApprovalRequest>().FindAsync(
                     a => a.FileItemId == fileItem.Id && a.Status == ApprovalRequestStatus.Pending))
                 .Any();
             if (hasPendingRequest || fileItem.Status == FileItemStatus.PendingApproval)
                 throw new ApiExceptionResponse("File is already pending approval.", 409);
 
-            // 3. Tạo request và chuyển trạng thái file sang PendingApproval.
             var now = DateTime.UtcNow;
             var request = new ApprovalRequest
             {
@@ -62,6 +59,8 @@ namespace Application.Services
                 CreatedAt = now
             };
 
+            fileItem.RequiresSignature = dto?.RequiresSignature ?? false;
+            fileItem.IsSigned = false;
             fileItem.Status = FileItemStatus.PendingApproval;
             fileItem.UpdatedAt = now;
 
@@ -71,6 +70,9 @@ namespace Application.Services
             return await BuildResponseAsync(request, fileItem);
         }
 
+        /// <summary>
+        /// Lấy tất cả approval request mà actor có quyền xem.
+        /// </summary>
         public async Task<IEnumerable<ApprovalRequestResponseDTO>> GetAllAsync(Guid actor)
         {
             var requests = (await _unitOfWork.Repository<ApprovalRequest>().GetAllAsync())
@@ -80,6 +82,9 @@ namespace Application.Services
             return await FilterVisibleRequestsAsync(requests, actor);
         }
 
+        /// <summary>
+        /// Lấy các approval request đang Pending mà actor có quyền xem.
+        /// </summary>
         public async Task<IEnumerable<ApprovalRequestResponseDTO>> GetPendingAsync(Guid actor)
         {
             var pendingRequests = (await _unitOfWork.Repository<ApprovalRequest>().FindAsync(
@@ -90,6 +95,9 @@ namespace Application.Services
             return await FilterVisibleRequestsAsync(pendingRequests, actor);
         }
 
+        /// <summary>
+        /// Lấy chi tiết approval request theo id. Actor phải là người gửi hoặc Team Leader.
+        /// </summary>
         public async Task<ApprovalRequestResponseDTO> GetByIdAsync(Guid id, Guid actor)
         {
             var request = await GetRequestAsync(id);
@@ -101,13 +109,18 @@ namespace Application.Services
             return await BuildResponseAsync(request, fileItem);
         }
 
+        /// <summary>
+        /// Duyệt approval request. Chỉ Team Leader mới được thực hiện.
+        /// Nếu file yêu cầu ký số thì phải hoàn tất ký trước khi duyệt.
+        /// </summary>
         public async Task<ApprovalRequestResponseDTO> ApproveAsync(Guid id, Guid actor)
         {
             var request = await GetRequestAsync(id);
             var fileItem = await GetFileItemAsync(request.FileItemId);
+            var folder = await GetFolderAsync(fileItem.FolderId);
 
-            // Chỉ Team Leader được xử lý request đang Pending.
-            await RequireCanDecideAsync(actor, request, fileItem);
+            await RequireCanDecideAsync(actor, request, fileItem, folder);
+            await RequireSmartCaSignatureBeforeApprovalAsync(request, fileItem, folder);
 
             var now = DateTime.UtcNow;
             request.Status = ApprovalRequestStatus.Approved;
@@ -122,6 +135,9 @@ namespace Application.Services
             return await BuildResponseAsync(request, fileItem);
         }
 
+        /// <summary>
+        /// Từ chối approval request. Chỉ Team Leader mới được thực hiện. Bắt buộc có lý do.
+        /// </summary>
         public async Task<ApprovalRequestResponseDTO> RejectAsync(Guid id, RejectApprovalRequestDTO dto, Guid actor)
         {
             var reason = dto.Reason?.Trim();
@@ -130,7 +146,9 @@ namespace Application.Services
 
             var request = await GetRequestAsync(id);
             var fileItem = await GetFileItemAsync(request.FileItemId);
-            await RequireCanDecideAsync(actor, request, fileItem);
+            var folder = await GetFolderAsync(fileItem.FolderId);
+
+            await RequireCanDecideAsync(actor, request, fileItem, folder);
 
             var now = DateTime.UtcNow;
             request.Status = ApprovalRequestStatus.Rejected;
@@ -149,28 +167,41 @@ namespace Application.Services
 
         #region Lấy dữ liệu cơ bản
 
+        /// <summary>Lấy FileItem theo id, ném 404 nếu không tìm thấy.</summary>
         private async Task<FileItem> GetFileItemAsync(Guid fileItemId)
             => await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                ?? throw new ApiExceptionResponse("File not found.", 404);
 
+        /// <summary>Lấy ApprovalRequest theo id, ném 404 nếu không tìm thấy.</summary>
         private async Task<ApprovalRequest> GetRequestAsync(Guid id)
             => await _unitOfWork.Repository<ApprovalRequest>().GetByIdAsync(id)
                ?? throw new ApiExceptionResponse("Approval request not found.", 404);
+
+        /// <summary>Lấy Folder theo id, ném 404 nếu không tìm thấy.</summary>
+        private async Task<Folder> GetFolderAsync(Guid folderId)
+            => await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
+               ?? throw new ApiExceptionResponse("File folder not found.", 404);
 
         #endregion
 
         #region Kiểm tra quyền
 
-        private async Task RequireCanDecideAsync(Guid actor, ApprovalRequest request, FileItem fileItem)
+        /// <summary>
+        /// Yêu cầu actor là Team Leader có quyền approve file và request đang ở trạng thái Pending.
+        /// </summary>
+        private async Task RequireCanDecideAsync(Guid actor, ApprovalRequest request, FileItem fileItem, Folder folder)
         {
             if (request.Status != ApprovalRequestStatus.Pending || fileItem.Status != FileItemStatus.PendingApproval)
                 throw new ApiExceptionResponse("Only pending approval requests can be approved or rejected.", 409);
 
-            var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, requireApprovePermission: true);
+            var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, folder, requireApprovePermission: true);
             if (!await IsGroupLeaderAsync(actor, teamGroupIds))
                 throw new ApiExceptionResponse("Only the Team Leader can approve or reject this file.", 403);
         }
 
+        /// <summary>
+        /// Yêu cầu actor là member active trong team của file.
+        /// </summary>
         private async Task RequireGroupMemberAsync(Guid accountId, IReadOnlyCollection<Guid> groupIds)
         {
             var isMember = (await _unitOfWork.Repository<GroupMember>().FindAsync(
@@ -182,6 +213,7 @@ namespace Application.Services
                 throw new ApiExceptionResponse("Only members of the file team can submit approval.", 403);
         }
 
+        /// <summary>Kiểm tra actor có phải Group Leader active không.</summary>
         private async Task<bool> IsGroupLeaderAsync(Guid accountId, IReadOnlyCollection<Guid> groupIds)
             => (await _unitOfWork.Repository<GroupMember>().FindAsync(
                     m => groupIds.Contains(m.GroupId)
@@ -190,6 +222,10 @@ namespace Application.Services
                          && m.Status == GroupMemberStatus.Active))
                 .Any();
 
+        /// <summary>
+        /// Kiểm tra actor có quyền xem approval request không.
+        /// Trả về true nếu actor là người gửi hoặc là Team Leader có quyền approve.
+        /// </summary>
         private async Task<bool> CanViewRequestAsync(Guid actor, ApprovalRequest request, FileItem fileItem)
         {
             if (request.RequestedBy == actor)
@@ -199,17 +235,46 @@ namespace Application.Services
             return await IsGroupLeaderAsync(actor, teamGroupIds);
         }
 
+        /// <summary>
+        /// Kiểm tra điều kiện ký số trước khi approve.
+        /// Nếu file có RequiresSignature = true thì FileItem.IsSigned và transaction Signed đều phải tồn tại.
+        /// </summary>
+        private async Task RequireSmartCaSignatureBeforeApprovalAsync(
+            ApprovalRequest request,
+            FileItem fileItem,
+            Folder folder)
+        {
+            if (folder.Area != CdeArea.Wip)
+                throw new ApiExceptionResponse("File must be in WIP zone.", 409);
+
+            if (!fileItem.RequiresSignature)
+                return;
+
+            var hasSignedTransaction = (await _unitOfWork.Repository<ApprovalSignatureTransaction>().FindAsync(
+                    t => t.ApprovalRequestId == request.Id
+                         && t.FileItemId == fileItem.Id
+                         && t.Status == SignatureTransactionStatus.Signed))
+                .Any();
+
+            if (!fileItem.IsSigned || !hasSignedTransaction)
+                throw new ApiExceptionResponse(
+                    "Document requires successful VNPT SmartCA digital signature before approval.",
+                    409);
+        }
+
         #endregion
 
         #region Xác định team của file
 
+        /// <summary>
+        /// Lấy danh sách GroupId của team phụ trách file dựa trên quyền file/folder.
+        /// Fallback về toàn bộ group active trong project nếu không có permission nào được cấu hình.
+        /// </summary>
         private async Task<IReadOnlyCollection<Guid>> ResolveFileItemTeamGroupIdsAsync(
             FileItem fileItem,
+            Folder folder,
             bool requireApprovePermission)
         {
-            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
-                ?? throw new ApiExceptionResponse("File folder not found.", 404);
-
             var activeParticipants = (await _unitOfWork.Repository<ProjectParticipant>().FindAsync(
                     p => p.ProjectId == folder.ProjectId && p.Status == ProjectParticipantStatus.Active))
                 .ToDictionary(p => p.Id, p => p.GroupId);
@@ -228,17 +293,16 @@ namespace Application.Services
                     teamGroupIds.Add(groupId);
             }
 
-            var folders = (await _unitOfWork.Repository<Folder>().FindAsync(
+            var allFolders = (await _unitOfWork.Repository<Folder>().FindAsync(
                     f => f.ProjectId == folder.ProjectId))
-                .ToList();
-            var byId = folders.ToDictionary(f => f.Id);
+                .ToDictionary(f => f.Id);
 
-            if (!byId.TryGetValue(fileItem.FolderId, out var current))
+            if (!allFolders.TryGetValue(fileItem.FolderId, out var current))
                 throw new ApiExceptionResponse("File folder not found.", 404);
 
             var folderIds = new HashSet<Guid>();
             while (folderIds.Add(current.Id) && current.ParentFolderId.HasValue
-                   && byId.TryGetValue(current.ParentFolderId.Value, out var parent))
+                   && allFolders.TryGetValue(current.ParentFolderId.Value, out var parent))
             {
                 current = parent;
             }
@@ -258,12 +322,23 @@ namespace Application.Services
                 : activeParticipants.Values.ToHashSet();
         }
 
+        /// <summary>Overload khi chưa có folder sẵn — tự fetch rồi gọi overload chính.</summary>
+        private async Task<IReadOnlyCollection<Guid>> ResolveFileItemTeamGroupIdsAsync(
+            FileItem fileItem,
+            bool requireApprovePermission)
+        {
+            var folder = await GetFolderAsync(fileItem.FolderId);
+            return await ResolveFileItemTeamGroupIdsAsync(fileItem, folder, requireApprovePermission);
+        }
+
         #endregion
 
         #region Tạo response
 
+        /// <summary>Lọc danh sách request chỉ giữ lại những request actor có quyền xem.</summary>
         private async Task<IEnumerable<ApprovalRequestResponseDTO>> FilterVisibleRequestsAsync(
-            IEnumerable<ApprovalRequest> requests, Guid actor)
+            IEnumerable<ApprovalRequest> requests,
+            Guid actor)
         {
             var result = new List<ApprovalRequestResponseDTO>();
             var accounts = await GetAccountsByIdAsync();
@@ -311,6 +386,8 @@ namespace Application.Services
                 Id = request.Id,
                 FileItemId = request.FileItemId,
                 FileItemName = fileItem.Name,
+                RequiresSignature = fileItem.RequiresSignature,
+                IsSigned = fileItem.IsSigned,
                 RequestedBy = request.RequestedBy,
                 RequestedByName = requester?.UserName,
                 ApproverId = request.ApproverId,
