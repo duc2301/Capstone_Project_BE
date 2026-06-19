@@ -36,6 +36,7 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<FileNote> FileNotes { get; set; }
         public virtual DbSet<FilePermission> FilePermissions { get; set; }
         public virtual DbSet<ApprovalRequest> ApprovalRequests { get; set; }
+        public virtual DbSet<ApprovalSignatureTransaction> ApprovalSignatureTransactions { get; set; }
 
         // --- Module D: Phiếu yêu cầu ---
         public virtual DbSet<Submittal> Submittals { get; set; }
@@ -169,6 +170,24 @@ namespace Infrastructure.DbContexts
                 .HasOne(a => a.Approver)
                 .WithMany()
                 .HasForeignKey(a => a.ApproverId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ApprovalSignatureTransaction>()
+                .HasOne(t => t.ApprovalRequest)
+                .WithMany()
+                .HasForeignKey(t => t.ApprovalRequestId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ApprovalSignatureTransaction>()
+                .HasOne(t => t.FileItem)
+                .WithMany()
+                .HasForeignKey(t => t.FileItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ApprovalSignatureTransaction>()
+                .HasOne(t => t.SignedByAccount)
+                .WithMany()
+                .HasForeignKey(t => t.SignedBy)
                 .OnDelete(DeleteBehavior.Restrict);
         }
     }
