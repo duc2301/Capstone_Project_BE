@@ -14,28 +14,26 @@ namespace Application.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly INotificationService _notification;
-        private readonly ICurrentUserService _currentUser;
         private readonly IFolderBootstrapService _folderBootstrap;
         private readonly IMapper _mapper;
 
         public ProjectFlowService(
             IUnitOfWork unitOfWork,
             INotificationService notification,
-            ICurrentUserService currentUser,
             IFolderBootstrapService folderBootstrap,
             IMapper mapper)
         {
             _unitOfWork = unitOfWork;
             _notification = notification;
-            _currentUser = currentUser;
             _folderBootstrap = folderBootstrap;
             _mapper = mapper;
         }
 
         // Admin gán 1 account hiện có làm PM của project.
         // 1 account có thể làm PM nhiều dự án -> chỉ validate account tồn tại + active.
+        // actorName (người gán) do controller lấy từ JWT.
         public async Task<ProjectResponseDTO> AssignManagerAsync(
-            Guid projectId, AssignProjectManagerDTO dto)
+            Guid projectId, AssignProjectManagerDTO dto, string? actorName)
         {
             var project = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId)
                 ?? throw new ApiExceptionResponse("Project not found.", 404);
@@ -54,7 +52,7 @@ namespace Application.Services
             await _notification.NotifyAsync(
                 account.Id,
                 $"Bạn được chỉ định làm Project Manager cho dự án {project.ProjectName}",
-                senderName: _currentUser.UserName ?? "Admin",
+                senderName: actorName ?? "Admin",
                 linkType: "Project",
                 linkId: project.Id.ToString());
 
@@ -63,7 +61,7 @@ namespace Application.Services
                 await _notification.NotifyAsync(
                     oldManagerId.Value,
                     $"Bạn đã được thay khỏi vai trò Project Manager của dự án {project.ProjectName}",
-                    senderName: _currentUser.UserName ?? "Admin",
+                    senderName: actorName ?? "Admin",
                     linkType: "Project",
                     linkId: project.Id.ToString());
             }
@@ -74,7 +72,7 @@ namespace Application.Services
         // PM gọi: add nhiều Group vô project trong 1 transaction.
         // (Org info suy ra qua Group.OrganizationId — không nhận trực tiếp Organization)
         public async Task<List<ParticipantResponseDTO>> AddParticipantsAsync(
-            Guid projectId, AddParticipantsBulkDTO dto)
+            Guid projectId, AddParticipantsBulkDTO dto, Guid actor, string? actorRole)
         {
             if (dto.Participants == null || dto.Participants.Count == 0)
                 throw new ApiExceptionResponse("Participants list is empty.", 400);
@@ -82,17 +80,15 @@ namespace Application.Services
             var project = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId)
                 ?? throw new ApiExceptionResponse("Project not found.", 404);
 
-            var actor = _currentUser.AccountId
-                ?? throw new ApiExceptionResponse("Authentication required.", 401);
-            if (_currentUser.SystemRole != AccountRole.Admin.ToString()
+            if (actorRole != AccountRole.Admin.ToString()
                 && project.ManagerAccountId != actor)
                 throw new ApiExceptionResponse("Only the project manager or Admin can add participants.", 403);
 
             var now = DateTime.UtcNow;
             var created = new List<ProjectParticipant>(dto.Participants.Count);
 
-            var existingParticipants = (await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync())
-                .Where(pp => pp.ProjectId == projectId)
+            var existingParticipants = (await _unitOfWork.Repository<ProjectParticipant>()
+                    .FindAsync(pp => pp.ProjectId == projectId))
                 .ToList();
 
             for (int i = 0; i < dto.Participants.Count; i++)
@@ -135,23 +131,20 @@ namespace Application.Services
             return created.Select(_mapper.Map<ParticipantResponseDTO>).ToList();
         }
 
-        public async Task<List<ProjectResponseDTO>> GetMyProjectsAsync()
+        public async Task<List<ProjectResponseDTO>> GetMyProjectsAsync(Guid actor)
         {
-            var actor = _currentUser.AccountId
-                ?? throw new ApiExceptionResponse("Authentication required.", 401);
-
-            var myGroupIds = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
-                .Where(gm => gm.AccountId == actor)
+            var myGroupIds = (await _unitOfWork.Repository<GroupMember>()
+                    .FindAsync(gm => gm.AccountId == actor))
                 .Select(gm => gm.GroupId)
                 .ToHashSet();
 
-            var participantProjectIds = (await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync())
-                .Where(pp => myGroupIds.Contains(pp.GroupId) && pp.Status == ProjectParticipantStatus.Active)
+            var participantProjectIds = (await _unitOfWork.Repository<ProjectParticipant>()
+                    .FindAsync(pp => myGroupIds.Contains(pp.GroupId) && pp.Status == ProjectParticipantStatus.Active))
                 .Select(pp => pp.ProjectId)
                 .ToHashSet();
 
-            var projects = (await _unitOfWork.Repository<Project>().GetAllAsync())
-                .Where(p => participantProjectIds.Contains(p.Id) || p.ManagerAccountId == actor)
+            var projects = (await _unitOfWork.Repository<Project>()
+                    .FindAsync(p => participantProjectIds.Contains(p.Id) || p.ManagerAccountId == actor))
                 .ToList();
 
             return projects.Select(_mapper.Map<ProjectResponseDTO>).ToList();
@@ -162,8 +155,8 @@ namespace Application.Services
             _ = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId)
                 ?? throw new ApiExceptionResponse("Project not found.", 404);
 
-            var participants = (await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync())
-                .Where(p => p.ProjectId == projectId)
+            var participants = (await _unitOfWork.Repository<ProjectParticipant>()
+                    .FindAsync(p => p.ProjectId == projectId))
                 .ToList();
 
             return participants.Select(_mapper.Map<ParticipantResponseDTO>).ToList();
@@ -175,8 +168,9 @@ namespace Application.Services
             _ = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId)
                 ?? throw new ApiExceptionResponse("Project not found.", 404);
 
-            var participant = (await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync())
-                .FirstOrDefault(p => p.ProjectId == projectId && p.GroupId == groupId)
+            var participant = (await _unitOfWork.Repository<ProjectParticipant>()
+                    .FindAsync(p => p.ProjectId == projectId && p.GroupId == groupId))
+                .FirstOrDefault()
                 ?? throw new ApiExceptionResponse("Group is not a participant of this project.", 404);
 
             participant.Status = dto.Status;

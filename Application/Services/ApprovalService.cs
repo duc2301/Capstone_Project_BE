@@ -24,24 +24,20 @@ namespace Application.Services
     public class ApprovalService : IApprovalService
     {
         private readonly IUnitOfWork _unitOfWork;
-        private readonly ICurrentUserService _currentUser;
         private readonly ILogger<ApprovalService> _logger;
 
         public ApprovalService(
             IUnitOfWork unitOfWork,
-            ICurrentUserService currentUser,
             ILogger<ApprovalService> logger)
         {
             _unitOfWork = unitOfWork;
-            _currentUser = currentUser;
             _logger = logger;
         }
 
         #region API chính
 
-        public async Task<ApprovalRequestResponseDTO> SubmitAsync(Guid fileItemId)
+        public async Task<ApprovalRequestResponseDTO> SubmitAsync(Guid fileItemId, Guid actor)
         {
-            var actor = RequireActor();
             var fileItem = await GetFileItemAsync(fileItemId);
             var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, requireApprovePermission: false);
 
@@ -75,28 +71,27 @@ namespace Application.Services
             return await BuildResponseAsync(request, fileItem);
         }
 
-        public async Task<IEnumerable<ApprovalRequestResponseDTO>> GetAllAsync()
+        public async Task<IEnumerable<ApprovalRequestResponseDTO>> GetAllAsync(Guid actor)
         {
             var requests = (await _unitOfWork.Repository<ApprovalRequest>().GetAllAsync())
                 .OrderByDescending(a => a.CreatedAt)
                 .ToList();
 
-            return await FilterVisibleRequestsAsync(requests);
+            return await FilterVisibleRequestsAsync(requests, actor);
         }
 
-        public async Task<IEnumerable<ApprovalRequestResponseDTO>> GetPendingAsync()
+        public async Task<IEnumerable<ApprovalRequestResponseDTO>> GetPendingAsync(Guid actor)
         {
             var pendingRequests = (await _unitOfWork.Repository<ApprovalRequest>().FindAsync(
                     a => a.Status == ApprovalRequestStatus.Pending))
                 .OrderByDescending(a => a.CreatedAt)
                 .ToList();
 
-            return await FilterVisibleRequestsAsync(pendingRequests);
+            return await FilterVisibleRequestsAsync(pendingRequests, actor);
         }
 
-        public async Task<ApprovalRequestResponseDTO> GetByIdAsync(Guid id)
+        public async Task<ApprovalRequestResponseDTO> GetByIdAsync(Guid id, Guid actor)
         {
-            var actor = RequireActor();
             var request = await GetRequestAsync(id);
             var fileItem = await GetFileItemAsync(request.FileItemId);
 
@@ -106,9 +101,8 @@ namespace Application.Services
             return await BuildResponseAsync(request, fileItem);
         }
 
-        public async Task<ApprovalRequestResponseDTO> ApproveAsync(Guid id)
+        public async Task<ApprovalRequestResponseDTO> ApproveAsync(Guid id, Guid actor)
         {
-            var actor = RequireActor();
             var request = await GetRequestAsync(id);
             var fileItem = await GetFileItemAsync(request.FileItemId);
 
@@ -128,13 +122,12 @@ namespace Application.Services
             return await BuildResponseAsync(request, fileItem);
         }
 
-        public async Task<ApprovalRequestResponseDTO> RejectAsync(Guid id, RejectApprovalRequestDTO dto)
+        public async Task<ApprovalRequestResponseDTO> RejectAsync(Guid id, RejectApprovalRequestDTO dto, Guid actor)
         {
             var reason = dto.Reason?.Trim();
             if (string.IsNullOrWhiteSpace(reason))
                 throw new ApiExceptionResponse("Reject reason is required.", 400);
 
-            var actor = RequireActor();
             var request = await GetRequestAsync(id);
             var fileItem = await GetFileItemAsync(request.FileItemId);
             await RequireCanDecideAsync(actor, request, fileItem);
@@ -155,10 +148,6 @@ namespace Application.Services
         #endregion
 
         #region Lấy dữ liệu cơ bản
-
-        private Guid RequireActor()
-            => _currentUser.AccountId
-               ?? throw new ApiExceptionResponse("Authentication required.", 401);
 
         private async Task<FileItem> GetFileItemAsync(Guid fileItemId)
             => await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
@@ -274,9 +263,8 @@ namespace Application.Services
         #region Tạo response
 
         private async Task<IEnumerable<ApprovalRequestResponseDTO>> FilterVisibleRequestsAsync(
-            IEnumerable<ApprovalRequest> requests)
+            IEnumerable<ApprovalRequest> requests, Guid actor)
         {
-            var actor = RequireActor();
             var result = new List<ApprovalRequestResponseDTO>();
             var accounts = await GetAccountsByIdAsync();
 

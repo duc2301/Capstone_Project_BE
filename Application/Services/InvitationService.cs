@@ -21,29 +21,23 @@ namespace Application.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly INotificationService _notification;
-        private readonly ICurrentUserService _currentUser;
         private readonly IFolderBootstrapService _folderBootstrap;
         private readonly IMapper _mapper;
 
         public InvitationService(
             IUnitOfWork unitOfWork,
             INotificationService notification,
-            ICurrentUserService currentUser,
             IFolderBootstrapService folderBootstrap,
             IMapper mapper)
         {
             _unitOfWork = unitOfWork;
             _notification = notification;
-            _currentUser = currentUser;
             _folderBootstrap = folderBootstrap;
             _mapper = mapper;
         }
 
-        public async Task<InvitationResponseDTO> InviteAsync(InviteRequestDTO dto)
+        public async Task<InvitationResponseDTO> InviteAsync(InviteRequestDTO dto, Guid inviter, string? inviterName)
         {
-            var inviter = _currentUser.AccountId
-                ?? throw new ApiExceptionResponse("Authentication required.", 401);
-
             var project = await _unitOfWork.Repository<Project>().GetByIdAsync(dto.ProjectId)
                 ?? throw new ApiExceptionResponse("Project not found.", 404);
 
@@ -53,8 +47,8 @@ namespace Application.Services
             _ = await _unitOfWork.Repository<Account>().GetByIdAsync(dto.InvitedAccountId)
                 ?? throw new ApiExceptionResponse("Invited account not found.", 404);
 
-            var groupMembers = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
-                .Where(gm => gm.GroupId == dto.InvitedGroupId)
+            var groupMembers = (await _unitOfWork.Repository<GroupMember>()
+                    .FindAsync(gm => gm.GroupId == dto.InvitedGroupId))
                 .ToList();
             var existingMember = groupMembers.FirstOrDefault(gm => gm.AccountId == dto.InvitedAccountId);
             if (existingMember != null && existingMember.Status != GroupMemberStatus.Left)
@@ -66,11 +60,12 @@ namespace Application.Services
                 throw new ApiExceptionResponse("Nhóm đã có Trưởng nhóm (Leader). Không thể mời thêm Leader.", 409);
 
             // Chống mời trùng khi đang Pending
-            var hasPending = (await _unitOfWork.Repository<ProjectInvitation>().GetAllAsync())
-                .Any(i => i.ProjectId == dto.ProjectId
+            var hasPending = (await _unitOfWork.Repository<ProjectInvitation>()
+                    .FindAsync(i => i.ProjectId == dto.ProjectId
                        && i.InvitedAccountId == dto.InvitedAccountId
                        && i.InvitedGroupId == dto.InvitedGroupId
-                       && i.Status == InvitationStatus.Pending);
+                       && i.Status == InvitationStatus.Pending))
+                .Any();
             if (hasPending)
                 throw new ApiExceptionResponse("A pending invitation already exists for this account/group.", 409);
 
@@ -86,23 +81,20 @@ namespace Application.Services
 
             await _unitOfWork.CommitAsync();
 
-            var inviterName = _currentUser.UserName ?? "Một người dùng";
+            var displayName = inviterName ?? "Một người dùng";
             await _notification.NotifyAsync(
                 dto.InvitedAccountId,
-                $"{inviterName} đã mời bạn vào nhóm \"{group.Name}\" với vai trò {RoleLabel(dto.Role)} " +
+                $"{displayName} đã mời bạn vào nhóm \"{group.Name}\" với vai trò {RoleLabel(dto.Role)} " +
                 $"thuộc dự án \"{project.ProjectName}\".",
-                senderName: inviterName,
+                senderName: displayName,
                 linkType: "ProjectInvitation",
                 linkId: invitation.Id.ToString());
 
             return _mapper.Map<InvitationResponseDTO>(invitation);
         }
 
-        public async Task<InvitationResponseDTO> AcceptAsync(Guid invitationId)
+        public async Task<InvitationResponseDTO> AcceptAsync(Guid invitationId, Guid accountId, string? actorName)
         {
-            var accountId = _currentUser.AccountId
-                ?? throw new ApiExceptionResponse("Authentication required.", 401);
-
             var invitation = await EnsureActiveOwnedAsync(invitationId, accountId);
 
             if (!invitation.InvitedGroupId.HasValue)
@@ -111,8 +103,8 @@ namespace Application.Services
             var groupId = invitation.InvitedGroupId.Value;
             var projectId = invitation.ProjectId;
 
-            var groupMembers = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
-                .Where(gm => gm.GroupId == groupId)
+            var groupMembers = (await _unitOfWork.Repository<GroupMember>()
+                    .FindAsync(gm => gm.GroupId == groupId))
                 .ToList();
             var member = groupMembers.FirstOrDefault(gm => gm.AccountId == accountId);
 
@@ -145,8 +137,9 @@ namespace Application.Services
                 });
             }
 
-            var participant = (await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync())
-                .FirstOrDefault(p => p.ProjectId == projectId && p.GroupId == groupId);
+            var participant = (await _unitOfWork.Repository<ProjectParticipant>()
+                    .FindAsync(p => p.ProjectId == projectId && p.GroupId == groupId))
+                .FirstOrDefault();
             var isNewParticipant = participant == null;
 
             if (participant == null)
@@ -181,9 +174,9 @@ namespace Application.Services
                 var project = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId);
                 await _notification.NotifyAsync(
                     invitation.InvitedByAccountId.Value,
-                    $"{_currentUser.UserName ?? "Người dùng"} đã chấp nhận lời mời vào nhóm \"{group?.Name}\" " +
+                    $"{actorName ?? "Người dùng"} đã chấp nhận lời mời vào nhóm \"{group?.Name}\" " +
                     $"(vai trò {RoleLabel(invitation.Role)}) của dự án \"{project?.ProjectName}\".",
-                    senderName: _currentUser.UserName ?? "System",
+                    senderName: actorName ?? "System",
                     linkType: "ProjectInvitation",
                     linkId: invitation.Id.ToString());
             }
@@ -191,11 +184,8 @@ namespace Application.Services
             return _mapper.Map<InvitationResponseDTO>(invitation);
         }
 
-        public async Task<InvitationResponseDTO> RejectAsync(Guid invitationId)
+        public async Task<InvitationResponseDTO> RejectAsync(Guid invitationId, Guid accountId, string? actorName)
         {
-            var accountId = _currentUser.AccountId
-                ?? throw new ApiExceptionResponse("Authentication required.", 401);
-
             var invitation = await EnsureActiveOwnedAsync(invitationId, accountId);
 
             invitation.Status = InvitationStatus.Rejected;
@@ -211,9 +201,9 @@ namespace Application.Services
                 var project = await _unitOfWork.Repository<Project>().GetByIdAsync(invitation.ProjectId);
                 await _notification.NotifyAsync(
                     invitation.InvitedByAccountId.Value,
-                    $"{_currentUser.UserName ?? "Người dùng"} đã từ chối lời mời vào nhóm \"{group?.Name}\" " +
+                    $"{actorName ?? "Người dùng"} đã từ chối lời mời vào nhóm \"{group?.Name}\" " +
                     $"của dự án \"{project?.ProjectName}\".",
-                    senderName: _currentUser.UserName ?? "System",
+                    senderName: actorName ?? "System",
                     linkType: "ProjectInvitation",
                     linkId: invitation.Id.ToString());
             }
@@ -224,13 +214,10 @@ namespace Application.Services
         private static string RoleLabel(GroupMemberRole role)
             => role == GroupMemberRole.Leader ? "Trưởng nhóm" : "Thành viên";
 
-        public async Task<IEnumerable<MyInvitationDTO>> GetMyPendingAsync()
+        public async Task<IEnumerable<MyInvitationDTO>> GetMyPendingAsync(Guid accountId)
         {
-            var accountId = _currentUser.AccountId
-                ?? throw new ApiExceptionResponse("Authentication required.", 401);
-
-            var invitations = (await _unitOfWork.Repository<ProjectInvitation>().GetAllAsync())
-                .Where(i => i.InvitedAccountId == accountId && i.Status == InvitationStatus.Pending)
+            var invitations = (await _unitOfWork.Repository<ProjectInvitation>()
+                    .FindAsync(i => i.InvitedAccountId == accountId && i.Status == InvitationStatus.Pending))
                 .ToList();
 
             if (invitations.Count == 0)

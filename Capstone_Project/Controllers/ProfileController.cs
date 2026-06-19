@@ -1,6 +1,7 @@
 using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Profile;
 using Application.Interfaces.IServices;
+using Capstone_Project.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -22,7 +23,7 @@ namespace Capstone_Project.Controllers
         [HttpGet]
         public async Task<IActionResult> Get()
         {
-            var result = await _profileService.GetMyProfileAsync();
+            var result = await _profileService.GetMyProfileAsync(User.GetAccountId());
             return Ok(ApiResponse.Success("Profile retrieved", result));
         }
 
@@ -30,7 +31,7 @@ namespace Capstone_Project.Controllers
         [HttpPut]
         public async Task<IActionResult> Update([FromBody] UpdateProfileDTO dto)
         {
-            var result = await _profileService.UpdateMyProfileAsync(dto);
+            var result = await _profileService.UpdateMyProfileAsync(User.GetAccountId(), dto);
             return Ok(ApiResponse.Success("Profile updated", result));
         }
 
@@ -38,7 +39,7 @@ namespace Capstone_Project.Controllers
         [HttpPost("change-password")]
         public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDTO dto)
         {
-            await _profileService.ChangePasswordAsync(dto);
+            await _profileService.ChangePasswordAsync(User.GetAccountId(), dto);
             return Ok(ApiResponse.Success("Password changed"));
         }
     }

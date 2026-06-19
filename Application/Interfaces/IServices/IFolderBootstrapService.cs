@@ -17,6 +17,7 @@ namespace Application.Interfaces.IServices
 
         // Team Leader (hoặc PM/Admin) tạo thư mục con để tổ chức file.
         // Kế thừa Area/OwnerGroup/OwnerOrganization từ folder cha.
-        Task<FolderResponseDTO> CreateChildFolderAsync(Guid parentFolderId, string name);
+        // actorId/actorRole do controller lấy từ JWT truyền vào để kiểm tra quyền.
+        Task<FolderResponseDTO> CreateChildFolderAsync(Guid parentFolderId, string name, Guid actorId, string? actorRole);
     }
 }

@@ -23,6 +23,6 @@ namespace Application.DTOs.RequestDTOs.Invitation
         [StringLength(500)]
         public string? Note { get; set; }
 
-        // InvitedByAccountId lấy từ JWT (ICurrentUserService) — không cần body
+        // InvitedByAccountId lấy từ JWT (controller truyền inviterId xuống service) — không cần body
     }
 }
