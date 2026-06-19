@@ -7,6 +7,9 @@ using Microsoft.AspNetCore.SignalR;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Syncfusion Community license (convert Office -> PDF)
+builder.RegisterSyncfusionLicense();
+
 // Controllers + Exception Filter
 builder.Services.AddControllers(options =>
 {

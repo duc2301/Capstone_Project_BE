@@ -14,16 +14,22 @@ namespace Capstone_Project.Controllers
         private readonly IFileItemService _service;
         private readonly IFileUploadService _upload;
         private readonly IApprovalService _approval;
+        private readonly IFileViewService _view;
 
-        public FileItemsController(IFileItemService service, IFileUploadService upload, IApprovalService approval)
+        public FileItemsController(IFileItemService service, IFileUploadService upload, IApprovalService approval, IFileViewService view)
         {
             _service = service;
             _upload = upload;
             _approval = approval;
+            _view = view;
         }
 
         // Luồng tải file lên (multipart/form-data): file + FolderId + FileType + (Name tùy chọn).
+        // Cho phép file lớn tới 500MB (CAD/BIM .nwd/.rvt...) — mặc định Kestrel ~28MB, multipart ~128MB.
         [HttpPost("upload")]
+        [Consumes("multipart/form-data")]
+        [RequestSizeLimit(524_288_000)]
+        [RequestFormLimits(MultipartBodyLengthLimit = 524_288_000)]
         public async Task<IActionResult> Upload([FromForm] UploadFileDTO dto, IFormFile file, CancellationToken ct)
         {
             if (file == null || file.Length == 0)
@@ -49,6 +55,11 @@ namespace Capstone_Project.Controllers
             var url = await _upload.GetViewUrlAsync(id, minutes, ct);
             return Ok(ApiResponse.Success("File URL", new { url }));
         }
+
+        // "Xem chi tiết": FE dựa vào Kind để hiển thị (model = APS viewer, inline = web, download = tải về).
+        [HttpGet("{id:guid}/view")]
+        public async Task<IActionResult> GetViewInfo(Guid id, CancellationToken ct)
+            => Ok(ApiResponse.Success("File view info", await _view.GetViewInfoAsync(id, ct)));
 
         /// <summary>
         /// Gửi file CDE để chờ Team Leader phê duyệt.

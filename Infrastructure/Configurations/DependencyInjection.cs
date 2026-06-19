@@ -46,6 +46,8 @@ namespace Infrastructure.Configurations
             else
                 services.AddSingleton<IFileStorageService, LocalFileStorageService>();
             services.AddScoped<IFileUploadService, FileUploadService>();
+            services.AddSingleton<IOfficeToPdfConverter, SyncfusionOfficeToPdfConverter>();
+            services.AddScoped<IFileViewService, FileViewService>();
             services.AddScoped<ISubmittalService, SubmittalService>();
             services.AddScoped<IDiscussionService, DiscussionService>();
             services.AddScoped<IIssueService, IssueService>();

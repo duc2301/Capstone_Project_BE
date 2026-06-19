@@ -14,6 +14,9 @@ namespace Domain.Entities
         public Guid? UploadedByAccountId { get; set; }
         public DateTime? UploadedAt { get; set; }
 
+        public string? ViewerUrn { get; set; }
+        public string? PreviewStoragePath { get; set; }
+
         public FileItem FileItem { get; set; } = null!;
     }
 }

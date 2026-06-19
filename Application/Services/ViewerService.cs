@@ -38,12 +38,12 @@ namespace Application.Services
         }
 
         public async Task<UploadModelResponseDTO> UploadAndTranslateAsync(
-            Stream content, string fileName, CancellationToken ct = default)
+            Stream content, string fileName, long? contentLength = null, CancellationToken ct = default)
         {
             var safeFileName = Path.GetFileName(fileName);
             var objectKey = $"{Guid.NewGuid():N}_{safeFileName}";
             await EnsureBucketAsync(ct);
-            var objectId = await SignedUploadAsync(objectKey, content, ct);
+            var objectId = await SignedUploadAsync(objectKey, content, contentLength, ct);
             var urn = ToBase64Url(objectId);
             await StartTranslationAsync(urn, ct);
             return new UploadModelResponseDTO { Urn = urn, FileName = safeFileName };
@@ -113,7 +113,8 @@ namespace Application.Services
             await EnsureSuccessAsync(res, "Tạo bucket OSS thất bại.", ct);
         }
 
-        private async Task<string> SignedUploadAsync(string objectKey, Stream content, CancellationToken ct)
+        private async Task<string> SignedUploadAsync(
+            string objectKey, Stream content, long? contentLength, CancellationToken ct)
         {
             var (token, _) = await GetTokenAsync(InternalScope, ct);
             var encodedKey = Uri.EscapeDataString(objectKey);
@@ -130,11 +131,42 @@ namespace Application.Services
                 signedUrl = doc.RootElement.GetProperty("urls")[0].GetString()!;
             }
 
-            using (var put = new HttpRequestMessage(HttpMethod.Put, signedUrl))
+            // S3 (signed URL PUT) KHÔNG chấp nhận Transfer-Encoding: chunked -> bắt buộc có Content-Length.
+            // Stream đọc lại từ Object Storage không seekable & không rõ độ dài -> set length tường minh,
+            // hoặc buffer vào RAM nếu không biết độ dài.
+            Stream body = content;
+            MemoryStream? buffered = null;
+            long length;
+            if (contentLength is > 0)
             {
-                put.Content = new StreamContent(content);
+                length = contentLength.Value;
+            }
+            else if (content.CanSeek)
+            {
+                content.Position = 0;
+                length = content.Length;
+            }
+            else
+            {
+                buffered = new MemoryStream();
+                await content.CopyToAsync(buffered, ct);
+                buffered.Position = 0;
+                body = buffered;
+                length = buffered.Length;
+            }
+
+            try
+            {
+                using var put = new HttpRequestMessage(HttpMethod.Put, signedUrl);
+                var streamContent = new StreamContent(body);
+                streamContent.Headers.ContentLength = length;   // tắt chunked
+                put.Content = streamContent;
                 using var putRes = await _http.SendAsync(put, ct);
                 await EnsureSuccessAsync(putRes, "Upload nội dung lên S3 thất bại.", ct);
+            }
+            finally
+            {
+                if (buffered != null) await buffered.DisposeAsync();
             }
 
             using (var comp = new HttpRequestMessage(HttpMethod.Post, signUrl))
@@ -156,10 +188,12 @@ namespace Application.Services
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             req.Headers.Add("x-ads-force", "true");
 
+            // SVF (classic): derivative tải bằng bearer token 2-legged -> hợp với token /viewer/token của mình.
+            // (SVF2/streaming dùng CDN + cơ chế auth khác, hay fail "Failed to fetch" ở viewer tùy biến.)
             var body = new
             {
                 input = new { urn },
-                output = new { formats = new[] { new { type = "svf2", views = new[] { "2d", "3d" } } } },
+                output = new { formats = new[] { new { type = "svf", views = new[] { "2d", "3d" } } } },
             };
             req.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
 
