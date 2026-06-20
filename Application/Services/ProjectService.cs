@@ -71,8 +71,8 @@ namespace Application.Services
 
         private async Task<ProjectLocationResponseDTO?> GetDefaultLocationAsync(Guid projectId)
         {
-            var locations = (await _unitOfWork.Repository<ProjectLocation>().GetAllAsync())
-                .Where(l => l.ProjectId == projectId)
+            var locations = (await _unitOfWork.Repository<ProjectLocation>()
+                    .FindAsync(l => l.ProjectId == projectId))
                 .ToList();
             var location = locations.FirstOrDefault(l => l.IsDefault) ?? locations.FirstOrDefault();
             return location == null ? null : _mapper.Map<ProjectLocationResponseDTO>(location);
@@ -80,8 +80,8 @@ namespace Application.Services
 
         private async Task<List<ProjectModelResponseDTO>> GetModelsAsync(Guid projectId)
         {
-            var models = (await _unitOfWork.Repository<ProjectModel>().GetAllAsync())
-                .Where(m => m.ProjectId == projectId)
+            var models = (await _unitOfWork.Repository<ProjectModel>()
+                    .FindAsync(m => m.ProjectId == projectId))
                 .OrderByDescending(m => m.CreatedAt)
                 .ToList();
             return _mapper.Map<List<ProjectModelResponseDTO>>(models);

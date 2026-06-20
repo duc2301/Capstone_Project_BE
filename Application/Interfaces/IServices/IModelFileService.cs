@@ -1,11 +1,14 @@
 using Application.DTOs.RequestDTOs.ModelFile;
 using Application.DTOs.ResponseDTOs.ModelFile;
-using Domain.Entities;
 
 namespace Application.Interfaces.IServices
 {
     public interface IModelFileService
-        : IGenericService<ModelFile, CreateModelFileDTO, UpdateModelFileDTO, ModelFileResponseDTO>
     {
+        Task<IEnumerable<ModelFileResponseDTO>> GetAllAsync();
+        Task<ModelFileResponseDTO?> GetByIdAsync(Guid id);
+        Task<ModelFileResponseDTO> CreateAsync(CreateModelFileDTO dto);
+        Task<ModelFileResponseDTO> UpdateAsync(Guid id, UpdateModelFileDTO dto);
+        Task DeleteAsync(Guid id);
     }
 }

@@ -10,26 +10,22 @@ namespace Application.Services
     public class ProfileService : IProfileService
     {
         private readonly IUnitOfWork _unitOfWork;
-        private readonly ICurrentUserService _currentUser;
 
-        public ProfileService(IUnitOfWork unitOfWork, ICurrentUserService currentUser)
+        public ProfileService(IUnitOfWork unitOfWork)
         {
             _unitOfWork = unitOfWork;
-            _currentUser = currentUser;
         }
 
-        public async Task<ProfileResponseDTO> GetMyProfileAsync()
+        public async Task<ProfileResponseDTO> GetMyProfileAsync(Guid accountId)
         {
-            var accountId = RequireAccountId();
             var account = await _unitOfWork.AccountRepository.GetByIdAsync(accountId)
                 ?? throw new ApiExceptionResponse("Account not found.", 404);
 
             return await BuildAsync(account);
         }
 
-        public async Task<ProfileResponseDTO> UpdateMyProfileAsync(UpdateProfileDTO dto)
+        public async Task<ProfileResponseDTO> UpdateMyProfileAsync(Guid accountId, UpdateProfileDTO dto)
         {
-            var accountId = RequireAccountId();
             var account = await _unitOfWork.AccountRepository.GetByIdAsync(accountId)
                 ?? throw new ApiExceptionResponse("Account not found.", 404);
 
@@ -52,9 +48,8 @@ namespace Application.Services
             return await BuildAsync(account);
         }
 
-        public async Task ChangePasswordAsync(ChangePasswordDTO dto)
+        public async Task ChangePasswordAsync(Guid accountId, ChangePasswordDTO dto)
         {
-            var accountId = RequireAccountId();
             var account = await _unitOfWork.AccountRepository.GetByIdAsync(accountId)
                 ?? throw new ApiExceptionResponse("Account not found.", 404);
 
@@ -73,15 +68,11 @@ namespace Application.Services
             // Nếu yêu cầu "đổi pass = đăng xuất mọi nơi", thêm RevokeAllForAccount sau.
         }
 
-        private Guid RequireAccountId()
-            => _currentUser.AccountId
-               ?? throw new ApiExceptionResponse("Authentication required.", 401);
-
         // Build profile + join group memberships để FE 1 call là đủ thông tin user.
         private async Task<ProfileResponseDTO> BuildAsync(Account account)
         {
-            var memberships = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
-                .Where(gm => gm.AccountId == account.Id)
+            var memberships = (await _unitOfWork.Repository<GroupMember>()
+                    .FindAsync(gm => gm.AccountId == account.Id))
                 .ToList();
 
             IDictionary<Guid, Group> groupIndex;
@@ -92,8 +83,8 @@ namespace Application.Services
             else
             {
                 var ids = memberships.Select(m => m.GroupId).ToHashSet();
-                groupIndex = (await _unitOfWork.Repository<Group>().GetAllAsync())
-                    .Where(g => ids.Contains(g.Id))
+                groupIndex = (await _unitOfWork.Repository<Group>()
+                        .FindAsync(g => ids.Contains(g.Id)))
                     .ToDictionary(g => g.Id);
             }
 

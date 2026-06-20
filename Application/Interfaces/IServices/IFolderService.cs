@@ -1,11 +1,14 @@
 using Application.DTOs.RequestDTOs.Folder;
 using Application.DTOs.ResponseDTOs.Folder;
-using Domain.Entities;
 
 namespace Application.Interfaces.IServices
 {
     public interface IFolderService
-        : IGenericService<Folder, CreateFolderDTO, UpdateFolderDTO, FolderResponseDTO>
     {
+        Task<IEnumerable<FolderResponseDTO>> GetAllAsync();
+        Task<FolderResponseDTO?> GetByIdAsync(Guid id);
+        Task<FolderResponseDTO> CreateAsync(CreateFolderDTO dto);
+        Task<FolderResponseDTO> UpdateAsync(Guid id, UpdateFolderDTO dto);
+        Task DeleteAsync(Guid id);
     }
 }

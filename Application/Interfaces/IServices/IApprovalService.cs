@@ -8,48 +8,26 @@ namespace Application.Interfaces.IServices
     /// </summary>
     /// <remarks>
     /// Approval gắn với FileItem, không gắn với Document vì Document đang dùng cho RAG.
+    /// actorId của người thao tác do controller lấy từ JWT truyền vào.
     /// </remarks>
     public interface IApprovalService
     {
-        /// <summary>
-        /// Gửi file để chờ Team Leader phê duyệt.
-        /// </summary>
-        /// <param name="fileItemId">Id của file cần gửi duyệt.</param>
-        /// <returns>Thông tin yêu cầu phê duyệt vừa tạo.</returns>
-        Task<ApprovalRequestResponseDTO> SubmitAsync(Guid fileItemId);
+        // Gửi file để chờ Team Leader phê duyệt.
+        Task<ApprovalRequestResponseDTO> SubmitAsync(Guid fileItemId, Guid actorId);
 
-        /// <summary>
-        /// Lấy tất cả yêu cầu phê duyệt mà người dùng hiện tại được phép xem.
-        /// </summary>
-        /// <returns>Danh sách yêu cầu phê duyệt gồm Pending, Approved và Rejected.</returns>
-        Task<IEnumerable<ApprovalRequestResponseDTO>> GetAllAsync();
+        // Tất cả yêu cầu phê duyệt mà người dùng được phép xem.
+        Task<IEnumerable<ApprovalRequestResponseDTO>> GetAllAsync(Guid actorId);
 
-        /// <summary>
-        /// Lấy danh sách yêu cầu đang chờ duyệt của Team Leader hiện tại.
-        /// </summary>
-        /// <returns>Danh sách yêu cầu có trạng thái Pending.</returns>
-        Task<IEnumerable<ApprovalRequestResponseDTO>> GetPendingAsync();
+        // Danh sách yêu cầu đang chờ duyệt của Team Leader hiện tại.
+        Task<IEnumerable<ApprovalRequestResponseDTO>> GetPendingAsync(Guid actorId);
 
-        /// <summary>
-        /// Lấy chi tiết một yêu cầu phê duyệt.
-        /// </summary>
-        /// <param name="id">Id của yêu cầu phê duyệt.</param>
-        /// <returns>Chi tiết yêu cầu phê duyệt.</returns>
-        Task<ApprovalRequestResponseDTO> GetByIdAsync(Guid id);
+        // Chi tiết một yêu cầu phê duyệt.
+        Task<ApprovalRequestResponseDTO> GetByIdAsync(Guid id, Guid actorId);
 
-        /// <summary>
-        /// Duyệt file đang chờ phê duyệt.
-        /// </summary>
-        /// <param name="id">Id của yêu cầu phê duyệt.</param>
-        /// <returns>Thông tin yêu cầu sau khi duyệt.</returns>
-        Task<ApprovalRequestResponseDTO> ApproveAsync(Guid id);
+        // Duyệt file đang chờ phê duyệt.
+        Task<ApprovalRequestResponseDTO> ApproveAsync(Guid id, Guid actorId);
 
-        /// <summary>
-        /// Từ chối file đang chờ phê duyệt.
-        /// </summary>
-        /// <param name="id">Id của yêu cầu phê duyệt.</param>
-        /// <param name="dto">Thông tin lý do từ chối.</param>
-        /// <returns>Thông tin yêu cầu sau khi từ chối.</returns>
-        Task<ApprovalRequestResponseDTO> RejectAsync(Guid id, RejectApprovalRequestDTO dto);
+        // Từ chối file đang chờ phê duyệt (lý do bắt buộc).
+        Task<ApprovalRequestResponseDTO> RejectAsync(Guid id, RejectApprovalRequestDTO dto, Guid actorId);
     }
 }

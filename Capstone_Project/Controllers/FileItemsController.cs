@@ -2,6 +2,7 @@ using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.FileItem;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
+using Capstone_Project.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -36,7 +37,7 @@ namespace Capstone_Project.Controllers
                 throw new ApiExceptionResponse("No file provided.", 400);
 
             await using var stream = file.OpenReadStream();
-            var result = await _upload.UploadAsync(dto, stream, file.FileName, ct);
+            var result = await _upload.UploadAsync(dto, stream, file.FileName, User.GetAccountId(), ct);
             return Ok(ApiResponse.Success("Uploaded successfully", result));
         }
 
@@ -44,7 +45,7 @@ namespace Capstone_Project.Controllers
         [HttpGet("{id:guid}/download")]
         public async Task<IActionResult> Download(Guid id, CancellationToken ct)
         {
-            var dl = await _upload.OpenDownloadAsync(id, ct);
+            var dl = await _upload.OpenDownloadAsync(id, User.GetAccountId(), ct);
             return File(dl.Content, dl.ContentType, dl.FileName);
         }
 
@@ -52,7 +53,7 @@ namespace Capstone_Project.Controllers
         [HttpGet("{id:guid}/url")]
         public async Task<IActionResult> GetUrl(Guid id, CancellationToken ct, [FromQuery] int minutes = 60)
         {
-            var url = await _upload.GetViewUrlAsync(id, minutes, ct);
+            var url = await _upload.GetViewUrlAsync(id, User.GetAccountId(), minutes, ct);
             return Ok(ApiResponse.Success("File URL", new { url }));
         }
 
@@ -77,17 +78,17 @@ namespace Capstone_Project.Controllers
         /// </remarks>
         [HttpPost("{id:guid}/submit-approval")]
         public async Task<IActionResult> SubmitApproval(Guid id)
-            => Ok(ApiResponse.Success("File submitted for approval", await _approval.SubmitAsync(id)));
+            => Ok(ApiResponse.Success("File submitted for approval", await _approval.SubmitAsync(id, User.GetAccountId())));
 
         // Danh sách file trong 1 folder (FE gọi khi mở/chọn folder).
         [HttpGet("by-folder/{folderId:guid}")]
         public async Task<IActionResult> GetByFolder(Guid folderId)
-            => Ok(ApiResponse.Success("Files retrieved", await _service.GetByFolderAsync(folderId)));
+            => Ok(ApiResponse.Success("Files retrieved", await _service.GetByFolderAsync(folderId, User.GetAccountId())));
 
         // Tất cả phiên bản của 1 file.
         [HttpGet("{id:guid}/versions")]
         public async Task<IActionResult> GetVersions(Guid id)
-            => Ok(ApiResponse.Success("Versions retrieved", await _service.GetVersionsAsync(id)));
+            => Ok(ApiResponse.Success("Versions retrieved", await _service.GetVersionsAsync(id, User.GetAccountId())));
 
         [HttpGet]
         public async Task<IActionResult> GetAll()

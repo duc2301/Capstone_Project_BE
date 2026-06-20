@@ -8,14 +8,15 @@ namespace Application.Interfaces.IServices
     // - PM add nhiều bên tham gia (department/team/organization) vô project trong 1 transaction
     public interface IProjectFlowService
     {
-        Task<ProjectResponseDTO> AssignManagerAsync(Guid projectId, AssignProjectManagerDTO dto);
-        Task<List<ParticipantResponseDTO>> AddParticipantsAsync(Guid projectId, AddParticipantsBulkDTO dto);
+        // actorName/actorId/actorRole của người thao tác do controller lấy từ JWT.
+        Task<ProjectResponseDTO> AssignManagerAsync(Guid projectId, AssignProjectManagerDTO dto, string? actorName);
+        Task<List<ParticipantResponseDTO>> AddParticipantsAsync(Guid projectId, AddParticipantsBulkDTO dto, Guid actorId, string? actorRole);
         Task<List<ParticipantResponseDTO>> GetParticipantsAsync(Guid projectId);
 
         Task<ParticipantResponseDTO> UpdateParticipantStatusAsync(
             Guid projectId, Guid groupId, UpdateParticipantStatusDTO dto);
 
         // Danh sách dự án người dùng hiện tại đang tham gia (qua group) hoặc làm PM.
-        Task<List<ProjectResponseDTO>> GetMyProjectsAsync();
+        Task<List<ProjectResponseDTO>> GetMyProjectsAsync(Guid actorId);
     }
 }

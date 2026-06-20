@@ -1,11 +1,14 @@
 using Application.DTOs.RequestDTOs.Project;
 using Application.DTOs.ResponseDTOs.Project;
-using Domain.Entities;
 
 namespace Application.Interfaces.IServices
 {
     public interface IProjectService
-        : IGenericService<Project, CreateProjectDTO, UpdateProjectDTO, ProjectResponseDTO>
     {
+        Task<IEnumerable<ProjectResponseDTO>> GetAllAsync();
+        Task<ProjectResponseDTO?> GetByIdAsync(Guid id);
+        Task<ProjectResponseDTO> CreateAsync(CreateProjectDTO dto);
+        Task<ProjectResponseDTO> UpdateAsync(Guid id, UpdateProjectDTO dto);
+        Task DeleteAsync(Guid id);
     }
 }

@@ -18,13 +18,13 @@ namespace Application.Interfaces.IServices
         // Cây thư mục của dự án đã lọc theo quyền View của account (lọc theo khu vực nếu có).
         Task<List<FolderTreeNodeDTO>> GetTreeAsync(Guid projectId, Guid accountId, CdeArea? area = null);
 
-        // Liệt kê các dòng ACL override tường minh trên 1 folder.
-        Task<List<FolderPermissionResponseDTO>> GetPermissionsAsync(Guid folderId);
+        // Liệt kê các dòng ACL override tường minh trên 1 folder (chỉ Admin/PM — actor lấy từ JWT).
+        Task<List<FolderPermissionResponseDTO>> GetPermissionsAsync(Guid folderId, Guid actorId, string? actorRole);
 
         // Upsert 1 dòng ACL override (theo cặp Folder + Group|Organization).
-        Task<FolderPermissionResponseDTO> SetPermissionAsync(Guid folderId, SetFolderPermissionDTO dto);
+        Task<FolderPermissionResponseDTO> SetPermissionAsync(Guid folderId, SetFolderPermissionDTO dto, Guid actorId, string? actorRole);
 
         // Xóa 1 dòng ACL override.
-        Task DeletePermissionAsync(Guid folderId, Guid permissionId);
+        Task DeletePermissionAsync(Guid folderId, Guid permissionId, Guid actorId, string? actorRole);
     }
 }

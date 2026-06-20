@@ -23,7 +23,6 @@ namespace Application.Services
         private static readonly bool AutoTranslateModelsOnUpload = false;
 
         private readonly IUnitOfWork _unitOfWork;
-        private readonly ICurrentUserService _currentUser;
         private readonly IFolderPermissionService _permission;
         private readonly IFileStorageService _storage;
         private readonly IModelTranslationQueue _translationQueue;
@@ -31,14 +30,12 @@ namespace Application.Services
 
         public FileUploadService(
             IUnitOfWork unitOfWork,
-            ICurrentUserService currentUser,
             IFolderPermissionService permission,
             IFileStorageService storage,
             IModelTranslationQueue translationQueue,
             IMapper mapper)
         {
             _unitOfWork = unitOfWork;
-            _currentUser = currentUser;
             _permission = permission;
             _storage = storage;
             _translationQueue = translationQueue;
@@ -46,11 +43,8 @@ namespace Application.Services
         }
 
         public async Task<FileUploadResultDTO> UploadAsync(
-            UploadFileDTO dto, Stream content, string originalFileName, CancellationToken ct = default)
+            UploadFileDTO dto, Stream content, string originalFileName, Guid actor, CancellationToken ct = default)
         {
-            var actor = _currentUser.AccountId
-                ?? throw new ApiExceptionResponse("Authentication required.", 401);
-
             var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(dto.FolderId)
                 ?? throw new ApiExceptionResponse("Folder not found.", 404);
 
@@ -76,8 +70,8 @@ namespace Application.Services
             ValidateExtensionMatchesType(ext, dto.FileType);
 
             // ⑤ Trùng tên trong folder -> đây là phiên bản mới.
-            var siblings = (await _unitOfWork.Repository<FileItem>().GetAllAsync())
-                .Where(f => f.FolderId == folder.Id)
+            var siblings = (await _unitOfWork.Repository<FileItem>()
+                    .FindAsync(f => f.FolderId == folder.Id))
                 .ToList();
             var existing = siblings.FirstOrDefault(
                 f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
@@ -127,8 +121,8 @@ namespace Application.Services
             }
 
             // --- Phiên bản mới của file đã tồn tại ---
-            var versions = (await _unitOfWork.Repository<FileVersion>().GetAllAsync())
-                .Where(v => v.FileItemId == existing!.Id)
+            var versions = (await _unitOfWork.Repository<FileVersion>()
+                    .FindAsync(v => v.FileItemId == existing!.Id))
                 .ToList();
             var nextNo = (versions.Count == 0 ? 0 : versions.Max(v => v.VersionNumber)) + 1;
 
@@ -181,11 +175,8 @@ namespace Application.Services
             };
         }
 
-        public async Task<DownloadFileResult> OpenDownloadAsync(Guid fileItemId, CancellationToken ct = default)
+        public async Task<DownloadFileResult> OpenDownloadAsync(Guid fileItemId, Guid actor, CancellationToken ct = default)
         {
-            var actor = _currentUser.AccountId
-                ?? throw new ApiExceptionResponse("Authentication required.", 401);
-
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
@@ -202,11 +193,8 @@ namespace Application.Services
             return new DownloadFileResult(stream, downloadName, _storage.GetContentType(version.Format));
         }
 
-        public async Task<string?> GetViewUrlAsync(Guid fileItemId, int minutes = 60, CancellationToken ct = default)
+        public async Task<string?> GetViewUrlAsync(Guid fileItemId, Guid actor, int minutes = 60, CancellationToken ct = default)
         {
-            var actor = _currentUser.AccountId
-                ?? throw new ApiExceptionResponse("Authentication required.", 401);
-
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
@@ -244,8 +232,8 @@ namespace Application.Services
         // Tìm folder Archived của nhóm sở hữu (đi ngược cây tìm OwnerGroupId), fallback về Archived gốc.
         private async Task<Folder> ResolveArchivedFolderAsync(Folder folder)
         {
-            var projectFolders = (await _unitOfWork.Repository<Folder>().GetAllAsync())
-                .Where(f => f.ProjectId == folder.ProjectId)
+            var projectFolders = (await _unitOfWork.Repository<Folder>()
+                    .FindAsync(f => f.ProjectId == folder.ProjectId))
                 .ToList();
             var byId = projectFolders.ToDictionary(f => f.Id);
 

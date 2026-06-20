@@ -3,6 +3,7 @@ using Application.DTOs.RequestDTOs.Project;
 using Application.DTOs.ResponseDTOs.Project;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
+using Capstone_Project.Extensions;
 using Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -28,7 +29,7 @@ namespace Capstone_Project.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> AssignManager(Guid id, [FromBody] AssignProjectManagerDTO dto)
         {
-            var result = await _projectFlow.AssignManagerAsync(id, dto);
+            var result = await _projectFlow.AssignManagerAsync(id, dto, User.GetUserName());
             return Ok(ApiResponse.Success("Manager assigned", result));
         }
 
@@ -36,7 +37,7 @@ namespace Capstone_Project.Controllers
         [Authorize]
         public async Task<IActionResult> AddParticipants(Guid id, [FromBody] AddParticipantsBulkDTO dto)
         {
-            var result = await _projectFlow.AddParticipantsAsync(id, dto);
+            var result = await _projectFlow.AddParticipantsAsync(id, dto, User.GetAccountId(), User.GetSystemRole());
             return Ok(ApiResponse.Success($"{result.Count} participant(s) added", result));
         }
 
@@ -87,7 +88,7 @@ namespace Capstone_Project.Controllers
         [Authorize]
         public async Task<IActionResult> GetMine()
         {
-            var result = await _projectFlow.GetMyProjectsAsync();
+            var result = await _projectFlow.GetMyProjectsAsync(User.GetAccountId());
             return Ok(ApiResponse.Success("My projects retrieved", result));
         }
 

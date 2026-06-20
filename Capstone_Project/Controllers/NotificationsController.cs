@@ -1,5 +1,6 @@
 using Application.DTOs.ApiResponseDTO;
 using Application.Interfaces.IServices;
+using Capstone_Project.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -21,7 +22,7 @@ namespace Capstone_Project.Controllers
         [HttpGet("me")]
         public async Task<IActionResult> GetMine()
         {
-            var result = await _notificationService.GetMyAsync();
+            var result = await _notificationService.GetMyAsync(User.GetAccountId());
             return Ok(ApiResponse.Success("Notifications retrieved", result));
         }
 
@@ -29,7 +30,7 @@ namespace Capstone_Project.Controllers
         [HttpPost("{id:guid}/read")]
         public async Task<IActionResult> MarkRead(Guid id)
         {
-            await _notificationService.MarkReadAsync(id);
+            await _notificationService.MarkReadAsync(id, User.GetAccountId());
             return Ok(ApiResponse.Success("Notification marked as read"));
         }
 
