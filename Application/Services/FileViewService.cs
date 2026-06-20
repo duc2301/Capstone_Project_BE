@@ -24,7 +24,6 @@ namespace Application.Services
         private static readonly string[] TextExts = { ".txt", ".csv" };
 
         private readonly IUnitOfWork _unitOfWork;
-        private readonly ICurrentUserService _currentUser;
         private readonly IFolderPermissionService _permission;
         private readonly IFileStorageService _storage;
         private readonly IOfficeToPdfConverter _officeConverter;
@@ -33,7 +32,6 @@ namespace Application.Services
 
         public FileViewService(
             IUnitOfWork unitOfWork,
-            ICurrentUserService currentUser,
             IFolderPermissionService permission,
             IFileStorageService storage,
             IOfficeToPdfConverter officeConverter,
@@ -41,7 +39,6 @@ namespace Application.Services
             ILogger<FileViewService> logger)
         {
             _unitOfWork = unitOfWork;
-            _currentUser = currentUser;
             _permission = permission;
             _storage = storage;
             _officeConverter = officeConverter;
@@ -49,11 +46,8 @@ namespace Application.Services
             _logger = logger;
         }
 
-        public async Task<FileViewInfoDTO> GetViewInfoAsync(Guid fileItemId, CancellationToken ct = default)
+        public async Task<FileViewInfoDTO> GetViewInfoAsync(Guid fileItemId, Guid actor, CancellationToken ct = default)
         {
-            var actor = _currentUser.AccountId
-                ?? throw new ApiExceptionResponse("Authentication required.", 401);
-
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
@@ -109,11 +103,8 @@ namespace Application.Services
         }
 
         // Dịch lại model (khi Failed, hoặc người dùng chủ động làm mới): reset trạng thái + đẩy lại vào hàng đợi nền.
-        public async Task RetranslateAsync(Guid fileItemId, CancellationToken ct = default)
+        public async Task RetranslateAsync(Guid fileItemId, Guid actor, CancellationToken ct = default)
         {
-            var actor = _currentUser.AccountId
-                ?? throw new ApiExceptionResponse("Authentication required.", 401);
-
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
