@@ -27,8 +27,8 @@ namespace Application.Services
         private readonly ICurrentUserService _currentUser;
         private readonly IFolderPermissionService _permission;
         private readonly IFileStorageService _storage;
-        private readonly IViewerService _viewer;
         private readonly IOfficeToPdfConverter _officeConverter;
+        private readonly IModelTranslationQueue _translationQueue;
         private readonly ILogger<FileViewService> _logger;
 
         public FileViewService(
@@ -36,16 +36,16 @@ namespace Application.Services
             ICurrentUserService currentUser,
             IFolderPermissionService permission,
             IFileStorageService storage,
-            IViewerService viewer,
             IOfficeToPdfConverter officeConverter,
+            IModelTranslationQueue translationQueue,
             ILogger<FileViewService> logger)
         {
             _unitOfWork = unitOfWork;
             _currentUser = currentUser;
             _permission = permission;
             _storage = storage;
-            _viewer = viewer;
             _officeConverter = officeConverter;
+            _translationQueue = translationQueue;
             _logger = logger;
         }
 
@@ -72,32 +72,67 @@ namespace Application.Services
 
             return fileItem.FileType switch
             {
-                FileType.Ifc or FileType.Cad => await BuildModelAsync(version, fileName, format, ct),
+                FileType.Ifc or FileType.Cad => await BuildModelAsync(version, fileName, format),
                 FileType.Pdf or FileType.Image => await BuildInlineAsync(version.StoragePath, ext, fileName, format, ct),
                 FileType.Office => await BuildOfficeAsync(fileItem, version, ext, fileName, format, ct),
                 _ => Download(fileName, format),
             };
         }
 
-        // ---- Thiết kế (IFC/CAD): dịch APS 1 lần, lưu URN, lần sau dùng lại ----
-        private async Task<FileViewInfoDTO> BuildModelAsync(
-            FileVersion version, string fileName, string format, CancellationToken ct)
+        // ---- Thiết kế (IFC/CAD): dịch APS chạy NỀN (ModelTranslationWorker). /view KHÔNG chặn -> chỉ phản ánh trạng thái.
+        //  Ready  -> trả Urn để FE mở viewer ngay.
+        //  Pending/Processing -> trả trạng thái + tiến độ để FE hiện "đang xử lý" và poll lại.
+        //  Failed -> FE báo lỗi + cho dịch lại (RetranslateAsync).
+        //  None   -> file cũ (trước khi có dịch nền) hoặc chưa có job -> fallback: đẩy vào hàng đợi ngay.
+        private async Task<FileViewInfoDTO> BuildModelAsync(FileVersion version, string fileName, string format)
         {
-            if (string.IsNullOrWhiteSpace(version.ViewerUrn))
+            var needsEnqueue = version.ViewerStatus == ModelViewerStatus.None
+                || (version.ViewerStatus == ModelViewerStatus.Ready && string.IsNullOrWhiteSpace(version.ViewerUrn));
+
+            if (needsEnqueue)
             {
-                await using var stream = await _storage.OpenReadAsync(version.StoragePath, ct);
-                var translated = await _viewer.UploadAndTranslateAsync(stream, fileName, version.FileSizeBytes, ct);
-                version.ViewerUrn = translated.Urn;   // entity được track -> mutate trực tiếp
+                version.ViewerStatus = ModelViewerStatus.Pending;   // entity được track -> mutate trực tiếp
+                version.ViewerError = null;
                 await _unitOfWork.CommitAsync();
+                _translationQueue.Enqueue(version.Id);
             }
 
             return new FileViewInfoDTO
             {
                 Kind = KindModel,
-                Urn = version.ViewerUrn,
+                Urn = version.ViewerUrn,                 // có thể đã có (Processing/Ready) hoặc null (Pending)
+                ViewerStatus = version.ViewerStatus,
+                ViewerProgress = version.ViewerProgress,
                 FileName = fileName,
                 Format = format,
             };
+        }
+
+        // Dịch lại model (khi Failed, hoặc người dùng chủ động làm mới): reset trạng thái + đẩy lại vào hàng đợi nền.
+        public async Task RetranslateAsync(Guid fileItemId, CancellationToken ct = default)
+        {
+            var actor = _currentUser.AccountId
+                ?? throw new ApiExceptionResponse("Authentication required.", 401);
+
+            var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+                ?? throw new ApiExceptionResponse("File not found.", 404);
+
+            await _permission.RequireAsync(actor, fileItem.FolderId, FolderAction.Download);
+
+            if (fileItem.FileType is not (FileType.Ifc or FileType.Cad))
+                throw new ApiExceptionResponse("File này không phải model 3D/CAD nên không cần dịch.", 400);
+
+            if (!fileItem.CurrentVersionId.HasValue)
+                throw new ApiExceptionResponse("File has no content version.", 404);
+
+            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value)
+                ?? throw new ApiExceptionResponse("Current version not found.", 404);
+
+            version.ViewerStatus = ModelViewerStatus.Pending;
+            version.ViewerProgress = null;
+            version.ViewerError = null;
+            await _unitOfWork.CommitAsync();
+            _translationQueue.Enqueue(version.Id);
         }
 
         // ---- PDF/ảnh/text: presigned URL + content type ----

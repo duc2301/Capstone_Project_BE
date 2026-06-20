@@ -76,6 +76,10 @@ namespace Infrastructure.Configurations
             // Project flow (custom, ngoài CRUD generic): Admin tạo PM cho project, PM add bên tham gia
             services.AddScoped<IProjectFlowService, ProjectFlowService>();
 
+            // Hàng đợi dịch model nền (singleton: producer upload/view + consumer ModelTranslationWorker dùng chung).
+            // Worker (BackgroundService) đăng ký ở Program.cs (host) vì cần Microsoft.Extensions.Hosting.
+            services.AddSingleton<IModelTranslationQueue, ModelTranslationQueue>();
+
             services.AddMemoryCache();
             services.AddHttpClient<IViewerService, ViewerService>((sp, client) =>
             {

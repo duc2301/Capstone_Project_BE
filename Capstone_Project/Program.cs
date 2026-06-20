@@ -1,4 +1,5 @@
 using Application.Interfaces.IServices;
+using Application.Services;
 using Capstone_Project.DataHandler.Exceptions;
 using Capstone_Project.Extensions;
 using Capstone_Project.SignalR;
@@ -18,6 +19,9 @@ builder.Services.AddControllers(options =>
 
 // Infrastructure (DB, AutoMapper, Repositories, Services)
 builder.Services.AddInfrastructureService(builder.Configuration);
+
+// Worker dịch model nền (tiêu thụ IModelTranslationQueue) — đăng ký ở host vì cần Microsoft.Extensions.Hosting.
+builder.Services.AddHostedService<ModelTranslationWorker>();
 
 // Validation
 builder.Services.AddGlobalValidation(builder.Configuration);

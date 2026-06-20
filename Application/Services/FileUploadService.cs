@@ -14,10 +14,19 @@ namespace Application.Services
     {
         private static readonly char[] IllegalNameChars = { '\\', '/', ':', '*', '?', '"', '<', '>', '|' };
 
+        // [CÔNG TẮC DEMO] Tự động biên dịch model IFC/CAD lên Autodesk APS NGAY khi upload (lưu sẵn ViewerUrn
+        // để lúc mở "Xem chi tiết" không phải chờ dịch).
+        //  - false (mặc định hiện tại): TẮT để khỏi ngốn dung lượng Autodesk (gói free) — nếu mọi model upload
+        //    đều dịch & lưu trên APS thì rất nhanh hết quota. Model chỉ được dịch ON-DEMAND lúc người dùng lần đầu
+        //    mở "Xem chi tiết" (xem FileViewService.BuildModelAsync: ViewerStatus = None -> tự đẩy vào hàng đợi).
+        //  - true: BẬT lại khi DEMO với giáo viên để model dịch sẵn từ lúc upload, mở xem là có ngay (đỡ phải chờ).
+        private static readonly bool AutoTranslateModelsOnUpload = false;
+
         private readonly IUnitOfWork _unitOfWork;
         private readonly ICurrentUserService _currentUser;
         private readonly IFolderPermissionService _permission;
         private readonly IFileStorageService _storage;
+        private readonly IModelTranslationQueue _translationQueue;
         private readonly IMapper _mapper;
 
         public FileUploadService(
@@ -25,12 +34,14 @@ namespace Application.Services
             ICurrentUserService currentUser,
             IFolderPermissionService permission,
             IFileStorageService storage,
+            IModelTranslationQueue translationQueue,
             IMapper mapper)
         {
             _unitOfWork = unitOfWork;
             _currentUser = currentUser;
             _permission = permission;
             _storage = storage;
+            _translationQueue = translationQueue;
             _mapper = mapper;
         }
 
@@ -95,10 +106,16 @@ namespace Application.Services
                 };
                 var v1 = NewVersion(fileItem.Id, 1, stored, format, actor, now);
                 fileItem.CurrentVersionId = v1.Id;
+                // Model IFC/CAD: chỉ đánh dấu chờ dịch nền khi BẬT công tắc tự dịch khi upload (xem AutoTranslateModelsOnUpload).
+                if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
+                    v1.ViewerStatus = ModelViewerStatus.Pending;
 
                 await _unitOfWork.Repository<FileItem>().CreateAsync(fileItem);
                 await _unitOfWork.Repository<FileVersion>().CreateAsync(v1);
                 await _unitOfWork.CommitAsync();
+
+                if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
+                    _translationQueue.Enqueue(v1.Id);
 
                 return new FileUploadResultDTO
                 {
@@ -119,6 +136,8 @@ namespace Application.Services
                              ?? versions.OrderByDescending(v => v.VersionNumber).FirstOrDefault();
 
             var newVersion = NewVersion(existing!.Id, nextNo, stored, format, actor, now);
+            if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
+                newVersion.ViewerStatus = ModelViewerStatus.Pending;
             await _unitOfWork.Repository<FileVersion>().CreateAsync(newVersion);
 
             existing.CurrentVersionId = newVersion.Id;   // entity được track -> mutate trực tiếp
@@ -148,6 +167,9 @@ namespace Application.Services
             }
 
             await _unitOfWork.CommitAsync();
+
+            if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
+                _translationQueue.Enqueue(newVersion.Id);
 
             return new FileUploadResultDTO
             {
@@ -200,6 +222,9 @@ namespace Application.Services
         }
 
         // ---------- nội bộ ----------
+
+        // Chỉ model IFC/CAD mới cần dịch lên APS (xem ModelTranslationWorker).
+        private static bool IsModelType(FileType type) => type is FileType.Ifc or FileType.Cad;
 
         private static FileVersion NewVersion(
             Guid fileItemId, int number, StoredFile stored, string format, Guid actor, DateTime now) => new()

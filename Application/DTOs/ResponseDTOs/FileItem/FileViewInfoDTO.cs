@@ -1,3 +1,5 @@
+using Domain.Enum.File;
+
 namespace Application.DTOs.ResponseDTOs.FileItem
 {
     // Cách FE nên hiển thị "Xem chi tiết" 1 file:
@@ -10,6 +12,14 @@ namespace Application.DTOs.ResponseDTOs.FileItem
 
         // Dùng khi Kind = "model".
         public string? Urn { get; set; }
+
+        // Trạng thái dịch model (chỉ Kind = "model"): None/Pending/Processing/Ready/Failed.
+        // Ready -> FE mở viewer bằng Urn ngay; Pending/Processing -> FE hiện "đang xử lý" + poll lại; Failed -> cho dịch lại.
+        // Serialize ra SỐ (BE không dùng JsonStringEnumConverter) -> FE khai báo numeric union khớp.
+        public ModelViewerStatus? ViewerStatus { get; set; }
+
+        // % tiến độ dịch (vd "75% complete") khi đang Processing — để FE hiển thị.
+        public string? ViewerProgress { get; set; }
 
         // Dùng khi Kind = "inline" (presigned URL của nội dung hoặc của bản PDF preview).
         public string? Url { get; set; }

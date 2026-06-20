@@ -61,6 +61,14 @@ namespace Capstone_Project.Controllers
         public async Task<IActionResult> GetViewInfo(Guid id, CancellationToken ct)
             => Ok(ApiResponse.Success("File view info", await _view.GetViewInfoAsync(id, ct)));
 
+        // Dịch lại model (IFC/CAD) lên APS — dùng khi trạng thái dịch là Failed. Chạy ở hàng đợi nền.
+        [HttpPost("{id:guid}/retranslate")]
+        public async Task<IActionResult> Retranslate(Guid id, CancellationToken ct)
+        {
+            await _view.RetranslateAsync(id, ct);
+            return Ok(ApiResponse.Success("Model re-translation queued"));
+        }
+
         /// <summary>
         /// Gửi file CDE để chờ Team Leader phê duyệt.
         /// </summary>
