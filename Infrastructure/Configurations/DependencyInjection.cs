@@ -1,6 +1,7 @@
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Application.Mapping;
+using Application.Options;
 using Application.Services;
 using Infrastructure.DbContexts;
 using Infrastructure.UnitOfWorks;
@@ -17,6 +18,8 @@ namespace Infrastructure.Configurations
             IConfiguration configuration)
         {
             var connectionString = configuration.GetConnectionString("DefaultConnection");
+
+            services.Configure<VnptSmartCaOptions>(configuration.GetSection("VnptSmartCA"));
 
             services.AddDbContext<CDESystemDbContext>(options =>
                 options.UseNpgsql(connectionString)
@@ -38,6 +41,7 @@ namespace Infrastructure.Configurations
             services.AddScoped<IFolderPermissionService, FolderPermissionService>();
             services.AddScoped<IFileItemService, FileItemService>();
             services.AddScoped<IApprovalService, ApprovalService>();
+            services.AddScoped<IVnptSmartCaService, VnptSmartCaService>();
             // Kho file: chọn provider qua "FileStorage:Provider" (Local mặc định | ViettelS3).
             var storageProvider = configuration["FileStorage:Provider"] ?? "Local";
             if (storageProvider.Equals("ViettelS3", StringComparison.OrdinalIgnoreCase)
@@ -71,6 +75,7 @@ namespace Infrastructure.Configurations
             services.AddScoped<IProjectFlowService, ProjectFlowService>();
 
             services.AddMemoryCache();
+            services.AddHttpClient();
             services.AddHttpClient<IViewerService, ViewerService>((sp, client) =>
             {
                 var config = sp.GetRequiredService<IConfiguration>();

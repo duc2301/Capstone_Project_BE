@@ -12,6 +12,8 @@ namespace Domain.Entities
         public string Name { get; set; } = null!;
         public FileType FileType { get; set; }
         public FileItemStatus Status { get; set; } = FileItemStatus.Draft;
+        public bool RequiresSignature { get; set; }
+        public bool IsSigned { get; set; }
         public Guid? CurrentVersionId { get; set; }
         public Guid? CreatedByAccountId { get; set; }
         public DateTime? CreatedAt { get; set; }
