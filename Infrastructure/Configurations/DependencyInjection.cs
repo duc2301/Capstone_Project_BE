@@ -35,7 +35,6 @@ namespace Infrastructure.Configurations
             services.AddScoped<IContractPackageService, ContractPackageService>();
             services.AddScoped<IFolderService, FolderService>();
             services.AddScoped<IFolderBootstrapService, FolderBootstrapService>();
-            services.AddScoped<IFolderPermissionService, FolderPermissionService>();
             services.AddScoped<IFileItemService, FileItemService>();
             services.AddScoped<IApprovalService, ApprovalService>();
             // Kho file: chọn provider qua "FileStorage:Provider" (Local mặc định | ViettelS3).
@@ -53,6 +52,7 @@ namespace Infrastructure.Configurations
             services.AddScoped<IProjectModelService, ProjectModelService>();
             services.AddScoped<IModelFileService, ModelFileService>();
             services.AddScoped<IFilePermissionService, FilePermissionService>();
+            services.AddScoped<IFolderPermissionService, FolderPermissionService>();
 
 
             // Auth (giống ChemXLab) + refresh token

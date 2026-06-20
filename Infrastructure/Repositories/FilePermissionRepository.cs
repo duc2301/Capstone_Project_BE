@@ -19,7 +19,13 @@ namespace Infrastructure.Repositories
             _context = context;
         }
 
-
+        /// <summary>
+        /// Get all file permissions for a specific file and include the associated project participant and group information.
+        /// This is for getting all the permissions data of a file, no matter if the participant still in the project or not.
+        /// For now June 20th, its for testing. Maybe in the future, will it be used for the history permission data.
+        /// </summary>
+        /// <param name="fileItemId"></param>
+        /// <returns>All file permissions for a specific file, including active/inactive permissions</returns>
         public async Task<IEnumerable<FilePermission>> GetPartipatedGroupFilePermissionsByFileItemIdAsync(Guid fileItemId)
         {
             return await _context.FilePermissions

@@ -15,18 +15,18 @@ namespace Application.Services
         private static readonly char[] IllegalNameChars = { '\\', '/', ':', '*', '?', '"', '<', '>', '|' };
 
         private readonly IUnitOfWork _unitOfWork;
-        private readonly IFolderPermissionService _permission;
+        //private readonly IFolderPermissionServiceOld _permission;
         private readonly IFileStorageService _storage;
         private readonly IMapper _mapper;
 
         public FileUploadService(
             IUnitOfWork unitOfWork,
-            IFolderPermissionService permission,
+            //IFolderPermissionServiceOld permission,
             IFileStorageService storage,
             IMapper mapper)
         {
             _unitOfWork = unitOfWork;
-            _permission = permission;
+            //_permission = permission;
             _storage = storage;
             _mapper = mapper;
         }
@@ -67,7 +67,7 @@ namespace Application.Services
             var isNewVersion = existing != null;
 
             // ① Đối chiếu quyền: phiên bản mới cần Update, file mới cần Edit.
-            await _permission.RequireAsync(actor, folder.Id, isNewVersion ? FolderAction.Update : FolderAction.Edit);
+            //await _permission.RequireAsync(actor, folder.Id, isNewVersion ? FolderAction.Update : FolderAction.Edit);
 
             // ⑦ Lưu nội dung file (đĩa local).
             var stored = await _storage.SaveAsync(content, folder.ProjectId, folder.Id, ext, ct);
@@ -158,7 +158,7 @@ namespace Application.Services
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
-            await _permission.RequireAsync(actor, fileItem.FolderId, FolderAction.Download);
+            //await _permission.RequireAsync(actor, fileItem.FolderId, FolderAction.Download);
 
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
@@ -176,7 +176,7 @@ namespace Application.Services
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
-            await _permission.RequireAsync(actor, fileItem.FolderId, FolderAction.Download);
+            //await _permission.RequireAsync(actor, fileItem.FolderId, FolderAction.Download);
 
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);

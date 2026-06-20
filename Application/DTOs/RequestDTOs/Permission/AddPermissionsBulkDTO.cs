@@ -8,7 +8,7 @@ namespace Application.DTOs.RequestDTOs.Permission
 {
     public class AddPermissionsBulkDTO
     {
-        public Guid FileItemId { get; set; }
+        public Guid Id { get; set; }
 
         [Required]
         [MinLength(1)]

@@ -1,19 +1,16 @@
-using Application.DTOs.RequestDTOs.Folder;
-using Application.DTOs.ResponseDTOs.Folder;
+﻿using Application.DTOs.RequestDTOs.Permission;
+using Application.DTOs.ResponseDTOs.Permission;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using Domain.Entities;
-using Domain.Enum.Account;
-using Domain.Enum.Cde;
+using Domain.Enum.Permission;
 
 namespace Application.Services
 {
     public class FolderPermissionService : IFolderPermissionService
     {
-        private const string SurveyorTypeCode = "Surveyor";
-
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
 
@@ -23,357 +20,137 @@ namespace Application.Services
             _mapper = mapper;
         }
 
-        // Bối cảnh của 1 account trong 1 dự án — tính 1 lần, tái dùng cho mọi folder.
-        private sealed class UserContext
+        #region Lấy data cho frontend
+        public async Task<IEnumerable<GroupFolderPermissionResponseDTO>> GetGroupFolderPermissionResponsesAsync(Guid folderId)
         {
-            public bool IsAdmin { get; init; }
-            public bool IsManager { get; init; }
-            public bool IsParticipant { get; init; }
-            public bool IsSurveyor { get; init; }
-            public HashSet<Guid> GroupIds { get; init; } = new();
-            public HashSet<Guid> OrgIds { get; init; } = new();
+            var items = await _unitOfWork.FolderPermissionRepository.GetPartipatedGroupFolderPermissionsByFolderIdAsync(folderId);
+            return _mapper.Map<IEnumerable<GroupFolderPermissionResponseDTO>>(items);
         }
 
-        public async Task<EffectivePermissionDTO> EvaluateAsync(Guid accountId, Guid folderId)
+        public async Task<FolderPermissionsViewModelDTO> GetDataForPermissionUIAsync(Guid folderId)
         {
-            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
-                ?? throw new ApiExceptionResponse("Folder not found.", 404);
+            var items = await _unitOfWork.FolderPermissionRepository.GetActivePartipantsByFolderIdAsync(folderId);
 
-            var ctx = await BuildContextAsync(accountId, folder.ProjectId);
+            var activeGroupOfFolder = _mapper.Map<IEnumerable<GroupFolderPermissionResponseDTO>>(items.Values.ToList());
 
-            var foldersById = (await _unitOfWork.Repository<Folder>().GetAllAsync())
-                .Where(f => f.ProjectId == folder.ProjectId)
-                .ToDictionary(f => f.Id);
+            var allProjectParticipants = await _unitOfWork.FolderPermissionRepository.GetAllParticipantsByFolderIdAsync(folderId);
 
-            var permsByFolder = (await _unitOfWork.Repository<FolderPermission>().GetAllAsync())
-                .Where(p => foldersById.ContainsKey(p.FolderId))
-                .GroupBy(p => p.FolderId)
-                .ToDictionary(g => g.Key, g => g.ToList());
+            var availableGroups = allProjectParticipants.Where(pp => !items.ContainsKey(pp.ProjectParticipantId)).ToList();
 
-            return EvaluateCore(folder, ctx, foldersById, permsByFolder);
-        }
-
-        public async Task RequireAsync(Guid accountId, Guid folderId, FolderAction action)
-        {
-            var perm = await EvaluateAsync(accountId, folderId);
-            var allowed = action switch
+            return new FolderPermissionsViewModelDTO
             {
-                FolderAction.View => perm.CanView,
-                FolderAction.Edit => perm.CanEdit,
-                FolderAction.Update => perm.CanUpdate,
-                FolderAction.Download => perm.CanDownload,
-                FolderAction.Verify => perm.CanVerify,
-                FolderAction.Approve => perm.CanApprove,
-                _ => false
+                AvailableGroups = availableGroups,
+                SelectedPermissions = activeGroupOfFolder.ToList()
             };
-            if (!allowed)
-                throw new ApiExceptionResponse($"You do not have '{action}' permission on this folder.", 403);
         }
 
-        public async Task<List<FolderTreeNodeDTO>> GetTreeAsync(Guid projectId, Guid accountId, CdeArea? area = null)
+        public async Task<IEnumerable<GroupFolderPermissionResponseDTO>> GetActiveParticipantsByFolderId(Guid folderId)
         {
-            _ = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId)
-                ?? throw new ApiExceptionResponse("Project not found.", 404);
-
-            var ctx = await BuildContextAsync(accountId, projectId);
-
-            var folders = (await _unitOfWork.Repository<Folder>().GetAllAsync())
-                .Where(f => f.ProjectId == projectId && !f.IsTemplate)
-                .Where(f => area == null || f.Area == area.Value)
-                .ToList();
-
-            var foldersById = folders.ToDictionary(f => f.Id);
-
-            var permsByFolder = (await _unitOfWork.Repository<FolderPermission>().GetAllAsync())
-                .Where(p => foldersById.ContainsKey(p.FolderId))
-                .GroupBy(p => p.FolderId)
-                .ToDictionary(g => g.Key, g => g.ToList());
-
-            // Quyền hiệu lực cho mọi folder, rồi chỉ giữ folder người gọi được View.
-            var eff = folders.ToDictionary(f => f.Id, f => EvaluateCore(f, ctx, foldersById, permsByFolder));
-            var visible = folders.Where(f => eff[f.Id].CanView).ToList();
-            var visibleIds = visible.Select(f => f.Id).ToHashSet();
-
-            var nodes = visible.ToDictionary(f => f.Id, f => new FolderTreeNodeDTO
-            {
-                Id = f.Id,
-                ProjectId = f.ProjectId,
-                ParentFolderId = f.ParentFolderId,
-                Name = f.Name,
-                Area = f.Area,
-                Permission = eff[f.Id]
-            });
-
-            var roots = new List<FolderTreeNodeDTO>();
-            foreach (var f in visible)
-            {
-                var node = nodes[f.Id];
-                if (f.ParentFolderId.HasValue && visibleIds.Contains(f.ParentFolderId.Value))
-                    nodes[f.ParentFolderId.Value].Children.Add(node);
-                else
-                    roots.Add(node);
-            }
-
-            SortRecursive(roots);
-            return roots;
+            var items = await _unitOfWork.FolderPermissionRepository.GetActivePartipantsByFolderIdAsync(folderId);
+            return _mapper.Map<IEnumerable<GroupFolderPermissionResponseDTO>>(items.Values.ToList());
         }
 
-        public async Task<List<FolderPermissionResponseDTO>> GetPermissionsAsync(Guid folderId, Guid actorId, string? actorRole)
+        #endregion
+
+        #region Create/Update permissions theo bulk
+
+        public async Task<IEnumerable<GroupFolderPermissionResponseDTO>> BulkUpdateFolderPermissionsAsync(AddPermissionsBulkDTO dto)
         {
-            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
-                ?? throw new ApiExceptionResponse("Folder not found.", 404);
-            await EnsureCanManageAsync(folder, actorId, actorRole);
+            //if (!dto.GroupsPermission.Any()) 
+            //    throw new ApiExceptionResponse("GroupsPermission list is empty.", 400);
 
-            var rows = (await _unitOfWork.Repository<FolderPermission>().GetAllAsync())
-                .Where(p => p.FolderId == folderId)
-                .ToList();
+            var participantIds = dto.GroupsPermission.Select(u => u.ProjectParticipantId).Union(dto.RemoveParticipantIds).ToList();
 
-            return rows.Select(_mapper.Map<FolderPermissionResponseDTO>).ToList();
-        }
+            // Get all existing permissions in one query
+            var existingPermissions = await _unitOfWork.FolderPermissionRepository.GetFolderPermissionsByFolderIdAsync(dto.Id, participantIds);
 
-        public async Task<FolderPermissionResponseDTO> SetPermissionAsync(Guid folderId, SetFolderPermissionDTO dto, Guid actorId, string? actorRole)
-        {
-            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
-                ?? throw new ApiExceptionResponse("Folder not found.", 404);
-            await EnsureCanManageAsync(folder, actorId, actorRole);
+            var updatedParticipantIds = new List<Guid>();
 
-            var hasGroup = dto.GroupId.HasValue && dto.GroupId.Value != Guid.Empty;
-            var hasOrg = dto.OrganizationId.HasValue && dto.OrganizationId.Value != Guid.Empty;
-            if (hasGroup == hasOrg)
-                throw new ApiExceptionResponse("Provide exactly one of GroupId or OrganizationId.", 400);
-
-            // Upsert theo (FolderId, GroupId|OrganizationId). Lấy entity đang được EF theo dõi để
-            // mutate trực tiếp + Commit (tránh GenericRepository.Update vốn clear ChangeTracker).
-            // TODO(perm): upsert chỉ match theo FolderId, BỎ điều kiện Group/Organization
-            // -> khi 1 folder có nhiều dòng ACL (cho nhiều Group/Org) sẽ ghi đè nhầm dòng đầu tiên.
-            // Cần match thêm: hasGroup ? p.GroupId == dto.GroupId : p.OrganizationId == dto.OrganizationId.
-            var existing = (await _unitOfWork.Repository<FolderPermission>().GetAllAsync())
-                .FirstOrDefault(p => p.FolderId == folderId
-                                  );
-
-            if (existing == null)
+            // Remove permissions for participants in the removal list
+            foreach (var participantId in dto.RemoveParticipantIds)
             {
-                existing = new FolderPermission
+                if (existingPermissions.TryGetValue(participantId, out var perm))
                 {
-                    Id = Guid.NewGuid(),
-                    FolderId = folderId,
-                };
-                ApplyFlags(existing, dto);
-                await _unitOfWork.Repository<FolderPermission>().CreateAsync(existing);
-            }
-            else
-            {
-                ApplyFlags(existing, dto);
-            }
+                    perm.Status = PermissionStatus.Inactive;
+                    perm.CanView = false;
+                    perm.CanEdit = false;
+                    perm.CanUpdate = false;
+                    perm.CanDownload = false;
+                    perm.CanVerify = false;
+                    perm.CanApprove = false;
 
-            await _unitOfWork.CommitAsync();
-            return _mapper.Map<FolderPermissionResponseDTO>(existing);
-        }
+                    updatedParticipantIds.Add(participantId);
 
-        public async Task DeletePermissionAsync(Guid folderId, Guid permissionId, Guid actorId, string? actorRole)
-        {
-            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
-                ?? throw new ApiExceptionResponse("Folder not found.", 404);
-            await EnsureCanManageAsync(folder, actorId, actorRole);
-
-            var row = (await _unitOfWork.Repository<FolderPermission>().GetAllAsync())
-                .FirstOrDefault(p => p.Id == permissionId && p.FolderId == folderId)
-                ?? throw new ApiExceptionResponse("Permission not found.", 404);
-
-            _unitOfWork.Repository<FolderPermission>().Delete(row);
-            await _unitOfWork.CommitAsync();
-        }
-
-        // ---------- nội bộ ----------
-
-        // Chỉ Admin hệ thống hoặc PM của dự án mới được quản lý ACL thư mục.
-        private async Task EnsureCanManageAsync(Folder folder, Guid actor, string? actorRole)
-        {
-            if (actorRole == AccountRole.Admin.ToString())
-                return;
-
-            var project = await _unitOfWork.Repository<Project>().GetByIdAsync(folder.ProjectId);
-            if (project?.ManagerAccountId == actor)
-                return;
-
-            throw new ApiExceptionResponse("Only Admin or the project manager can manage folder permissions.", 403);
-        }
-
-        private static void ApplyFlags(FolderPermission p, SetFolderPermissionDTO dto)
-        {
-            p.CanView = dto.CanView;
-            p.CanEdit = dto.CanEdit;
-            p.CanUpdate = dto.CanUpdate;
-            p.CanDownload = dto.CanDownload;
-            p.CanVerify = dto.CanVerify;
-            p.CanApprove = dto.CanApprove;
-        }
-
-        private async Task<UserContext> BuildContextAsync(Guid accountId, Guid projectId)
-        {
-            var account = await _unitOfWork.Repository<Account>().GetByIdAsync(accountId);
-            var project = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId);
-
-            var isAdmin = account?.Role == AccountRole.Admin;
-            var isManager = project?.ManagerAccountId == accountId;
-
-            // Group account thuộc về (toàn hệ thống).
-            var myAllGroupIds = (await _unitOfWork.Repository<GroupMember>().GetAllAsync())
-                .Where(gm => gm.AccountId == accountId)
-                .Select(gm => gm.GroupId)
-                .ToHashSet();
-
-            // Group đang là bên tham gia của ĐÚNG dự án này.
-            var projectGroupIds = (await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync())
-                .Where(pp => pp.ProjectId == projectId)
-                .Select(pp => pp.GroupId)
-                .ToHashSet();
-
-            var myProjectGroupIds = myAllGroupIds.Where(projectGroupIds.Contains).ToHashSet();
-
-            // Tổ chức của account trong dự án (qua Group.OrganizationId).
-            var myOrgIds = (await _unitOfWork.Repository<Group>().GetAllAsync())
-                .Where(g => myProjectGroupIds.Contains(g.Id) && g.OrganizationId.HasValue)
-                .Select(g => g.OrganizationId!.Value)
-                .ToHashSet();
-
-            // Có thuộc đơn vị loại "Tư vấn giám sát" không?
-            var isSurveyor = false;
-            if (myOrgIds.Count > 0)
-            {
-                var surveyorTypeId = (await _unitOfWork.Repository<OrganizationType>().GetAllAsync())
-                    .FirstOrDefault(t => t.Code == SurveyorTypeCode)?.Id;
-                if (surveyorTypeId.HasValue)
-                {
-                    isSurveyor = (await _unitOfWork.Repository<Organization>().GetAllAsync())
-                        .Any(o => myOrgIds.Contains(o.Id) && o.OrganizationTypeId == surveyorTypeId.Value);
                 }
             }
 
-            return new UserContext
+            // Create/Update permissions for participants in the update list
+            var toCreate = new List<FolderPermission>();
+
+
+            foreach (var u in dto.GroupsPermission)
             {
-                IsAdmin = isAdmin,
-                IsManager = isManager,
-                IsParticipant = myProjectGroupIds.Count > 0,
-                IsSurveyor = isSurveyor,
-                GroupIds = myProjectGroupIds,
-                OrgIds = myOrgIds
-            };
-        }
+                if (existingPermissions.TryGetValue(u.ProjectParticipantId, out var permission))
+                {
+                    // Update existing rows if the group was previously assigned permissions but then removed
+                    permission.CanView = u.CanView;
+                    permission.CanEdit = u.CanEdit;
+                    permission.CanUpdate = u.CanUpdate;
+                    permission.CanDownload = u.CanDownload;
+                    permission.CanVerify = u.CanVerify;
+                    permission.CanApprove = u.CanApprove;
+                    permission.Status = PermissionStatus.Active;
 
-        private static EffectivePermissionDTO EvaluateCore(
-            Folder folder,
-            UserContext ctx,
-            Dictionary<Guid, Folder> foldersById,
-            Dictionary<Guid, List<FolderPermission>> permsByFolder)
-        {
-            // Bypass: Admin hệ thống và PM của dự án có toàn quyền.
-            if (ctx.IsAdmin || ctx.IsManager)
-                return Full(folder.Id);
-
-            // TODO(perm): isOwner đang hard-code = true -> mọi user bị coi là "chủ sở hữu" folder,
-            // nên Baseline cấp quyền sai (WIP/Shared mở cho tất cả). Cần tính isOwner thật:
-            // account có thuộc Group sở hữu folder không (Folder.OwnerGroupId hoặc tổ tiên gần nhất).
-            var isOwner = true;
-                
-
-            var p = Baseline(folder, isOwner, ctx.IsParticipant, ctx.IsSurveyor);
-
-            // Override tường minh trên chính folder.
-            if (permsByFolder.TryGetValue(folder.Id, out var ownRows))
-                foreach (var r in ownRows)
-                    if (TargetsUser(r, ctx)) Merge(p, r);
-
-            // Override từ tổ tiên có cờ InheritFromParent (lan xuống con).
-            var current = folder;
-            while (current.ParentFolderId.HasValue
-                   && foldersById.TryGetValue(current.ParentFolderId.Value, out var parent))
-            {
-                if (permsByFolder.TryGetValue(parent.Id, out var pRows))
-                    foreach (var r in pRows)
-                        if (TargetsUser(r, ctx)) Merge(p, r);
-                current = parent;
-            }
-
-            return p;
-        }
-
-        // Baseline theo nghiệp vụ ISO 19650 khi chưa có override.
-        private static EffectivePermissionDTO Baseline(Folder folder, bool isOwner, bool isParticipant, bool isSurveyor)
-        {
-            var p = new EffectivePermissionDTO { FolderId = folder.Id };
-
-            // Ngoài dự án và không sở hữu -> không thấy gì.
-            if (!isParticipant && !isOwner) return p;
-
-            // Folder gốc (WIP/Shared/...) chỉ là "ngăn" điều hướng -> cho participant thấy để duyệt xuống con.
-            if (folder.ParentFolderId == null)
-            {
-                p.CanView = true;
-                return p;
-            }
-
-            switch (folder.Area)
-            {
-                case CdeArea.Wip:
-                    // Riêng tư của đơn vị: chỉ chủ sở hữu mới thấy & sửa.
-                    if (isOwner) { p.CanView = p.CanEdit = p.CanUpdate = p.CanDownload = true; }
-                    break;
-
-                case CdeArea.Shared:
-                    if (isOwner) { p.CanView = p.CanEdit = p.CanUpdate = p.CanDownload = true; }
-                    else if (isParticipant)
+                }
+                else
+                {
+                    permission = new FolderPermission
                     {
-                        p.CanView = p.CanDownload = true;
-                        if (isSurveyor) p.CanVerify = true;   // TVGS thẩm tra ở khu Shared
-                    }
-                    break;
+                        Id = Guid.NewGuid(),
+                        FolderId = dto.Id,
+                        ProjectParticipantId = u.ProjectParticipantId
+                    };
 
-                case CdeArea.Published:
-                case CdeArea.Archived:
-                    // Thông tin chính thức / lưu trữ: mọi bên xem & tải, không sửa.
-                    if (isOwner || isParticipant) { p.CanView = p.CanDownload = true; }
-                    break;
+                    toCreate.Add(permission);
+                }
+
+                permission.CanView = u.CanView;
+                permission.CanEdit = u.CanEdit;
+                permission.CanUpdate = u.CanUpdate;
+                permission.CanDownload = u.CanDownload;
+                permission.CanVerify = u.CanVerify;
+                permission.CanApprove = u.CanApprove;
+                permission.Status = PermissionStatus.Active;
+
+                updatedParticipantIds.Add(u.ProjectParticipantId);
+
             }
 
-            return p;
+            if (toCreate.Any())
+                await _unitOfWork.Repository<FolderPermission>().CreateRangeAsync(toCreate);
+
+            await _unitOfWork.CommitAsync();
+
+            var permissions = await _unitOfWork.FolderPermissionRepository.GetFolderPermissionsByParticipantIdsAsync(dto.Id, updatedParticipantIds);
+
+            return _mapper.Map<IEnumerable<GroupFolderPermissionResponseDTO>>(permissions);
         }
 
-        // TODO(perm): luôn trả true -> mọi dòng ACL override áp cho MỌI user, bỏ qua Group/Organization
-        // của chính dòng đó. Cần: r.GroupId ∈ ctx.GroupIds || r.OrganizationId ∈ ctx.OrgIds.
-        private static bool TargetsUser(FolderPermission r, UserContext ctx)
-            => true
-            ;
+        #endregion
 
-        private static void Merge(EffectivePermissionDTO p, FolderPermission r)
+
+        #region Check quyền
+
+        public async Task<GroupFolderPermissionResponseDTO> GetFolderPermissionOfParticipantByFolderIdAndParticipantId(GetFolderPermissionOfParticipantDTO dto)
         {
-            p.CanView |= r.CanView;
-            p.CanEdit |= r.CanEdit;
-            p.CanUpdate |= r.CanUpdate;
-            p.CanDownload |= r.CanDownload;
-            p.CanVerify |= r.CanVerify;
-            p.CanApprove |= r.CanApprove;
+            var permission = await _unitOfWork.FolderPermissionRepository.GetFolderPermissionByFolderIdAndParticipantIdAsync(dto.FolderId, dto.ParticipantId);
+            if (permission == null)
+                throw new ApiExceptionResponse("No permission found for the specified participant and folder item.", 404);
+            return _mapper.Map<GroupFolderPermissionResponseDTO>(permission);
         }
 
-        private static EffectivePermissionDTO Full(Guid folderId) => new()
-        {
-            FolderId = folderId,
-            CanView = true,
-            CanEdit = true,
-            CanUpdate = true,
-            CanDownload = true,
-            CanVerify = true,
-            CanApprove = true
-        };
 
-        private static void SortRecursive(List<FolderTreeNodeDTO> nodes)
-        {
-            nodes.Sort((a, b) =>
-            {
-                var byArea = a.Area.CompareTo(b.Area);
-                return byArea != 0 ? byArea : string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
-            });
-            foreach (var n in nodes) SortRecursive(n.Children);
-        }
+
+        #endregion
     }
 }

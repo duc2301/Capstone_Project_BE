@@ -29,6 +29,10 @@ namespace Infrastructure.UnitOfWorks
         public IFilePermissionRepository FilePermissionRepository =>
             _filePermissionRepository ??= new FilePermissionRepository(_context);
 
+        private IFolderPermissionRepository? _folderPermissionRepository;
+        public IFolderPermissionRepository FolderPermissionRepository =>
+            _folderPermissionRepository ??= new FolderPermissionRepository(_context);
+
         private readonly Dictionary<Type, object> _repositories = new();
         public IGenericRepository<T> Repository<T>() where T : class
         {

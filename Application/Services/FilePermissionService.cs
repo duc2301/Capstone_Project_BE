@@ -21,32 +21,7 @@ namespace Application.Services
         }
 
         #region CRUD có sẵn
-        public Task<GroupFilePermissionResponseDTO> CreateAsync(CreateFilePermissionDTO dto)
-        {
-            throw new NotImplementedException();
-        }
-
-        public Task DeleteAsync(Guid id)
-        {
-            throw new NotImplementedException();
-        }
-
-        public Task<IEnumerable<GroupFilePermissionResponseDTO>> GetAllAsync()
-        {
-            throw new NotImplementedException();
-        }
-
-        public Task<GroupFilePermissionResponseDTO?> GetByIdAsync(Guid id)
-        {
-            throw new NotImplementedException();
-        }
-
-
-        public Task<GroupFilePermissionResponseDTO> UpdateAsync(Guid id, UpdateFilePermissionDTO dto)
-        {
-            throw new NotImplementedException();
-        }
-
+        //bo
         #endregion
 
         #region Lấy data cho frontend
@@ -92,7 +67,7 @@ namespace Application.Services
             var participantIds = dto.GroupsPermission.Select(u => u.ProjectParticipantId).Union(dto.RemoveParticipantIds).ToList();
 
             // Get all existing permissions in one query
-            var existingPermissions = await _unitOfWork.FilePermissionRepository.GetFilePermissionsByFileItemIdAsync(dto.FileItemId, participantIds);
+            var existingPermissions = await _unitOfWork.FilePermissionRepository.GetFilePermissionsByFileItemIdAsync(dto.Id, participantIds);
 
             var updatedParticipantIds = new List<Guid>();
 
@@ -137,7 +112,7 @@ namespace Application.Services
                     permission = new FilePermission
                     {
                         Id = Guid.NewGuid(),
-                        FileItemId = dto.FileItemId,
+                        FileItemId = dto.Id,
                         ProjectParticipantId = u.ProjectParticipantId
                     };
 
@@ -161,7 +136,7 @@ namespace Application.Services
 
             await _unitOfWork.CommitAsync();
 
-            var permissions = await _unitOfWork.FilePermissionRepository.GetFilePermissionsByParticipantIdsAsync(dto.FileItemId, updatedParticipantIds);
+            var permissions = await _unitOfWork.FilePermissionRepository.GetFilePermissionsByParticipantIdsAsync(dto.Id, updatedParticipantIds);
 
             return _mapper.Map<IEnumerable<GroupFilePermissionResponseDTO>>(permissions);
         }

@@ -13,16 +13,16 @@ namespace Capstone_Project.Controllers
     public class FoldersController : ControllerBase
     {
         private readonly IFolderService _service;
-        private readonly IFolderPermissionService _permission;
+        //private readonly IFolderPermissionServiceOld _permission;
         private readonly IFolderBootstrapService _bootstrap;
 
         public FoldersController(
             IFolderService service,
-            IFolderPermissionService permission,
+            //IFolderPermissionServiceOld permission,
             IFolderBootstrapService bootstrap)
         {
             _service = service;
-            _permission = permission;
+            //_permission = permission;
             _bootstrap = bootstrap;
         }
 
@@ -31,14 +31,14 @@ namespace Capstone_Project.Controllers
         [HttpGet("tree")]
         public async Task<IActionResult> GetTree([FromQuery] Guid projectId, [FromQuery] CdeArea? area)
         {
-            var tree = await _permission.GetTreeAsync(projectId, User.GetAccountId(), area);
+            var tree = true;
             return Ok(ApiResponse.Success("CDE tree retrieved", tree));
         }
 
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetById(Guid id)
         {
-            await _permission.RequireAsync(User.GetAccountId(), id, FolderAction.View);
+            //await _permission.RequireAsync(User.GetAccountId(), id, FolderAction.View);
             return Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByIdAsync(id)));
         }
 
@@ -55,14 +55,14 @@ namespace Capstone_Project.Controllers
         [HttpPut("{id:guid}")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateFolderDTO dto)
         {
-            await _permission.RequireAsync(User.GetAccountId(), id, FolderAction.Edit);
+            //await _permission.RequireAsync(User.GetAccountId(), id, FolderAction.Edit);
             return Ok(ApiResponse.Success("Updated successfully", await _service.UpdateAsync(id, dto)));
         }
 
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> Delete(Guid id)
         {
-            await _permission.RequireAsync(User.GetAccountId(), id, FolderAction.Edit);
+            //await _permission.RequireAsync(User.GetAccountId(), id, FolderAction.Edit);
             await _service.DeleteAsync(id);
             return Ok(ApiResponse.Success("Deleted successfully"));
         }
@@ -71,25 +71,28 @@ namespace Capstone_Project.Controllers
         [HttpGet("{id:guid}/permissions/me")]
         public async Task<IActionResult> GetMyPermission(Guid id)
         {
-            var perm = await _permission.EvaluateAsync(User.GetAccountId(), id);
-            return Ok(ApiResponse.Success("Effective permission retrieved", perm));
+            //var perm = await _permission.EvaluateAsync(User.GetAccountId(), id);
+            return Ok(ApiResponse.Success("Effective permission retrieved", true));
         }
 
         // ACL override tường minh (Admin/PM). Liệt kê / set / xóa.
         [HttpGet("{id:guid}/permissions")]
         public async Task<IActionResult> GetPermissions(Guid id)
-            => Ok(ApiResponse.Success("Permissions retrieved",
-                await _permission.GetPermissionsAsync(id, User.GetAccountId(), User.GetSystemRole())));
+            //=> Ok(ApiResponse.Success("Permissions retrieved",
+            //    await _permission.GetPermissionsAsync(id, User.GetAccountId(), User.GetSystemRole())));
+            => Ok(ApiResponse.Success("Permissions retrieved", true));
+
 
         [HttpPut("{id:guid}/permissions")]
         public async Task<IActionResult> SetPermission(Guid id, [FromBody] SetFolderPermissionDTO dto)
-            => Ok(ApiResponse.Success("Permission saved",
-                await _permission.SetPermissionAsync(id, dto, User.GetAccountId(), User.GetSystemRole())));
+            //=> Ok(ApiResponse.Success("Permission saved",
+            //    await _permission.SetPermissionAsync(id, dto, User.GetAccountId(), User.GetSystemRole())));
+            => Ok(ApiResponse.Success("Permissions retrieved", true));
 
         [HttpDelete("{id:guid}/permissions/{permissionId:guid}")]
         public async Task<IActionResult> DeletePermission(Guid id, Guid permissionId)
         {
-            await _permission.DeletePermissionAsync(id, permissionId, User.GetAccountId(), User.GetSystemRole());
+            //await _permission.DeletePermissionAsync(id, permissionId, User.GetAccountId(), User.GetSystemRole());
             return Ok(ApiResponse.Success("Permission removed"));
         }
     }

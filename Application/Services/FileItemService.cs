@@ -13,16 +13,16 @@ namespace Application.Services
     public class FileItemService : IFileItemService
     {
         private readonly IUnitOfWork _unitOfWork;
-        private readonly IFolderPermissionService _permission;
+        //private readonly IFolderPermissionServiceOld _permission;
         private readonly IMapper _mapper;
 
         public FileItemService(
             IUnitOfWork unitOfWork,
-            IFolderPermissionService permission,
+            //IFolderPermissionServiceOld permission,
             IMapper mapper)
         {
             _unitOfWork = unitOfWork;
-            _permission = permission;
+            //_permission = permission;
             _mapper = mapper;
         }
 
@@ -70,7 +70,7 @@ namespace Application.Services
         {
             _ = await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
                 ?? throw new ApiExceptionResponse("Folder not found.", 404);
-            await _permission.RequireAsync(actorId, folderId, FolderAction.View);
+            //await _permission.RequireAsync(actorId, folderId, FolderAction.View);
 
             var files = (await _unitOfWork.Repository<FileItem>()
                     .FindAsync(f => f.FolderId == folderId))
@@ -111,7 +111,7 @@ namespace Application.Services
         {
             var file = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
-            await _permission.RequireAsync(actorId, file.FolderId, FolderAction.View);
+            //await _permission.RequireAsync(actorId, file.FolderId, FolderAction.View);
 
             var accounts = (await _unitOfWork.Repository<Account>().GetAllAsync())
                 .ToDictionary(a => a.Id);
