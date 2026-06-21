@@ -8,6 +8,7 @@ namespace Application.Interfaces.IServices
     {
         Task<AuthResponseDTO> Register(RegisterDTO request);
         Task<AuthResponseDTO> Login(LoginDTO request);
+        Task<AuthResponseDTO> GoogleLogin(GoogleLoginDTO request);
         Task<AuthResponseDTO> Refresh(RefreshTokenRequestDTO request);
         Task Logout(RefreshTokenRequestDTO request);
     }

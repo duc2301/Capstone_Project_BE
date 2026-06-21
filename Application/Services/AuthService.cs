@@ -5,6 +5,8 @@ using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
 using Domain.Enum.Account;
+using Google.Apis.Auth;
+using Microsoft.Extensions.Configuration;
 
 namespace Application.Services
 {
@@ -13,11 +15,13 @@ namespace Application.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IJwtService _jwtService;
+        private readonly IConfiguration _configuration;
 
-        public AuthService(IUnitOfWork unitOfWork, IJwtService jwtService)
+        public AuthService(IUnitOfWork unitOfWork, IJwtService jwtService, IConfiguration configuration)
         {
             _unitOfWork = unitOfWork;
             _jwtService = jwtService;
+            _configuration = configuration;
         }
 
         public async Task<AuthResponseDTO> Register(RegisterDTO request)
@@ -52,6 +56,58 @@ namespace Application.Services
 
             if (account.Status == AccountStatus.Suspended || account.Status == AccountStatus.Inactive)
                 throw new ApiExceptionResponse("Account is not active.", 403);
+
+            var memberships = await LoadGroupMembershipsAsync(account.Id);
+            var response = await IssueTokensAsync(account, memberships);
+            await _unitOfWork.CommitAsync();
+            return response;
+        }
+
+        public async Task<AuthResponseDTO> GoogleLogin(GoogleLoginDTO request)
+        {
+            var clientId = _configuration["GoogleClientId"]
+                ?? throw new ApiExceptionResponse("Google Client ID chưa được cấu hình.", 500);
+
+            GoogleJsonWebSignature.Payload payload;
+            try
+            {
+                var settings = new GoogleJsonWebSignature.ValidationSettings
+                {
+                    Audience = new[] { clientId }
+                };
+                payload = await GoogleJsonWebSignature.ValidateAsync(request.IdToken, settings);
+            }
+            catch
+            {
+                throw new ApiExceptionResponse("Google token không hợp lệ hoặc đã hết hạn.", 401);
+            }
+
+            var email = payload.Email
+                ?? throw new ApiExceptionResponse("Không lấy được email từ tài khoản Google.", 400);
+
+            var account = await _unitOfWork.AccountRepository.GetByEmailAsync(email);
+
+            if (account == null)
+            {
+                // Tự động tạo tài khoản mới từ thông tin Google
+                account = new Account
+                {
+                    Id = Guid.NewGuid(),
+                    UserName = payload.Name ?? email.Split('@')[0],
+                    Email = email,
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString()),
+                    Role = AccountRole.User,
+                    Status = AccountStatus.Active,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                await _unitOfWork.AccountRepository.CreateAsync(account);
+            }
+            else
+            {
+                if (account.Status == AccountStatus.Suspended || account.Status == AccountStatus.Inactive)
+                    throw new ApiExceptionResponse("Tài khoản không còn hoạt động.", 403);
+            }
 
             var memberships = await LoadGroupMembershipsAsync(account.Id);
             var response = await IssueTokensAsync(account, memberships);

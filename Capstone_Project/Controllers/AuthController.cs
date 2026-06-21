@@ -43,5 +43,12 @@ namespace Capstone_Project.Controllers
             await _authService.Logout(request);
             return Ok(ApiResponse.Success("Logged out"));
         }
+
+        [HttpPost("google-login")]
+        public async Task<IActionResult> GoogleLogin([FromBody] GoogleLoginDTO request)
+        {
+            var result = await _authService.GoogleLogin(request);
+            return Ok(ApiResponse.Success("Google login successful", result));
+        }
     }
 }
