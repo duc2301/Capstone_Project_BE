@@ -191,6 +191,34 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(t => t.SignedBy)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // --- RAG: Document / DocumentChunk (pgvector) ---
+            modelBuilder.HasPostgresExtension("vector");
+
+            // Số chiều embedding = theo model embedding đang dùng.
+            // 768 = Gemini text-embedding-004 (khớp stack hiện có); đổi nếu dùng model khác (OpenAI = 1536).
+            const int EmbeddingDimension = 768;
+
+            modelBuilder.Entity<Document>(b =>
+            {
+                b.HasIndex(d => d.ProjectId);
+                b.HasIndex(d => d.FileItemId);
+                b.HasIndex(d => d.SourceFileVersionId);
+            });
+
+            modelBuilder.Entity<DocumentChunk>(b =>
+            {
+                b.Property(c => c.Embedding)
+                    .HasColumnType($"vector({EmbeddingDimension})");
+
+                // Pre-filter bảo mật: mọi truy vấn vector lọc theo ProjectId trước khi xếp hạng.
+                b.HasIndex(c => c.ProjectId);
+
+                // Document (cha) 1 - n DocumentChunk (con): xóa Document -> xóa chunk.
+                b.HasOne(c => c.Document)
+                    .WithMany(d => d.Chunks)
+                    .HasForeignKey(c => c.DocumentId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
             modelBuilder.Entity<ZoneReturnRequest>()
                 .HasOne(r => r.FileItem)
                 .WithMany()
