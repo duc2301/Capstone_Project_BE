@@ -221,13 +221,17 @@ INSERT INTO "FileItems" ("Id","FolderId","Name","FileType","Status","RequiresSig
 -- ============================================================================
 -- 15) FILE VERSIONS  (VersionNumber tăng dần; IsHidden=true cho bản cũ bị thay)
 --     ViewerStatus(ModelViewerStatus): None=0,Pending=1,Processing=2,Ready=3,Failed=4
+--     ⚠️ ĐỂ TẤT CẢ = None(0): seed chỉ chèn dòng DB, KHÔNG có file thật trên S3.
+--     Nếu để Pending/Processing, ModelTranslationWorker (chạy nền lúc BE khởi động)
+--     sẽ đi đọc file vật lý -> "Stored object not found". Để Ready + ViewerUrn giả
+--     thì mở viewer cũng 404 ở APS. Khi có file thật, để hệ thống tự cập nhật status.
 -- ============================================================================
 INSERT INTO "FileVersions" ("Id","FileItemId","VersionNumber","StoragePath","PreviewStoragePath","Format","FileSizeBytes","Checksum","IsHidden","ViewerStatus","ViewerUrn","ViewerProgress","ViewerError","UploadedByAccountId","UploadedAt") VALUES
 ('f3000000-0000-0000-0000-000000000001','f2000000-0000-0000-0000-000000000001',1,'projects/d01/wip/kien-truc/ar-plan-l1-v1.pdf',NULL,'pdf',1048576,'sha256:aa01',false,0,NULL,NULL,NULL,'a0000000-0000-0000-0000-000000000003','2026-02-05 08:00:00+07'),
 ('f3000000-0000-0000-0000-000000000002','f2000000-0000-0000-0000-000000000002',1,'projects/d01/wip/kien-truc/ar-model-v1.ifc',NULL,'ifc',5242880,'sha256:bb01',true,0,NULL,NULL,NULL,'a0000000-0000-0000-0000-000000000003','2026-02-05 08:10:00+07'),
-('f3000000-0000-0000-0000-000000000003','f2000000-0000-0000-0000-000000000002',2,'projects/d01/wip/kien-truc/ar-model-v2.ifc',NULL,'ifc',6291456,'sha256:bb02',false,3,'urn:adsk.objects:os.object:cde-bucket/ar-model-v2.ifc','complete',NULL,'a0000000-0000-0000-0000-000000000003','2026-02-20 10:00:00+07'),
+('f3000000-0000-0000-0000-000000000003','f2000000-0000-0000-0000-000000000002',2,'projects/d01/wip/kien-truc/ar-model-v2.ifc',NULL,'ifc',6291456,'sha256:bb02',false,0,NULL,NULL,NULL,'a0000000-0000-0000-0000-000000000003','2026-02-20 10:00:00+07'),
 ('f3000000-0000-0000-0000-000000000004','f2000000-0000-0000-0000-000000000003',1,'projects/d01/wip/ket-cau/st-calc-v1.xlsx',NULL,'xlsx',262144,'sha256:cc01',false,0,NULL,NULL,NULL,'a0000000-0000-0000-0000-000000000004','2026-02-06 08:00:00+07'),
-('f3000000-0000-0000-0000-000000000005','f2000000-0000-0000-0000-000000000004',1,'projects/d01/shared/coord-drawing-v1.dwg',NULL,'dwg',2097152,'sha256:dd01',false,2,NULL,'45','Đang dịch sang SVF2','a0000000-0000-0000-0000-000000000003','2026-02-07 08:00:00+07'),
+('f3000000-0000-0000-0000-000000000005','f2000000-0000-0000-0000-000000000004',1,'projects/d01/shared/coord-drawing-v1.dwg',NULL,'dwg',2097152,'sha256:dd01',false,0,NULL,NULL,NULL,'a0000000-0000-0000-0000-000000000003','2026-02-07 08:00:00+07'),
 ('f3000000-0000-0000-0000-000000000006','f2000000-0000-0000-0000-000000000005',1,'projects/d01/published/published-set-v1.pdf',NULL,'pdf',3145728,'sha256:ee01',false,0,NULL,NULL,NULL,'a0000000-0000-0000-0000-000000000002','2026-02-08 08:00:00+07');
 
 -- ============================================================================
