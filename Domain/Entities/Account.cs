@@ -11,6 +11,8 @@ namespace Domain.Entities
         public string PasswordHash { get; set; } = null!;
         public AccountRole? Role { get; set; }
         public AccountStatus? Status { get; set; }
+        public string? ResetPasswordToken { get; set; }
+        public DateTime? ResetPasswordTokenExpiresAt { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
     }

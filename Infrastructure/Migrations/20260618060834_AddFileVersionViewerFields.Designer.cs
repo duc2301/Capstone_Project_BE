@@ -3,6 +3,7 @@ using System;
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    partial class CDESystemDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260618060834_AddFileVersionViewerFields")]
+    partial class AddFileVersionViewerFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -38,12 +41,6 @@ namespace Infrastructure.Migrations
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<string>("ResetPasswordToken")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("ResetPasswordTokenExpiresAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("Role")
                         .HasColumnType("integer");
@@ -99,60 +96,6 @@ namespace Infrastructure.Migrations
                     b.HasIndex("RequestedBy");
 
                     b.ToTable("ApprovalRequests");
-                });
-
-            modelBuilder.Entity("Domain.Entities.ApprovalSignatureTransaction", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ApprovalRequestId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("CertificateSerial")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("FileItemId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("RawRequest")
-                        .HasColumnType("text");
-
-                    b.Property<string>("RawResponse")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Sad")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("SignedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("SignedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("TransactionId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ApprovalRequestId");
-
-                    b.HasIndex("FileItemId");
-
-                    b.HasIndex("SignedBy");
-
-                    b.ToTable("ApprovalSignatureTransactions");
                 });
 
             modelBuilder.Entity("Domain.Entities.AuditLog", b =>
@@ -465,15 +408,19 @@ namespace Infrastructure.Migrations
                         .HasColumnType("text");
 
                     b.Property<string>("Author")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("Content")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("Title")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("Type")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.HasKey("Id");
@@ -532,15 +479,9 @@ namespace Infrastructure.Migrations
                     b.Property<Guid>("FolderId")
                         .HasColumnType("uuid");
 
-                    b.Property<bool>("IsSigned")
-                        .HasColumnType("boolean");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<bool>("RequiresSignature")
-                        .HasColumnType("boolean");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
@@ -614,18 +555,17 @@ namespace Infrastructure.Migrations
                     b.Property<Guid>("FileItemId")
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("InheritFromParent")
+                        .HasColumnType("boolean");
+
                     b.Property<Guid?>("ProjectParticipantId")
                         .HasColumnType("uuid");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("ProjectParticipantId");
+                    b.HasIndex("FileItemId");
 
-                    b.HasIndex("FileItemId", "ProjectParticipantId")
-                        .IsUnique();
+                    b.HasIndex("ProjectParticipantId");
 
                     b.ToTable("FilePermissions");
                 });
@@ -666,15 +606,6 @@ namespace Infrastructure.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<int>("VersionNumber")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ViewerError")
-                        .HasColumnType("text");
-
-                    b.Property<string>("ViewerProgress")
-                        .HasColumnType("text");
-
-                    b.Property<int>("ViewerStatus")
                         .HasColumnType("integer");
 
                     b.Property<string>("ViewerUrn")
@@ -754,18 +685,17 @@ namespace Infrastructure.Migrations
                     b.Property<Guid>("FolderId")
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("InheritFromParent")
+                        .HasColumnType("boolean");
+
                     b.Property<Guid?>("ProjectParticipantId")
                         .HasColumnType("uuid");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("ProjectParticipantId");
+                    b.HasIndex("FolderId");
 
-                    b.HasIndex("FolderId", "ProjectParticipantId")
-                        .IsUnique();
+                    b.HasIndex("ProjectParticipantId");
 
                     b.ToTable("FolderPermissions");
                 });
@@ -1108,12 +1038,14 @@ namespace Infrastructure.Migrations
                         .HasColumnType("text");
 
                     b.Property<string>("Message")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<DateTime>("SendAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("SenderName")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.HasKey("Id");
@@ -1642,32 +1574,6 @@ namespace Infrastructure.Migrations
                     b.Navigation("FileItem");
 
                     b.Navigation("Requester");
-                });
-
-            modelBuilder.Entity("Domain.Entities.ApprovalSignatureTransaction", b =>
-                {
-                    b.HasOne("Domain.Entities.ApprovalRequest", "ApprovalRequest")
-                        .WithMany()
-                        .HasForeignKey("ApprovalRequestId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Domain.Entities.FileItem", "FileItem")
-                        .WithMany()
-                        .HasForeignKey("FileItemId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Domain.Entities.Account", "SignedByAccount")
-                        .WithMany()
-                        .HasForeignKey("SignedBy")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("ApprovalRequest");
-
-                    b.Navigation("FileItem");
-
-                    b.Navigation("SignedByAccount");
                 });
 
             modelBuilder.Entity("Domain.Entities.BillItem", b =>

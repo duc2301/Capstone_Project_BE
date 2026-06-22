@@ -10,6 +10,8 @@ namespace Application.DTOs.ResponseDTOs.Approval
         public Guid Id { get; set; }
         public Guid FileItemId { get; set; }
         public string FileItemName { get; set; } = null!;
+        public bool RequiresSignature { get; set; }
+        public bool IsSigned { get; set; }
         public Guid RequestedBy { get; set; }
         public string? RequestedByName { get; set; }
         public Guid? ApproverId { get; set; }

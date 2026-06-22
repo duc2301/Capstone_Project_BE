@@ -1,4 +1,5 @@
 using Application.DTOs.ApiResponseDTO;
+using Application.DTOs.RequestDTOs.Approval;
 using Application.DTOs.RequestDTOs.FileItem;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
@@ -15,16 +16,22 @@ namespace Capstone_Project.Controllers
         private readonly IFileItemService _service;
         private readonly IFileUploadService _upload;
         private readonly IApprovalService _approval;
+        private readonly IFileViewService _view;
 
-        public FileItemsController(IFileItemService service, IFileUploadService upload, IApprovalService approval)
+        public FileItemsController(IFileItemService service, IFileUploadService upload, IApprovalService approval, IFileViewService view)
         {
             _service = service;
             _upload = upload;
             _approval = approval;
+            _view = view;
         }
 
         // Luồng tải file lên (multipart/form-data): file + FolderId + FileType + (Name tùy chọn).
+        // Cho phép file lớn tới 500MB (CAD/BIM .nwd/.rvt...) — mặc định Kestrel ~28MB, multipart ~128MB.
         [HttpPost("upload")]
+        [Consumes("multipart/form-data")]
+        [RequestSizeLimit(524_288_000)]
+        [RequestFormLimits(MultipartBodyLengthLimit = 524_288_000)]
         public async Task<IActionResult> Upload([FromForm] UploadFileDTO dto, IFormFile file, CancellationToken ct)
         {
             if (file == null || file.Length == 0)
@@ -51,6 +58,19 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("File URL", new { url }));
         }
 
+        // "Xem chi tiết": FE dựa vào Kind để hiển thị (model = APS viewer, inline = web, download = tải về).
+        [HttpGet("{id:guid}/view")]
+        public async Task<IActionResult> GetViewInfo(Guid id, CancellationToken ct)
+            => Ok(ApiResponse.Success("File view info", await _view.GetViewInfoAsync(id, User.GetAccountId(), ct)));
+
+        // Dịch lại model (IFC/CAD) lên APS — dùng khi trạng thái dịch là Failed. Chạy ở hàng đợi nền.
+        [HttpPost("{id:guid}/retranslate")]
+        public async Task<IActionResult> Retranslate(Guid id, CancellationToken ct)
+        {
+            await _view.RetranslateAsync(id, User.GetAccountId(), ct);
+            return Ok(ApiResponse.Success("Model re-translation queued"));
+        }
+
         /// <summary>
         /// Gửi file CDE để chờ Team Leader phê duyệt.
         /// </summary>
@@ -58,8 +78,8 @@ namespace Capstone_Project.Controllers
         /// Chỉ member active trong team/project của file mới được gửi duyệt.
         /// </remarks>
         [HttpPost("{id:guid}/submit-approval")]
-        public async Task<IActionResult> SubmitApproval(Guid id)
-            => Ok(ApiResponse.Success("File submitted for approval", await _approval.SubmitAsync(id, User.GetAccountId())));
+        public async Task<IActionResult> SubmitApproval(Guid id, [FromBody] SubmitApprovalRequestDTO? dto)
+            => Ok(ApiResponse.Success("File submitted for approval", await _approval.SubmitAsync(id, dto, User.GetAccountId())));
 
         // Danh sách file trong 1 folder (FE gọi khi mở/chọn folder).
         [HttpGet("by-folder/{folderId:guid}")]

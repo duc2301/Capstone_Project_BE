@@ -1,6 +1,7 @@
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Application.Mapping;
+using Application.Options;
 using Application.Services;
 using Infrastructure.DbContexts;
 using Infrastructure.UnitOfWorks;
@@ -17,6 +18,8 @@ namespace Infrastructure.Configurations
             IConfiguration configuration)
         {
             var connectionString = configuration.GetConnectionString("DefaultConnection");
+
+            services.Configure<VnptSmartCaOptions>(configuration.GetSection("VnptSmartCA"));
 
             services.AddDbContext<CDESystemDbContext>(options =>
                 options.UseNpgsql(connectionString)
@@ -37,6 +40,7 @@ namespace Infrastructure.Configurations
             services.AddScoped<IFolderBootstrapService, FolderBootstrapService>();
             services.AddScoped<IFileItemService, FileItemService>();
             services.AddScoped<IApprovalService, ApprovalService>();
+            services.AddScoped<IVnptSmartCaService, VnptSmartCaService>();
             // Kho file: chọn provider qua "FileStorage:Provider" (Local mặc định | ViettelS3).
             var storageProvider = configuration["FileStorage:Provider"] ?? "Local";
             if (storageProvider.Equals("ViettelS3", StringComparison.OrdinalIgnoreCase)
@@ -45,6 +49,8 @@ namespace Infrastructure.Configurations
             else
                 services.AddSingleton<IFileStorageService, LocalFileStorageService>();
             services.AddScoped<IFileUploadService, FileUploadService>();
+            services.AddSingleton<IOfficeToPdfConverter, SyncfusionOfficeToPdfConverter>();
+            services.AddScoped<IFileViewService, FileViewService>();
             services.AddScoped<ISubmittalService, SubmittalService>();
             services.AddScoped<IDiscussionService, DiscussionService>();
             services.AddScoped<IIssueService, IssueService>();
@@ -58,6 +64,7 @@ namespace Infrastructure.Configurations
             // Auth (giống ChemXLab) + refresh token
             services.AddScoped<IJwtService, JwtService>();
             services.AddScoped<IAuthService, AuthService>();
+            services.AddScoped<IEmailService, GmailEmailService>();
 
             // Profile self-service (GET/PUT/change-password trên chính user hiện tại)
             services.AddScoped<IProfileService, ProfileService>();
@@ -71,7 +78,12 @@ namespace Infrastructure.Configurations
             // Project flow (custom, ngoài CRUD generic): Admin tạo PM cho project, PM add bên tham gia
             services.AddScoped<IProjectFlowService, ProjectFlowService>();
 
+            // Hàng đợi dịch model nền (singleton: producer upload/view + consumer ModelTranslationWorker dùng chung).
+            // Worker (BackgroundService) đăng ký ở Program.cs (host) vì cần Microsoft.Extensions.Hosting.
+            services.AddSingleton<IModelTranslationQueue, ModelTranslationQueue>();
+
             services.AddMemoryCache();
+            services.AddHttpClient();
             services.AddHttpClient<IViewerService, ViewerService>((sp, client) =>
             {
                 var config = sp.GetRequiredService<IConfiguration>();

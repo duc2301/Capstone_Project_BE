@@ -3,6 +3,7 @@ using System;
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    partial class CDESystemDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260619075423_AddVnptSmartCaFoundation")]
+    partial class AddVnptSmartCaFoundation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -38,12 +41,6 @@ namespace Infrastructure.Migrations
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<string>("ResetPasswordToken")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("ResetPasswordTokenExpiresAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("Role")
                         .HasColumnType("integer");
@@ -465,15 +462,19 @@ namespace Infrastructure.Migrations
                         .HasColumnType("text");
 
                     b.Property<string>("Author")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("Content")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("Title")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("Type")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.HasKey("Id");
@@ -614,18 +615,17 @@ namespace Infrastructure.Migrations
                     b.Property<Guid>("FileItemId")
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("InheritFromParent")
+                        .HasColumnType("boolean");
+
                     b.Property<Guid?>("ProjectParticipantId")
                         .HasColumnType("uuid");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("ProjectParticipantId");
+                    b.HasIndex("FileItemId");
 
-                    b.HasIndex("FileItemId", "ProjectParticipantId")
-                        .IsUnique();
+                    b.HasIndex("ProjectParticipantId");
 
                     b.ToTable("FilePermissions");
                 });
@@ -652,9 +652,6 @@ namespace Infrastructure.Migrations
                     b.Property<bool>("IsHidden")
                         .HasColumnType("boolean");
 
-                    b.Property<string>("PreviewStoragePath")
-                        .HasColumnType("text");
-
                     b.Property<string>("StoragePath")
                         .IsRequired()
                         .HasColumnType("text");
@@ -667,18 +664,6 @@ namespace Infrastructure.Migrations
 
                     b.Property<int>("VersionNumber")
                         .HasColumnType("integer");
-
-                    b.Property<string>("ViewerError")
-                        .HasColumnType("text");
-
-                    b.Property<string>("ViewerProgress")
-                        .HasColumnType("text");
-
-                    b.Property<int>("ViewerStatus")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ViewerUrn")
-                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -754,18 +739,17 @@ namespace Infrastructure.Migrations
                     b.Property<Guid>("FolderId")
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("InheritFromParent")
+                        .HasColumnType("boolean");
+
                     b.Property<Guid?>("ProjectParticipantId")
                         .HasColumnType("uuid");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("ProjectParticipantId");
+                    b.HasIndex("FolderId");
 
-                    b.HasIndex("FolderId", "ProjectParticipantId")
-                        .IsUnique();
+                    b.HasIndex("ProjectParticipantId");
 
                     b.ToTable("FolderPermissions");
                 });
@@ -1108,12 +1092,14 @@ namespace Infrastructure.Migrations
                         .HasColumnType("text");
 
                     b.Property<string>("Message")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<DateTime>("SendAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("SenderName")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.HasKey("Id");

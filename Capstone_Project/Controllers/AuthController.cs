@@ -43,5 +43,26 @@ namespace Capstone_Project.Controllers
             await _authService.Logout(request);
             return Ok(ApiResponse.Success("Logged out"));
         }
+
+        [HttpPost("google-login")]
+        public async Task<IActionResult> GoogleLogin([FromBody] GoogleLoginDTO request)
+        {
+            var result = await _authService.GoogleLogin(request);
+            return Ok(ApiResponse.Success("Google login successful", result));
+        }
+
+        [HttpPost("forgot-password")]
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDTO request)
+        {
+            await _authService.ForgotPassword(request);
+            return Ok(ApiResponse.Success("Nếu email tồn tại, link đặt lại mật khẩu đã được gửi."));
+        }
+
+        [HttpPost("reset-password")]
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDTO request)
+        {
+            await _authService.ResetPassword(request);
+            return Ok(ApiResponse.Success("Đặt lại mật khẩu thành công."));
+        }
     }
 }
