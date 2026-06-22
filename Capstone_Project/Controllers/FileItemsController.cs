@@ -16,13 +16,20 @@ namespace Capstone_Project.Controllers
         private readonly IFileItemService _service;
         private readonly IFileUploadService _upload;
         private readonly IApprovalService _approval;
+        private readonly IZoneReturnRequestService _zoneReturnRequestService;
         private readonly IFileViewService _view;
 
-        public FileItemsController(IFileItemService service, IFileUploadService upload, IApprovalService approval, IFileViewService view)
+        public FileItemsController(
+            IFileItemService service,
+            IFileUploadService upload,
+            IApprovalService approval,
+            IZoneReturnRequestService zoneReturnRequestService,
+            IFileViewService view)
         {
             _service = service;
             _upload = upload;
             _approval = approval;
+            _zoneReturnRequestService = zoneReturnRequestService;
             _view = view;
         }
 
@@ -80,6 +87,17 @@ namespace Capstone_Project.Controllers
         [HttpPost("{id:guid}/submit-approval")]
         public async Task<IActionResult> SubmitApproval(Guid id, [FromBody] SubmitApprovalRequestDTO? dto)
             => Ok(ApiResponse.Success("File submitted for approval", await _approval.SubmitAsync(id, dto, User.GetAccountId())));
+
+        /// <summary>
+        /// Chuyen file sang zone CDE khac. Chi active Team Leader cua team so huu file moi duoc thuc hien.
+        /// </summary>
+        [HttpPost("{fileId:guid}/transfer-zone")]
+        public async Task<IActionResult> TransferZone(Guid fileId, [FromBody] TransferZoneRequestDTO dto)
+            => Ok(ApiResponse.Success("File zone transferred", await _service.TransferZoneAsync(fileId, dto, User.GetAccountId())));
+
+        [HttpPost("{fileId:guid}/return-requests")]
+        public async Task<IActionResult> CreateReturnRequest(Guid fileId, [FromBody] CreateZoneReturnRequestDTO dto)
+            => Ok(await _zoneReturnRequestService.CreateAsync(fileId, dto, User.GetAccountId()));
 
         // Danh sách file trong 1 folder (FE gọi khi mở/chọn folder).
         [HttpGet("by-folder/{folderId:guid}")]

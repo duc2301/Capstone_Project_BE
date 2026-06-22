@@ -7,6 +7,7 @@ using AutoMapper;
 using Domain.Common;
 using Domain.Entities;
 using Domain.Enum.Cde;
+using Domain.Enum.File;
 
 namespace Application.Services
 {
@@ -14,15 +15,18 @@ namespace Application.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IFolderPermissionService _permission;
+        private readonly IFileZoneResolverService _zoneResolver;
         private readonly IMapper _mapper;
 
         public FileItemService(
             IUnitOfWork unitOfWork,
             IFolderPermissionService permission,
+            IFileZoneResolverService zoneResolver,
             IMapper mapper)
         {
             _unitOfWork = unitOfWork;
             _permission = permission;
+            _zoneResolver = zoneResolver;
             _mapper = mapper;
         }
 
@@ -65,7 +69,47 @@ namespace Application.Services
             await _unitOfWork.CommitAsync();
         }
 
-        // Danh sách file trong 1 folder (gộp version hiện hành + tác giả). Gate quyền View.
+        public async Task<TransferZoneResponseDTO> TransferZoneAsync(Guid fileItemId, TransferZoneRequestDTO dto, Guid actorId)
+        {
+            var fileItem = await GetFileItemAsync(fileItemId);
+            var currentFolder = await GetFolderAsync(fileItem.FolderId);
+            var targetZone = ParseTargetZone(dto.TargetZone);
+
+            ValidateTransferRules(fileItem, currentFolder.Area, targetZone);
+
+            var projectFolders = await _zoneResolver.GetProjectFoldersAsync(currentFolder.ProjectId);
+            var teamGroupIds = await _zoneResolver.ResolveFileTeamGroupIdsAsync(fileItem, currentFolder, projectFolders);
+
+            await _zoneResolver.RequireActiveTeamLeaderAsync(
+                actorId,
+                teamGroupIds,
+                "Only the active Team Leader can transfer this file.");
+
+            var targetFolder = await _zoneResolver.ResolveTargetFolderAsync(
+                currentFolder,
+                targetZone,
+                teamGroupIds,
+                projectFolders,
+                "Target folder not found.");
+
+            var now = DateTime.UtcNow;
+            var fromZone = _zoneResolver.FormatZone(currentFolder.Area);
+
+            fileItem.FolderId = targetFolder.Id;
+            fileItem.UpdatedAt = now;
+
+            await _unitOfWork.CommitAsync();
+
+            return new TransferZoneResponseDTO
+            {
+                FileId = fileItem.Id,
+                FromZone = fromZone,
+                ToZone = _zoneResolver.FormatZone(targetZone),
+                FolderId = targetFolder.Id,
+                Message = $"File transferred from {fromZone} to {_zoneResolver.FormatZone(targetZone)}."
+            };
+        }
+
         public async Task<IEnumerable<FileListItemDTO>> GetByFolderAsync(Guid folderId, Guid actorId)
         {
             _ = await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
@@ -106,11 +150,9 @@ namespace Application.Services
             }).ToList();
         }
 
-        // Tất cả phiên bản của 1 file (mới nhất trước). Gate quyền View trên folder của file.
         public async Task<IEnumerable<FileVersionResponseDTO>> GetVersionsAsync(Guid fileItemId, Guid actorId)
         {
-            var file = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
-                ?? throw new ApiExceptionResponse("File not found.", 404);
+            var file = await GetFileItemAsync(fileItemId);
             await _permission.RequireAsync(actorId, file.FolderId, FolderAction.View);
 
             var accounts = (await _unitOfWork.Repository<Account>().GetAllAsync())
@@ -127,5 +169,52 @@ namespace Application.Services
                 })
                 .ToList();
         }
+
+        private async Task<FileItem> GetFileItemAsync(Guid fileItemId)
+            => await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+               ?? throw new ApiExceptionResponse("File not found.", 404);
+
+        private async Task<Folder> GetFolderAsync(Guid folderId)
+            => await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
+               ?? throw new ApiExceptionResponse("File folder not found.", 404);
+
+        private static CdeArea ParseTargetZone(string? targetZone)
+        {
+            if (string.IsNullOrWhiteSpace(targetZone)
+                || !Enum.TryParse<CdeArea>(targetZone.Trim(), ignoreCase: true, out var parsed))
+                throw new ApiExceptionResponse("Invalid target zone.", 400);
+
+            return parsed;
+        }
+
+        private static void ValidateTransferRules(FileItem fileItem, CdeArea currentZone, CdeArea targetZone)
+        {
+            if (fileItem.Status == FileItemStatus.PendingApproval)
+                throw new ApiExceptionResponse("File is pending approval and cannot be transferred.", 400);
+
+            if (currentZone == targetZone)
+                throw new ApiExceptionResponse("File cannot be transferred to the same zone.", 400);
+
+            if (!IsAllowedTransition(currentZone, targetZone))
+                throw new ApiExceptionResponse($"Invalid zone transition: {currentZone} -> {targetZone}.", 400);
+
+            if (currentZone == CdeArea.Wip && targetZone == CdeArea.Shared)
+            {
+                if (fileItem.Status != FileItemStatus.Approved)
+                    throw new ApiExceptionResponse("File must be approved before transferring from WIP to Shared.", 400);
+
+                if (fileItem.RequiresSignature && !fileItem.IsSigned)
+                    throw new ApiExceptionResponse("Document requires signature before transfer.", 400);
+            }
+        }
+
+        private static bool IsAllowedTransition(CdeArea currentZone, CdeArea targetZone)
+            => (currentZone, targetZone) is
+                (CdeArea.Wip, CdeArea.Shared)
+                or (CdeArea.Shared, CdeArea.Published)
+                or (CdeArea.Published, CdeArea.Archived)
+                or (CdeArea.Shared, CdeArea.Wip)
+                or (CdeArea.Published, CdeArea.Wip)
+                or (CdeArea.Archived, CdeArea.Wip);
     }
 }
