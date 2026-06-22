@@ -37,6 +37,7 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<FilePermission> FilePermissions { get; set; }
         public virtual DbSet<ApprovalRequest> ApprovalRequests { get; set; }
         public virtual DbSet<ApprovalSignatureTransaction> ApprovalSignatureTransactions { get; set; }
+        public virtual DbSet<ZoneReturnRequest> ZoneReturnRequests { get; set; }
 
         // --- Module D: Phiếu yêu cầu ---
         public virtual DbSet<Submittal> Submittals { get; set; }
@@ -218,6 +219,23 @@ namespace Infrastructure.DbContexts
                     .HasForeignKey(c => c.DocumentId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
+            modelBuilder.Entity<ZoneReturnRequest>()
+                .HasOne(r => r.FileItem)
+                .WithMany()
+                .HasForeignKey(r => r.FileItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ZoneReturnRequest>()
+                .HasOne(r => r.Requester)
+                .WithMany()
+                .HasForeignKey(r => r.RequestedBy)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ZoneReturnRequest>()
+                .HasOne(r => r.Approver)
+                .WithMany()
+                .HasForeignKey(r => r.ApprovedBy)
+                .OnDelete(DeleteBehavior.Restrict);
         }
     }
 }
