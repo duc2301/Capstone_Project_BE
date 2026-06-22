@@ -3,7 +3,7 @@
 -- ----------------------------------------------------------------------------
 --  Mục đích : tạo dữ liệu test mạch lạc để dễ test API & dựng UI.
 --  Sinh theo : Infrastructure/Migrations/CDESystemDbContextModelSnapshot.cs
---              (đã cập nhật tới migration 20260622093609_AddZoneReturnRequests)
+--              (đã cập nhật tới migration 20260622145133_Rag_Reshape_Documents)
 --              + Domain/Enum/* (mọi enum lưu DƯỚI DẠNG SỐ — integer).
 --
 --  CÁCH CHẠY :
@@ -36,7 +36,7 @@
 --    30*=Issues 31*=IssueComments 32*=IssueMentions 33*=IssueAttachments 34*=IssueCitedFolders
 --    40*=Contracts 41*=ContractAppendices 42*=BillItems
 --    50*=ModelFiles 51*=ModelObjects  60*=Notifications
---    70*=DocumentChunks 80*=RefreshTokens 90*=AuditLogs
+--    d5*=Documents 70*=DocumentChunks 80*=RefreshTokens 90*=AuditLogs
 --    aa*=ApprovalRequests ab*=ApprovalSignatureTransactions ac*=ZoneReturnRequests
 -- ============================================================================
 
@@ -395,21 +395,23 @@ INSERT INTO "Notifications" ("Id","AccountId","Message","SenderName","IsRead","L
 ('60000000-0000-0000-0000-000000000007','a0000000-0000-0000-0000-000000000002','Có yêu cầu phê duyệt file "AR-Plan-L1.pdf" đang chờ bạn xử lý.','Lê Hoàng Nam',false,'aa000000-0000-0000-0000-000000000001','ApprovalRequest','2026-06-15 09:00:00+07');
 
 -- ============================================================================
--- 32) DOCUMENTS  (kho tài liệu cho AI search/RAG — Id là TEXT, không phải uuid)
+-- 32) DOCUMENTS  (RAG index — TÁI CẤU TRÚC sau merge main: Id là UUID, KHÔNG
+--     còn free-text. Chỉ nạp file ở Published; tham chiếu CDE qua Id (không FK,
+--     chỉ index). Area(CdeArea): Published=2.
+--     Status(DocumentIngestStatus): Pending=0, Embedded=1, Failed=2.
 -- ============================================================================
-INSERT INTO "Documents" ("Id","Title","Author","Type","Content") VALUES
-('doc-0001','Quy trình phê duyệt hồ sơ thiết kế','Trần Thị Hoa','Procedure','Hồ sơ thiết kế được trình từ nhà thầu/tư vấn, qua thẩm tra của tư vấn giám sát, sau đó chủ đầu tư phê duyệt. Khi duyệt xong, tài liệu tự chuyển từ Shared sang Published.'),
-('doc-0002','Tiêu chuẩn đặt tên tài liệu TCVN 14177:2024','Nguyễn Văn Admin','Standard','Mã tài liệu do hệ thống tự sinh theo dự án/khu vực/loại hồ sơ; không nhập tay; không trùng tên file; mã phiên bản tăng theo số lần thay đổi nội dung.'),
-('doc-0003','Biện pháp thi công phần thân','Vũ Văn Bình','MethodStatement','Biện pháp tổ chức thi công kết cấu phần thân tháp A: trình tự đổ bê tông cột - dầm - sàn, an toàn lao động, kiểm soát chất lượng tại từng cao độ.');
+INSERT INTO "Documents" ("Id","SourceFileVersionId","FileItemId","ProjectId","Area","FileName","Format","ContentHash","Status","IngestedAt","ChunkCount") VALUES
+('d5000000-0000-0000-0000-000000000001','f3000000-0000-0000-0000-000000000006','f2000000-0000-0000-0000-000000000005','d0000000-0000-0000-0000-000000000001',2,'Published-Set.pdf','pdf','sha256:ee01',0,NULL,3);
 
 -- ============================================================================
--- 33) DOCUMENT CHUNKS  (DocumentId FK -> Documents; Embedding là real[] nullable)
+-- 33) DOCUMENT CHUNKS  (DocumentId FK -> Documents Cascade; ProjectId denormalize
+--     để lọc quyền khi vector search; Embedding kiểu pgvector vector(768) — để
+--     NULL tới khi pipeline embed xong, đúng trạng thái Status=Pending ở trên)
 -- ============================================================================
-INSERT INTO "DocumentChunks" ("Id","DocumentId","ChunkIndex","Content","Embedding","CreatedAt") VALUES
-('70000000-0000-0000-0000-000000000001','doc-0001',0,'Hồ sơ thiết kế được trình từ nhà thầu/tư vấn, qua thẩm tra của tư vấn giám sát.','{0.11,0.20,0.03,0.45}'::real[],'2026-03-01 08:00:00+07'),
-('70000000-0000-0000-0000-000000000002','doc-0001',1,'Khi chủ đầu tư duyệt xong, tài liệu tự chuyển từ Shared sang Published.','{0.09,0.31,0.07,0.22}'::real[],'2026-03-01 08:00:00+07'),
-('70000000-0000-0000-0000-000000000003','doc-0002',0,'Mã tài liệu do hệ thống tự sinh, không trùng tên file, theo TCVN 14177:2024.','{0.51,0.04,0.18,0.30}'::real[],'2026-03-02 08:00:00+07'),
-('70000000-0000-0000-0000-000000000004','doc-0003',0,'Trình tự đổ bê tông cột - dầm - sàn và kiểm soát chất lượng tại từng cao độ.','{0.22,0.41,0.12,0.07}'::real[],'2026-03-03 08:00:00+07');
+INSERT INTO "DocumentChunks" ("Id","DocumentId","ProjectId","ChunkIndex","Content","Embedding","CreatedAt") VALUES
+('70000000-0000-0000-0000-000000000001','d5000000-0000-0000-0000-000000000001','d0000000-0000-0000-0000-000000000001',0,'Bộ hồ sơ phát hành chính thức cho thi công, đã được phê duyệt và ký số.',NULL,'2026-03-13 08:00:00+07'),
+('70000000-0000-0000-0000-000000000002','d5000000-0000-0000-0000-000000000001','d0000000-0000-0000-0000-000000000001',1,'Bản vẽ trong hồ sơ đã đóng dấu chữ ký số (CA), không được chỉnh sửa sau khi ký.',NULL,'2026-03-13 08:00:00+07'),
+('70000000-0000-0000-0000-000000000003','d5000000-0000-0000-0000-000000000001','d0000000-0000-0000-0000-000000000001',2,'Mọi thay đổi sau phát hành phải tạo phiên bản mới và phê duyệt lại.',NULL,'2026-03-13 08:00:00+07');
 
 -- ============================================================================
 -- 34) REFRESH TOKENS  (AccountId không có FK ràng buộc; CreatedAt/ExpiresAt NOT NULL)
@@ -473,7 +475,7 @@ COMMIT;
 --    Issues 4 · IssueComments 4 · IssueMentions 2 · IssueAttachments 2 · IssueCitedFolders 1
 --    Contracts 2 · ContractAppendices 1 · BillItems 4
 --    ModelFiles 3 · ModelObjects 3 · Notifications 7
---    Documents 3 · DocumentChunks 4 · RefreshTokens 3 · AuditLogs 6
+--    Documents 1 · DocumentChunks 3 · RefreshTokens 3 · AuditLogs 6
 --    ApprovalRequests 3 · ApprovalSignatureTransactions 2 · ZoneReturnRequests 3
 --    OrganizationTypes 8 (do MIGRATION seed sẵn — KHÔNG truncate/insert ở đây)
 --
