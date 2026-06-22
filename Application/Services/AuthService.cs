@@ -16,12 +16,14 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IJwtService _jwtService;
         private readonly IConfiguration _configuration;
+        private readonly IEmailService _emailService;
 
-        public AuthService(IUnitOfWork unitOfWork, IJwtService jwtService, IConfiguration configuration)
+        public AuthService(IUnitOfWork unitOfWork, IJwtService jwtService, IConfiguration configuration, IEmailService emailService)
         {
             _unitOfWork = unitOfWork;
             _jwtService = jwtService;
             _configuration = configuration;
+            _emailService = emailService;
         }
 
         public async Task<AuthResponseDTO> Register(RegisterDTO request)
@@ -134,6 +136,53 @@ namespace Application.Services
 
             await _unitOfWork.CommitAsync();
             return response;
+        }
+
+        public async Task ForgotPassword(ForgotPasswordDTO request)
+        {
+            var account = await _unitOfWork.AccountRepository.GetByEmailAsync(request.Email);
+            // Trả về yên lặng để tránh lộ thông tin email có tồn tại hay không (email enumeration)
+            if (account == null) return;
+
+            var token = Guid.NewGuid().ToString("N");
+            account.ResetPasswordToken = token;
+            account.ResetPasswordTokenExpiresAt = DateTime.UtcNow.AddMinutes(15);
+            account.UpdatedAt = DateTime.UtcNow;
+
+            await _unitOfWork.CommitAsync();
+
+            var frontendBase = _configuration["FrontendLocalBaseUrl"]?.TrimEnd('/');
+            var resetLink = $"{frontendBase}/reset-password?email={Uri.EscapeDataString(account.Email)}&token={token}";
+
+            var subject = "Đặt lại mật khẩu";
+            var body = $"Xin chào {account.UserName},\n\n" +
+                       $"Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn.\n" +
+                       $"Nhấp vào liên kết sau để đặt lại mật khẩu (có hiệu lực trong 15 phút):\n\n" +
+                       $"{resetLink}\n\n" +
+                       $"Nếu bạn không yêu cầu điều này, hãy bỏ qua email này.";
+
+            await _emailService.SendEmailAsync(account.Email, subject, body);
+        }
+
+        public async Task ResetPassword(ResetPasswordDTO request)
+        {
+            var account = await _unitOfWork.AccountRepository.GetByEmailAsync(request.Email)
+                ?? throw new ApiExceptionResponse("Không tìm thấy tài khoản.", 400);
+
+            if (account.ResetPasswordToken == null ||
+                account.ResetPasswordToken != request.Token ||
+                account.ResetPasswordTokenExpiresAt == null ||
+                account.ResetPasswordTokenExpiresAt < DateTime.UtcNow)
+            {
+                throw new ApiExceptionResponse("Token đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.", 400);
+            }
+
+            account.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+            account.ResetPasswordToken = null;
+            account.ResetPasswordTokenExpiresAt = null;
+            account.UpdatedAt = DateTime.UtcNow;
+
+            await _unitOfWork.CommitAsync();
         }
 
         public async Task Logout(RefreshTokenRequestDTO request)

@@ -57,6 +57,7 @@ namespace Infrastructure.Configurations
             // Auth (giống ChemXLab) + refresh token
             services.AddScoped<IJwtService, JwtService>();
             services.AddScoped<IAuthService, AuthService>();
+            services.AddScoped<IEmailService, GmailEmailService>();
 
             // Profile self-service (GET/PUT/change-password trên chính user hiện tại)
             services.AddScoped<IProfileService, ProfileService>();

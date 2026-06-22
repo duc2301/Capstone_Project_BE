@@ -11,5 +11,7 @@ namespace Application.Interfaces.IServices
         Task<AuthResponseDTO> GoogleLogin(GoogleLoginDTO request);
         Task<AuthResponseDTO> Refresh(RefreshTokenRequestDTO request);
         Task Logout(RefreshTokenRequestDTO request);
+        Task ForgotPassword(ForgotPasswordDTO request);
+        Task ResetPassword(ResetPasswordDTO request);
     }
 }
