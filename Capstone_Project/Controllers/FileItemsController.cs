@@ -88,6 +88,10 @@ namespace Capstone_Project.Controllers
         public async Task<IActionResult> TransferZone(Guid fileId, [FromBody] TransferZoneRequestDTO dto)
             => Ok(ApiResponse.Success("File zone transferred", await _service.TransferZoneAsync(fileId, dto, User.GetAccountId())));
 
+        [HttpPost("{fileId:guid}/return-requests")]
+        public async Task<IActionResult> CreateReturnRequest(Guid fileId, [FromBody] CreateZoneReturnRequestDTO dto)
+            => Ok(ApiResponse.Success("Return request created", await _service.CreateReturnRequestAsync(fileId, dto, User.GetAccountId())));
+
         // Danh sách file trong 1 folder (FE gọi khi mở/chọn folder).
         [HttpGet("by-folder/{folderId:guid}")]
         public async Task<IActionResult> GetByFolder(Guid folderId)

@@ -110,6 +110,52 @@ namespace Application.Services
             };
         }
 
+        public async Task<object> CreateReturnRequestAsync(Guid fileItemId, CreateZoneReturnRequestDTO dto, Guid actorId)
+        {
+            var reason = dto.Reason?.Trim();
+            if (string.IsNullOrWhiteSpace(reason))
+                throw new ApiExceptionResponse("Reason is required.", 400);
+
+            var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+                ?? throw new ApiExceptionResponse("File not found.", 404);
+
+            var currentFolder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
+                ?? throw new ApiExceptionResponse("File folder not found.", 404);
+
+            if (currentFolder.Area == CdeArea.Wip)
+                throw new ApiExceptionResponse("File in WIP cannot create return request.", 400);
+
+            var hasPendingRequest = (await _unitOfWork.Repository<ZoneReturnRequest>().FindAsync(
+                    r => r.FileItemId == fileItem.Id && r.Status == ZoneReturnRequestStatus.Pending))
+                .Any();
+            if (hasPendingRequest)
+                throw new ApiExceptionResponse("File already has a pending return request.", 400);
+
+            var returnRequest = new ZoneReturnRequest
+            {
+                Id = Guid.NewGuid(),
+                FileItemId = fileItem.Id,
+                FromZone = currentFolder.Area,
+                TargetZone = CdeArea.Wip,
+                RequestedBy = actorId,
+                Status = ZoneReturnRequestStatus.Pending,
+                Reason = reason,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _unitOfWork.Repository<ZoneReturnRequest>().CreateAsync(returnRequest);
+            await _unitOfWork.CommitAsync();
+
+            return new
+            {
+                returnRequestId = returnRequest.Id,
+                fileId = fileItem.Id,
+                fromZone = FormatZone(returnRequest.FromZone),
+                targetZone = FormatZone(returnRequest.TargetZone),
+                status = returnRequest.Status.ToString()
+            };
+        }
+
         // Danh sách file trong 1 folder (gộp version hiện hành + tác giả). Gate quyền View.
         public async Task<IEnumerable<FileListItemDTO>> GetByFolderAsync(Guid folderId, Guid actorId)
         {
@@ -172,8 +218,6 @@ namespace Application.Services
                 })
                 .ToList();
         }
-    }
-}
 
         private static CdeArea ParseTargetZone(string? targetZone)
         {
@@ -375,3 +419,5 @@ namespace Application.Services
 
             return current.ParentFolderId == null ? teamFolder : null;
         }
+    }
+}

@@ -42,6 +42,7 @@ namespace Infrastructure.Configurations
             services.AddScoped<IFileItemService, FileItemService>();
             services.AddScoped<IApprovalService, ApprovalService>();
             services.AddScoped<IVnptSmartCaService, VnptSmartCaService>();
+            services.AddScoped<IZoneReturnRequestService, ZoneReturnRequestService>();
             // Kho file: chọn provider qua "FileStorage:Provider" (Local mặc định | ViettelS3).
             var storageProvider = configuration["FileStorage:Provider"] ?? "Local";
             if (storageProvider.Equals("ViettelS3", StringComparison.OrdinalIgnoreCase)

@@ -18,5 +18,7 @@ namespace Application.Interfaces.IServices
         Task<IEnumerable<FileVersionResponseDTO>> GetVersionsAsync(Guid fileItemId, Guid actorId);
 
         Task<TransferZoneResponseDTO> TransferZoneAsync(Guid fileItemId, TransferZoneRequestDTO dto, Guid actorId);
+
+        Task<object> CreateReturnRequestAsync(Guid fileItemId, CreateZoneReturnRequestDTO dto, Guid actorId);
     }
 }
