@@ -81,6 +81,13 @@ namespace Capstone_Project.Controllers
         public async Task<IActionResult> SubmitApproval(Guid id, [FromBody] SubmitApprovalRequestDTO? dto)
             => Ok(ApiResponse.Success("File submitted for approval", await _approval.SubmitAsync(id, dto, User.GetAccountId())));
 
+        /// <summary>
+        /// Chuyen file sang zone CDE khac. Chi active Team Leader cua team so huu file moi duoc thuc hien.
+        /// </summary>
+        [HttpPost("{fileId:guid}/transfer-zone")]
+        public async Task<IActionResult> TransferZone(Guid fileId, [FromBody] TransferZoneRequestDTO dto)
+            => Ok(ApiResponse.Success("File zone transferred", await _service.TransferZoneAsync(fileId, dto, User.GetAccountId())));
+
         // Danh sách file trong 1 folder (FE gọi khi mở/chọn folder).
         [HttpGet("by-folder/{folderId:guid}")]
         public async Task<IActionResult> GetByFolder(Guid folderId)
