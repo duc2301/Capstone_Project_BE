@@ -3,35 +3,30 @@
 -- ----------------------------------------------------------------------------
 --  Mục đích : tạo dữ liệu test mạch lạc để dễ test API & dựng UI.
 --  Sinh theo : Infrastructure/Migrations/CDESystemDbContextModelSnapshot.cs
+--              (đã cập nhật tới migration 20260622093609_AddZoneReturnRequests)
 --              + Domain/Enum/* (mọi enum lưu DƯỚI DẠNG SỐ — integer).
 --
 --  CÁCH CHẠY :
---    psql -h localhost -U <user> -d <database> -f seed_data.sql
+--    psql -h localhost -U <user> -d CapstoneProjectDb -f seed_data.sql
 --    (hoặc dán toàn bộ vào pgAdmin / DBeaver Query Tool rồi Execute)
 --
 --  ĐẶC ĐIỂM :
---    • Idempotent: TRUNCATE các bảng seed (TRỪ "OrganizationTypes" — đã được
---      migration seed sẵn 8 dòng) rồi INSERT lại với UUID CỐ ĐỊNH ⇒ chạy lại
---      nhiều lần luôn ra cùng kết quả.
---    • Bọc trong 1 transaction (BEGIN/COMMIT) — lỗi giữa chừng sẽ rollback hết.
---    • ⚠️ CẢNH BÁO: sẽ XÓA toàn bộ dữ liệu test cũ trong các bảng liệt kê ở
---      lệnh TRUNCATE bên dưới. KHÔNG chạy trên DB có dữ liệu thật cần giữ.
+--    • Phủ TOÀN BỘ 45 bảng của CDESystemDbContext + 8 dòng "OrganizationTypes"
+--      (do migration seed sẵn — KHÔNG truncate/insert lại ở đây).
+--    • Idempotent: TRUNCATE các bảng seed (TRỪ OrganizationTypes) rồi INSERT lại
+--      với UUID CỐ ĐỊNH ⇒ chạy lại nhiều lần luôn ra cùng kết quả.
+--    • Bọc trong 1 transaction (BEGIN/COMMIT) — lỗi giữa chừng rollback hết.
+--    • ⚠️ CẢNH BÁO: XÓA toàn bộ dữ liệu cũ trong các bảng ở lệnh TRUNCATE.
+--      KHÔNG chạy trên DB có dữ liệu thật cần giữ.
 --
---  TÀI KHOẢN :
---    Mật khẩu CHUNG cho mọi account: "password"
---    (BCrypt $2a$11$... — sinh & verify bằng đúng BCrypt.Net-Next 4.0.3 của BE)
---      admin@cde.vn          — Admin hệ thống (Role=Admin)
---      hoa.pm@cde.vn         — Project Manager (quản lý các dự án)
---      nam.design@cde.vn     — Tư vấn thiết kế (Leader nhóm BIM)
---      lan.design@cde.vn     — Tư vấn thiết kế (Member)
---      binh.contractor@cde.vn— Nhà thầu thi công (Leader)
---      cuong.super@cde.vn    — Tư vấn giám sát (Leader)
---      duong.client@cde.vn   — Chủ đầu tư (Leader)
---      em.verify@cde.vn      — Tư vấn thẩm tra (Member)
---      phong.viewer@cde.vn   — Tài khoản INACTIVE (để test trạng thái khoá)
+--  TÀI KHOẢN : mật khẩu CHUNG = "password"
+--    (BCrypt $2a$11$... sinh & verify bằng đúng BCrypt.Net-Next 4.0.3 của BE)
+--      admin@cde.vn (Admin) · hoa.pm@cde.vn (PM) · nam.design / lan.design
+--      binh.contractor · cuong.super · duong.client · em.verify
+--      phong.viewer@cde.vn = INACTIVE (test trạng thái khoá)
 --
 --  Quy ước UUID (segment đầu = "mã bảng" cho dễ lần theo quan hệ):
---    a*=Accounts  b*=Organizations  c0*=Groups  c1*=GroupMembers
+--    a0*=Accounts  b0*=Organizations  c0*=Groups  c1*=GroupMembers
 --    d0*=Projects d1*=Locations d2*=ProjectModels d3*=Participants d4*=Invitations
 --    e0*=ContractPackages e1*=PackageAssignments
 --    f0*=Folders f1*=FolderPermissions f2*=FileItems f3*=FileVersions
@@ -41,12 +36,15 @@
 --    30*=Issues 31*=IssueComments 32*=IssueMentions 33*=IssueAttachments 34*=IssueCitedFolders
 --    40*=Contracts 41*=ContractAppendices 42*=BillItems
 --    50*=ModelFiles 51*=ModelObjects  60*=Notifications
+--    70*=DocumentChunks 80*=RefreshTokens 90*=AuditLogs
+--    aa*=ApprovalRequests ab*=ApprovalSignatureTransactions ac*=ZoneReturnRequests
 -- ============================================================================
 
 BEGIN;
 
 -- --- Dọn dữ liệu cũ (KHÔNG đụng "OrganizationTypes" do migration seed) -------
 TRUNCATE TABLE
+    "ApprovalSignatureTransactions", "ApprovalRequests", "ZoneReturnRequests",
     "Notifications",
     "ModelObjects", "ModelFiles",
     "BillItems", "ContractAppendices", "Contracts",
@@ -62,18 +60,19 @@ TRUNCATE TABLE
     RESTART IDENTITY CASCADE;
 
 -- ============================================================================
--- 1) ACCOUNTS   Role: Admin=0, User=1 | Status: Active=0, Inactive=1, Suspended=2
+-- 1) ACCOUNTS  Role: Admin=0, User=1 | Status: Active=0, Inactive=1, Suspended=2
+--    (+ ResetPasswordToken/ExpiresAt: demo luồng quên mật khẩu — đa số NULL)
 -- ============================================================================
-INSERT INTO "Accounts" ("Id","UserName","Email","PasswordHash","Role","Status","CreatedAt","UpdatedAt") VALUES
-('a0000000-0000-0000-0000-000000000001','Nguyễn Văn Admin','admin@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',0,0,'2026-01-02 08:00:00+07','2026-01-02 08:00:00+07'),
-('a0000000-0000-0000-0000-000000000002','Trần Thị Hoa','hoa.pm@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,'2026-01-03 08:00:00+07','2026-01-03 08:00:00+07'),
-('a0000000-0000-0000-0000-000000000003','Lê Hoàng Nam','nam.design@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,'2026-01-04 08:00:00+07','2026-01-04 08:00:00+07'),
-('a0000000-0000-0000-0000-000000000004','Phạm Thị Lan','lan.design@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,'2026-01-04 09:00:00+07','2026-01-04 09:00:00+07'),
-('a0000000-0000-0000-0000-000000000005','Vũ Văn Bình','binh.contractor@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,'2026-01-05 08:00:00+07','2026-01-05 08:00:00+07'),
-('a0000000-0000-0000-0000-000000000006','Đỗ Mạnh Cường','cuong.super@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,'2026-01-06 08:00:00+07','2026-01-06 08:00:00+07'),
-('a0000000-0000-0000-0000-000000000007','Ngô Thị Dương','duong.client@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,'2026-01-06 09:00:00+07','2026-01-06 09:00:00+07'),
-('a0000000-0000-0000-0000-000000000008','Bùi Văn Em','em.verify@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,'2026-01-07 08:00:00+07','2026-01-07 08:00:00+07'),
-('a0000000-0000-0000-0000-000000000009','Đặng Quốc Phong','phong.viewer@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,1,'2026-01-08 08:00:00+07','2026-01-08 08:00:00+07');
+INSERT INTO "Accounts" ("Id","UserName","Email","PasswordHash","Role","Status","ResetPasswordToken","ResetPasswordTokenExpiresAt","CreatedAt","UpdatedAt") VALUES
+('a0000000-0000-0000-0000-000000000001','Nguyễn Văn Admin','admin@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',0,0,NULL,NULL,'2026-01-02 08:00:00+07','2026-01-02 08:00:00+07'),
+('a0000000-0000-0000-0000-000000000002','Trần Thị Hoa','hoa.pm@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,NULL,NULL,'2026-01-03 08:00:00+07','2026-01-03 08:00:00+07'),
+('a0000000-0000-0000-0000-000000000003','Lê Hoàng Nam','nam.design@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,NULL,NULL,'2026-01-04 08:00:00+07','2026-01-04 08:00:00+07'),
+('a0000000-0000-0000-0000-000000000004','Phạm Thị Lan','lan.design@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,'reset-token-lan-demo-0001','2026-06-23 09:00:00+07','2026-01-04 09:00:00+07','2026-01-04 09:00:00+07'),
+('a0000000-0000-0000-0000-000000000005','Vũ Văn Bình','binh.contractor@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,NULL,NULL,'2026-01-05 08:00:00+07','2026-01-05 08:00:00+07'),
+('a0000000-0000-0000-0000-000000000006','Đỗ Mạnh Cường','cuong.super@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,NULL,NULL,'2026-01-06 08:00:00+07','2026-01-06 08:00:00+07'),
+('a0000000-0000-0000-0000-000000000007','Ngô Thị Dương','duong.client@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,NULL,NULL,'2026-01-06 09:00:00+07','2026-01-06 09:00:00+07'),
+('a0000000-0000-0000-0000-000000000008','Bùi Văn Em','em.verify@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,NULL,NULL,'2026-01-07 08:00:00+07','2026-01-07 08:00:00+07'),
+('a0000000-0000-0000-0000-000000000009','Đặng Quốc Phong','phong.viewer@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,1,NULL,NULL,'2026-01-08 08:00:00+07','2026-01-08 08:00:00+07');
 
 -- ============================================================================
 -- 2) ORGANIZATIONS  (OrganizationTypeId trỏ tới 8 dòng migration seed sẵn)
@@ -209,28 +208,30 @@ INSERT INTO "FolderPermissions" ("Id","FolderId","ProjectParticipantId","CanView
 
 -- ============================================================================
 -- 14) FILE ITEMS  FileType: Pdf=0,Ifc=1,Image=2,Cad=3,Office=4,Other=5
---     (CurrentVersionId trỏ tới FileVersion sẽ chèn ở mục 15 — không có FK ràng buộc)
+--     Status(FileItemStatus): Draft=0,PendingApproval=1,Approved=2,Rejected=3
+--     IsSigned/RequiresSignature: bool. CurrentVersionId trỏ FileVersion (không FK).
 -- ============================================================================
-INSERT INTO "FileItems" ("Id","FolderId","Name","FileType","CurrentVersionId","CreatedByAccountId","CreatedAt","UpdatedAt") VALUES
-('f2000000-0000-0000-0000-000000000001','f0000000-0000-0000-0000-000000000005','AR-Plan-L1.pdf',0,'f3000000-0000-0000-0000-000000000001','a0000000-0000-0000-0000-000000000003','2026-02-05 08:00:00+07',NULL),
-('f2000000-0000-0000-0000-000000000002','f0000000-0000-0000-0000-000000000005','AR-Model.ifc',1,'f3000000-0000-0000-0000-000000000003','a0000000-0000-0000-0000-000000000003','2026-02-05 08:10:00+07','2026-02-20 10:00:00+07'),
-('f2000000-0000-0000-0000-000000000003','f0000000-0000-0000-0000-000000000006','ST-Calc.xlsx',4,'f3000000-0000-0000-0000-000000000004','a0000000-0000-0000-0000-000000000004','2026-02-06 08:00:00+07',NULL),
-('f2000000-0000-0000-0000-000000000004','f0000000-0000-0000-0000-000000000008','Coord-Drawing.dwg',3,'f3000000-0000-0000-0000-000000000005','a0000000-0000-0000-0000-000000000003','2026-02-07 08:00:00+07',NULL),
-('f2000000-0000-0000-0000-000000000005','f0000000-0000-0000-0000-000000000009','Published-Set.pdf',0,'f3000000-0000-0000-0000-000000000006','a0000000-0000-0000-0000-000000000002','2026-02-08 08:00:00+07',NULL);
+INSERT INTO "FileItems" ("Id","FolderId","Name","FileType","Status","RequiresSignature","IsSigned","CurrentVersionId","CreatedByAccountId","CreatedAt","UpdatedAt") VALUES
+('f2000000-0000-0000-0000-000000000001','f0000000-0000-0000-0000-000000000005','AR-Plan-L1.pdf',0,1,false,false,'f3000000-0000-0000-0000-000000000001','a0000000-0000-0000-0000-000000000003','2026-02-05 08:00:00+07',NULL),
+('f2000000-0000-0000-0000-000000000002','f0000000-0000-0000-0000-000000000005','AR-Model.ifc',1,2,false,false,'f3000000-0000-0000-0000-000000000003','a0000000-0000-0000-0000-000000000003','2026-02-05 08:10:00+07','2026-02-20 10:00:00+07'),
+('f2000000-0000-0000-0000-000000000003','f0000000-0000-0000-0000-000000000006','ST-Calc.xlsx',4,0,false,false,'f3000000-0000-0000-0000-000000000004','a0000000-0000-0000-0000-000000000004','2026-02-06 08:00:00+07',NULL),
+('f2000000-0000-0000-0000-000000000004','f0000000-0000-0000-0000-000000000008','Coord-Drawing.dwg',3,3,false,false,'f3000000-0000-0000-0000-000000000005','a0000000-0000-0000-0000-000000000003','2026-02-07 08:00:00+07',NULL),
+('f2000000-0000-0000-0000-000000000005','f0000000-0000-0000-0000-000000000009','Published-Set.pdf',0,2,true,true,'f3000000-0000-0000-0000-000000000006','a0000000-0000-0000-0000-000000000002','2026-02-08 08:00:00+07',NULL);
 
 -- ============================================================================
 -- 15) FILE VERSIONS  (VersionNumber tăng dần; IsHidden=true cho bản cũ bị thay)
+--     ViewerStatus(ModelViewerStatus): None=0,Pending=1,Processing=2,Ready=3,Failed=4
 -- ============================================================================
-INSERT INTO "FileVersions" ("Id","FileItemId","VersionNumber","StoragePath","Format","FileSizeBytes","Checksum","IsHidden","UploadedByAccountId","UploadedAt") VALUES
-('f3000000-0000-0000-0000-000000000001','f2000000-0000-0000-0000-000000000001',1,'projects/d01/wip/kien-truc/ar-plan-l1-v1.pdf','pdf',1048576,'sha256:aa01',false,'a0000000-0000-0000-0000-000000000003','2026-02-05 08:00:00+07'),
-('f3000000-0000-0000-0000-000000000002','f2000000-0000-0000-0000-000000000002',1,'projects/d01/wip/kien-truc/ar-model-v1.ifc','ifc',5242880,'sha256:bb01',true,'a0000000-0000-0000-0000-000000000003','2026-02-05 08:10:00+07'),
-('f3000000-0000-0000-0000-000000000003','f2000000-0000-0000-0000-000000000002',2,'projects/d01/wip/kien-truc/ar-model-v2.ifc','ifc',6291456,'sha256:bb02',false,'a0000000-0000-0000-0000-000000000003','2026-02-20 10:00:00+07'),
-('f3000000-0000-0000-0000-000000000004','f2000000-0000-0000-0000-000000000003',1,'projects/d01/wip/ket-cau/st-calc-v1.xlsx','xlsx',262144,'sha256:cc01',false,'a0000000-0000-0000-0000-000000000004','2026-02-06 08:00:00+07'),
-('f3000000-0000-0000-0000-000000000005','f2000000-0000-0000-0000-000000000004',1,'projects/d01/shared/coord-drawing-v1.dwg','dwg',2097152,'sha256:dd01',false,'a0000000-0000-0000-0000-000000000003','2026-02-07 08:00:00+07'),
-('f3000000-0000-0000-0000-000000000006','f2000000-0000-0000-0000-000000000005',1,'projects/d01/published/published-set-v1.pdf','pdf',3145728,'sha256:ee01',false,'a0000000-0000-0000-0000-000000000002','2026-02-08 08:00:00+07');
+INSERT INTO "FileVersions" ("Id","FileItemId","VersionNumber","StoragePath","PreviewStoragePath","Format","FileSizeBytes","Checksum","IsHidden","ViewerStatus","ViewerUrn","ViewerProgress","ViewerError","UploadedByAccountId","UploadedAt") VALUES
+('f3000000-0000-0000-0000-000000000001','f2000000-0000-0000-0000-000000000001',1,'projects/d01/wip/kien-truc/ar-plan-l1-v1.pdf',NULL,'pdf',1048576,'sha256:aa01',false,0,NULL,NULL,NULL,'a0000000-0000-0000-0000-000000000003','2026-02-05 08:00:00+07'),
+('f3000000-0000-0000-0000-000000000002','f2000000-0000-0000-0000-000000000002',1,'projects/d01/wip/kien-truc/ar-model-v1.ifc',NULL,'ifc',5242880,'sha256:bb01',true,0,NULL,NULL,NULL,'a0000000-0000-0000-0000-000000000003','2026-02-05 08:10:00+07'),
+('f3000000-0000-0000-0000-000000000003','f2000000-0000-0000-0000-000000000002',2,'projects/d01/wip/kien-truc/ar-model-v2.ifc',NULL,'ifc',6291456,'sha256:bb02',false,3,'urn:adsk.objects:os.object:cde-bucket/ar-model-v2.ifc','complete',NULL,'a0000000-0000-0000-0000-000000000003','2026-02-20 10:00:00+07'),
+('f3000000-0000-0000-0000-000000000004','f2000000-0000-0000-0000-000000000003',1,'projects/d01/wip/ket-cau/st-calc-v1.xlsx',NULL,'xlsx',262144,'sha256:cc01',false,0,NULL,NULL,NULL,'a0000000-0000-0000-0000-000000000004','2026-02-06 08:00:00+07'),
+('f3000000-0000-0000-0000-000000000005','f2000000-0000-0000-0000-000000000004',1,'projects/d01/shared/coord-drawing-v1.dwg',NULL,'dwg',2097152,'sha256:dd01',false,2,NULL,'45','Đang dịch sang SVF2','a0000000-0000-0000-0000-000000000003','2026-02-07 08:00:00+07'),
+('f3000000-0000-0000-0000-000000000006','f2000000-0000-0000-0000-000000000005',1,'projects/d01/published/published-set-v1.pdf',NULL,'pdf',3145728,'sha256:ee01',false,0,NULL,NULL,NULL,'a0000000-0000-0000-0000-000000000002','2026-02-08 08:00:00+07');
 
 -- ============================================================================
--- 16) FILE PERMISSIONS (ACL cấp file — tuỳ chọn, ví dụ 1 dòng)
+-- 16) FILE PERMISSIONS (ACL cấp file — ví dụ 1 dòng)
 -- ============================================================================
 INSERT INTO "FilePermissions" ("Id","FileItemId","ProjectParticipantId","CanView","CanEdit","CanUpdate","CanDownload","CanVerify","CanApprove","InheritFromParent") VALUES
 ('f4000000-0000-0000-0000-000000000001','f2000000-0000-0000-0000-000000000005','d3000000-0000-0000-0000-000000000001',true,false,false,true,false,true,false);
@@ -243,8 +244,7 @@ INSERT INTO "FileNotes" ("Id","FileVersionId","AuthorAccountId","Content","PageN
 
 -- ============================================================================
 -- 18) SUBMITTALS  Status: Draft=0,Submitted=1,UnderReview=2,Verified=3,
---                 Approved=4,Rejected=5,Returned=6
---                 WorkflowType: OneStep=0, TwoStep=1
+--                 Approved=4,Rejected=5,Returned=6 | WorkflowType: OneStep=0,TwoStep=1
 -- ============================================================================
 INSERT INTO "Submittals" ("Id","ProjectId","ContractPackageId","ParentSubmittalId","Title","Description","Status","WorkflowType","SubmittedByOrganizationId","CreatedByAccountId","CreatedAt","UpdatedAt") VALUES
 ('10000000-0000-0000-0000-000000000001','d0000000-0000-0000-0000-000000000001','e0000000-0000-0000-0000-000000000002',NULL,'Trình duyệt biện pháp thi công phần thân','Biện pháp tổ chức thi công kết cấu phần thân tháp A.',1,1,'b0000000-0000-0000-0000-000000000004','a0000000-0000-0000-0000-000000000005','2026-03-01 08:00:00+07',NULL),
@@ -382,8 +382,8 @@ INSERT INTO "ModelObjects" ("Id","ModelFileId","ObjectGuid","Name") VALUES
 ('51000000-0000-0000-0000-000000000003','50000000-0000-0000-0000-000000000001','3kf9d0a1-ar-0003','Cột C-3');
 
 -- ============================================================================
--- 31) NOTIFICATIONS  (LinkId là text; LinkType phân loại: Invitation/Submittal/
---                     Discussion/Issue...)  IsRead bool
+-- 31) NOTIFICATIONS  (LinkId là text; LinkType: Invitation/Submittal/Discussion/
+--                     Issue/Approval...)  IsRead bool
 -- ============================================================================
 INSERT INTO "Notifications" ("Id","AccountId","Message","SenderName","IsRead","LinkId","LinkType","SendAt") VALUES
 ('60000000-0000-0000-0000-000000000001','a0000000-0000-0000-0000-000000000009','Bạn được mời tham gia dự án Khu phức hợp Riverside Tower.','Trần Thị Hoa',false,'d4000000-0000-0000-0000-000000000001','Invitation','2026-06-14 09:00:00+07'),
@@ -391,7 +391,8 @@ INSERT INTO "Notifications" ("Id","AccountId","Message","SenderName","IsRead","L
 ('60000000-0000-0000-0000-000000000003','a0000000-0000-0000-0000-000000000003','Bạn được nhắc trong thảo luận "Phối hợp cao độ dầm tầng 3".','Trần Thị Hoa',true,'20000000-0000-0000-0000-000000000001','Discussion','2026-06-10 10:05:00+07'),
 ('60000000-0000-0000-0000-000000000004','a0000000-0000-0000-0000-000000000003','Issue mới được gán cho bạn: Va chạm ống gió và dầm tại trục C-3.','Đỗ Mạnh Cường',false,'30000000-0000-0000-0000-000000000001','Issue','2026-06-10 09:05:00+07'),
 ('60000000-0000-0000-0000-000000000005','a0000000-0000-0000-0000-000000000004','Issue ưu tiên cao cần xử lý: Thiếu chi tiết liên kết thép tại nút khung.','Bùi Văn Em',false,'30000000-0000-0000-0000-000000000003','Issue','2026-06-12 09:05:00+07'),
-('60000000-0000-0000-0000-000000000006','a0000000-0000-0000-0000-000000000002','Submittal "Hồ sơ nghiệm thu cọc khoan nhồi" đã được duyệt.','Ngô Thị Dương',true,'10000000-0000-0000-0000-000000000002','Submittal','2026-03-12 16:05:00+07');
+('60000000-0000-0000-0000-000000000006','a0000000-0000-0000-0000-000000000002','Submittal "Hồ sơ nghiệm thu cọc khoan nhồi" đã được duyệt.','Ngô Thị Dương',true,'10000000-0000-0000-0000-000000000002','Submittal','2026-03-12 16:05:00+07'),
+('60000000-0000-0000-0000-000000000007','a0000000-0000-0000-0000-000000000002','Có yêu cầu phê duyệt file "AR-Plan-L1.pdf" đang chờ bạn xử lý.','Lê Hoàng Nam',false,'aa000000-0000-0000-0000-000000000001','ApprovalRequest','2026-06-15 09:00:00+07');
 
 -- ============================================================================
 -- 32) DOCUMENTS  (kho tài liệu cho AI search/RAG — Id là TEXT, không phải uuid)
@@ -421,7 +422,6 @@ INSERT INTO "RefreshTokens" ("Id","AccountId","Token","CreatedAt","ExpiresAt","R
 -- ============================================================================
 -- 35) AUDIT LOGS  Action(AuditAction): Create=0,Update=1,Delete=2,Move=3,Submit=4,
 --                 Verify=5,Approve=6,Reject=7,Download=8,PermissionChange=9
---                 (EntityId là TEXT; ActorAccountId/ProjectId không có FK ràng buộc)
 -- ============================================================================
 INSERT INTO "AuditLogs" ("Id","Action","ActorAccountId","EntityType","EntityId","ProjectId","DetailJson","CreatedAt") VALUES
 ('90000000-0000-0000-0000-000000000001',0,'a0000000-0000-0000-0000-000000000002','Project','d0000000-0000-0000-0000-000000000001','d0000000-0000-0000-0000-000000000001','{"projectName":"Khu phức hợp căn hộ Riverside Tower"}','2026-01-15 08:00:00+07'),
@@ -430,6 +430,33 @@ INSERT INTO "AuditLogs" ("Id","Action","ActorAccountId","EntityType","EntityId",
 ('90000000-0000-0000-0000-000000000004',6,'a0000000-0000-0000-0000-000000000007','Submittal','10000000-0000-0000-0000-000000000002','d0000000-0000-0000-0000-000000000001','{"result":"Approved"}','2026-03-12 16:00:00+07'),
 ('90000000-0000-0000-0000-000000000005',9,'a0000000-0000-0000-0000-000000000002','Folder','f0000000-0000-0000-0000-000000000005','d0000000-0000-0000-0000-000000000001','{"group":"Tư vấn thiết kế / BIM","granted":["View","Edit","Update","Download"]}','2026-02-10 09:00:00+07'),
 ('90000000-0000-0000-0000-000000000006',8,'a0000000-0000-0000-0000-000000000006','FileVersion','f3000000-0000-0000-0000-000000000006','d0000000-0000-0000-0000-000000000001',NULL,'2026-03-13 10:00:00+07');
+
+-- ============================================================================
+-- 36) APPROVAL REQUESTS  Status(ApprovalRequestStatus): Pending=0,Approved=1,Rejected=2
+--     FK: FileItem, RequestedBy(Account), ApproverId(Account) — đều Restrict
+-- ============================================================================
+INSERT INTO "ApprovalRequests" ("Id","FileItemId","RequestedBy","ApproverId","Status","RejectReason","CreatedAt","ApprovedAt") VALUES
+('aa000000-0000-0000-0000-000000000001','f2000000-0000-0000-0000-000000000001','a0000000-0000-0000-0000-000000000003','a0000000-0000-0000-0000-000000000002',0,NULL,'2026-06-15 09:00:00+07',NULL),
+('aa000000-0000-0000-0000-000000000002','f2000000-0000-0000-0000-000000000005','a0000000-0000-0000-0000-000000000002','a0000000-0000-0000-0000-000000000007',1,NULL,'2026-02-08 09:00:00+07','2026-02-09 10:00:00+07'),
+('aa000000-0000-0000-0000-000000000003','f2000000-0000-0000-0000-000000000004','a0000000-0000-0000-0000-000000000003','a0000000-0000-0000-0000-000000000006',2,'Bản vẽ thiếu khung tên và chưa đúng quy cách đặt tên.','2026-06-16 09:00:00+07',NULL);
+
+-- ============================================================================
+-- 37) APPROVAL SIGNATURE TRANSACTIONS (VNPT SmartCA)
+--     Status(SignatureTransactionStatus): Created=0,WaitingConfirm=1,Signed=2,Failed=3,Expired=4
+-- ============================================================================
+INSERT INTO "ApprovalSignatureTransactions" ("Id","ApprovalRequestId","FileItemId","SignedBy","Status","TransactionId","CertificateSerial","Sad","RawRequest","RawResponse","SignedAt","CreatedAt","UpdatedAt") VALUES
+('ab000000-0000-0000-0000-000000000001','aa000000-0000-0000-0000-000000000002','f2000000-0000-0000-0000-000000000005','a0000000-0000-0000-0000-000000000007',2,'VNPT-CA-TX-0001','540101...A1B2','sample-sad-token','{"transactionId":"VNPT-CA-TX-0001"}','{"status":"signed"}','2026-02-09 10:05:00+07','2026-02-09 09:30:00+07','2026-02-09 10:05:00+07'),
+('ab000000-0000-0000-0000-000000000002','aa000000-0000-0000-0000-000000000001','f2000000-0000-0000-0000-000000000001',NULL,1,'VNPT-CA-TX-0002',NULL,NULL,'{"transactionId":"VNPT-CA-TX-0002"}',NULL,NULL,'2026-06-15 09:30:00+07',NULL);
+
+-- ============================================================================
+-- 38) ZONE RETURN REQUESTS  Status(ZoneReturnRequestStatus): Pending=0,Approved=1,Rejected=2
+--     FromZone/TargetZone(CdeArea): Wip=0,Shared=1,Published=2,Archived=3
+--     FK: FileItem, RequestedBy(Account), ApprovedBy(Account) — đều Restrict
+-- ============================================================================
+INSERT INTO "ZoneReturnRequests" ("Id","FileItemId","RequestedBy","ApprovedBy","FromZone","TargetZone","Status","Reason","RejectReason","CreatedAt","DecidedAt") VALUES
+('ac000000-0000-0000-0000-000000000001','f2000000-0000-0000-0000-000000000005','a0000000-0000-0000-0000-000000000005',NULL,2,1,0,'Phát hiện sai sót cần chỉnh sửa lại bản đã phát hành.',NULL,'2026-06-18 09:00:00+07',NULL),
+('ac000000-0000-0000-0000-000000000002','f2000000-0000-0000-0000-000000000002','a0000000-0000-0000-0000-000000000003','a0000000-0000-0000-0000-000000000002',1,0,1,'Đưa mô hình về WIP để cập nhật xử lý va chạm MEP.',NULL,'2026-06-12 09:00:00+07','2026-06-12 14:00:00+07'),
+('ac000000-0000-0000-0000-000000000003','f2000000-0000-0000-0000-000000000004','a0000000-0000-0000-0000-000000000004','a0000000-0000-0000-0000-000000000002',1,0,2,'Đề nghị trả bản vẽ phối hợp về WIP.','Không đủ lý do để trả về; tiếp tục xử lý ở Shared.','2026-06-13 09:00:00+07','2026-06-13 15:00:00+07');
 
 COMMIT;
 
@@ -445,9 +472,10 @@ COMMIT;
 --    DiscussionCitedFolders 2
 --    Issues 4 · IssueComments 4 · IssueMentions 2 · IssueAttachments 2 · IssueCitedFolders 1
 --    Contracts 2 · ContractAppendices 1 · BillItems 4
---    ModelFiles 3 · ModelObjects 3 · Notifications 6
+--    ModelFiles 3 · ModelObjects 3 · Notifications 7
 --    Documents 3 · DocumentChunks 4 · RefreshTokens 3 · AuditLogs 6
+--    ApprovalRequests 3 · ApprovalSignatureTransactions 2 · ZoneReturnRequests 3
 --    OrganizationTypes 8 (do MIGRATION seed sẵn — KHÔNG truncate/insert ở đây)
 --
---  ⇒ Phủ TOÀN BỘ bảng trong CDESystemDbContext, không chừa bảng nào.
+--  ⇒ Phủ TOÀN BỘ 45 bảng trong CDESystemDbContext, không chừa bảng nào.
 -- ============================================================================
