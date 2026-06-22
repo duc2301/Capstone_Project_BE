@@ -22,8 +22,9 @@ namespace Infrastructure.Configurations
             services.Configure<VnptSmartCaOptions>(configuration.GetSection("VnptSmartCA"));
 
             services.AddDbContext<CDESystemDbContext>(options =>
-                options.UseNpgsql(connectionString)
+                options.UseNpgsql(connectionString, x => x.UseVector())                
             );
+
 
             services.AddAutoMapper(cfg => cfg.AddProfile<MappingProfile>());
 
