@@ -16,13 +16,20 @@ namespace Capstone_Project.Controllers
         private readonly IFileItemService _service;
         private readonly IFileUploadService _upload;
         private readonly IApprovalService _approval;
+        private readonly IZoneReturnRequestService _zoneReturnRequestService;
         private readonly IFileViewService _view;
 
-        public FileItemsController(IFileItemService service, IFileUploadService upload, IApprovalService approval, IFileViewService view)
+        public FileItemsController(
+            IFileItemService service,
+            IFileUploadService upload,
+            IApprovalService approval,
+            IZoneReturnRequestService zoneReturnRequestService,
+            IFileViewService view)
         {
             _service = service;
             _upload = upload;
             _approval = approval;
+            _zoneReturnRequestService = zoneReturnRequestService;
             _view = view;
         }
 
@@ -90,7 +97,7 @@ namespace Capstone_Project.Controllers
 
         [HttpPost("{fileId:guid}/return-requests")]
         public async Task<IActionResult> CreateReturnRequest(Guid fileId, [FromBody] CreateZoneReturnRequestDTO dto)
-            => Ok(ApiResponse.Success("Return request created", await _service.CreateReturnRequestAsync(fileId, dto, User.GetAccountId())));
+            => Ok(await _zoneReturnRequestService.CreateAsync(fileId, dto, User.GetAccountId()));
 
         // Danh sách file trong 1 folder (FE gọi khi mở/chọn folder).
         [HttpGet("by-folder/{folderId:guid}")]

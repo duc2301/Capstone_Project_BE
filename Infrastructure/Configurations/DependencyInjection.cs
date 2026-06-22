@@ -39,6 +39,7 @@ namespace Infrastructure.Configurations
             services.AddScoped<IFolderService, FolderService>();
             services.AddScoped<IFolderBootstrapService, FolderBootstrapService>();
             services.AddScoped<IFolderPermissionService, FolderPermissionService>();
+            services.AddScoped<IFileZoneResolverService, FileZoneResolverService>();
             services.AddScoped<IFileItemService, FileItemService>();
             services.AddScoped<IApprovalService, ApprovalService>();
             services.AddScoped<IVnptSmartCaService, VnptSmartCaService>();
