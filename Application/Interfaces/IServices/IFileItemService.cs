@@ -11,12 +11,8 @@ namespace Application.Interfaces.IServices
         Task<FileItemResponseDTO> UpdateAsync(Guid id, UpdateFileItemDTO dto);
         Task DeleteAsync(Guid id);
 
-        // Danh sách file trong 1 folder (gồm version hiện hành + tác giả). actorId = người gọi (gate quyền View).
         Task<IEnumerable<FileListItemDTO>> GetByFolderAsync(Guid folderId, Guid actorId);
-
-        // Tất cả phiên bản của 1 file (mới nhất trước). actorId = người gọi (gate quyền View).
         Task<IEnumerable<FileVersionResponseDTO>> GetVersionsAsync(Guid fileItemId, Guid actorId);
-
         Task<TransferZoneResponseDTO> TransferZoneAsync(Guid fileItemId, TransferZoneRequestDTO dto, Guid actorId);
     }
 }
