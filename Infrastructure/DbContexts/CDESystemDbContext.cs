@@ -195,8 +195,9 @@ namespace Infrastructure.DbContexts
             modelBuilder.HasPostgresExtension("vector");
 
             // Số chiều embedding = theo model embedding đang dùng.
-            // 768 = Gemini text-embedding-004 (khớp stack hiện có); đổi nếu dùng model khác (OpenAI = 1536).
-            const int EmbeddingDimension = 768;
+            // 4096 = Ollama qwen3-embedding:latest (bản 8B). Lưu ý: 4096 > giới hạn index của pgvector
+            // (vector ≤2000, halfvec ≤4000) -> KHÔNG tạo HNSW; chỉ seq scan + pre-filter ProjectId.
+            const int EmbeddingDimension = 4096;
 
             modelBuilder.Entity<Document>(b =>
             {
