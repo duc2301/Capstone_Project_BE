@@ -127,10 +127,17 @@ namespace Application.Services
                 .ToDictionary(v => v.Id);
             var accounts = (await _unitOfWork.Repository<Account>().GetAllAsync())
                 .ToDictionary(a => a.Id);
+            var returnRequestsByFileId = (await _unitOfWork.Repository<ZoneReturnRequest>().FindAsync(
+                    r => fileIds.Contains(r.FileItemId)
+                         && (r.Status == ZoneReturnRequestStatus.Pending
+                             || r.Status == ZoneReturnRequestStatus.Rejected)))
+                .GroupBy(r => r.FileItemId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.DecidedAt ?? r.CreatedAt).ToList());
 
             return files.Select(f =>
             {
                 FileVersion? cur = f.CurrentVersionId.HasValue && versionsById.TryGetValue(f.CurrentVersionId.Value, out var v) ? v : null;
+                var returnRequest = ResolveVisibleReturnRequest(f, returnRequestsByFileId);
                 return new FileListItemDTO
                 {
                     Id = f.Id,
@@ -138,6 +145,8 @@ namespace Application.Services
                     Name = f.Name,
                     FileType = f.FileType,
                     Status = f.Status,
+                    ReturnRequestStatus = returnRequest?.Status,
+                    ReturnTargetZone = returnRequest == null ? null : _zoneResolver.FormatZone(returnRequest.TargetZone),
                     CurrentVersionId = f.CurrentVersionId,
                     CurrentVersionNumber = cur?.VersionNumber ?? 0,
                     SizeBytes = cur?.FileSizeBytes ?? 0,
@@ -148,6 +157,19 @@ namespace Application.Services
                     UpdatedAt = f.UpdatedAt,
                 };
             }).ToList();
+        }
+
+        private static ZoneReturnRequest? ResolveVisibleReturnRequest(
+            FileItem fileItem,
+            IReadOnlyDictionary<Guid, List<ZoneReturnRequest>> requestsByFileId)
+        {
+            if (!requestsByFileId.TryGetValue(fileItem.Id, out var requests))
+                return null;
+
+            return requests.FirstOrDefault(request =>
+                request.Status == ZoneReturnRequestStatus.Pending
+                || !fileItem.UpdatedAt.HasValue
+                || (request.DecidedAt ?? request.CreatedAt) >= fileItem.UpdatedAt.Value);
         }
 
         public async Task<IEnumerable<FileVersionResponseDTO>> GetVersionsAsync(Guid fileItemId, Guid actorId)
@@ -192,20 +214,20 @@ namespace Application.Services
             if (fileItem.Status == FileItemStatus.PendingApproval)
                 throw new ApiExceptionResponse("File is pending approval and cannot be transferred.", 400);
 
+            if (fileItem.Status == FileItemStatus.Rejected)
+                throw new ApiExceptionResponse("Rejected file cannot be transferred.", 400);
+
             if (currentZone == targetZone)
                 throw new ApiExceptionResponse("File cannot be transferred to the same zone.", 400);
 
             if (!IsAllowedTransition(currentZone, targetZone))
                 throw new ApiExceptionResponse($"Invalid zone transition: {currentZone} -> {targetZone}.", 400);
 
-            if (currentZone == CdeArea.Wip && targetZone == CdeArea.Shared)
-            {
-                if (fileItem.Status != FileItemStatus.Approved)
-                    throw new ApiExceptionResponse("File must be approved before transferring from WIP to Shared.", 400);
+            if (IsForwardApprovalTransition(currentZone, targetZone))
+                throw new ApiExceptionResponse("Forward zone transfer requires an approval request.", 400);
 
-                if (fileItem.RequiresSignature && !fileItem.IsSigned)
-                    throw new ApiExceptionResponse("Document requires signature before transfer.", 400);
-            }
+            if (targetZone == CdeArea.Wip && fileItem.Status != FileItemStatus.Approved)
+                throw new ApiExceptionResponse("Only approved files can be returned to WIP.", 400);
         }
 
         private static bool IsAllowedTransition(CdeArea currentZone, CdeArea targetZone)
@@ -216,5 +238,11 @@ namespace Application.Services
                 or (CdeArea.Shared, CdeArea.Wip)
                 or (CdeArea.Published, CdeArea.Wip)
                 or (CdeArea.Archived, CdeArea.Wip);
+
+        private static bool IsForwardApprovalTransition(CdeArea currentZone, CdeArea targetZone)
+            => (currentZone, targetZone) is
+                (CdeArea.Wip, CdeArea.Shared)
+                or (CdeArea.Shared, CdeArea.Published)
+                or (CdeArea.Published, CdeArea.Archived);
     }
 }

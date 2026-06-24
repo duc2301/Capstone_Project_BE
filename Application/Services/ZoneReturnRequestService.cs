@@ -36,6 +36,9 @@ namespace Application.Services
             if (currentFolder.Area == CdeArea.Wip)
                 throw new ApiExceptionResponse("File in WIP cannot create return request.", 400);
 
+            if (fileItem.Status == FileItemStatus.PendingApproval)
+                throw new ApiExceptionResponse("File is pending approval and cannot create return request.", 400);
+
             var hasPendingRequest = (await _unitOfWork.Repository<ZoneReturnRequest>().FindAsync(
                     r => r.FileItemId == fileItem.Id && r.Status == ZoneReturnRequestStatus.Pending))
                 .Any();
@@ -175,10 +178,12 @@ namespace Application.Services
 
             await _unitOfWork.CommitAsync();
 
-            return ApiResponse.Success("Return request rejected", new ZoneReturnDecisionResponseDTO
+            return ApiResponse.Success("Return to WIP request rejected. File remains in current zone.", new ZoneReturnDecisionResponseDTO
             {
                 ReturnRequestId = request.Id,
                 FileId = fileItem.Id,
+                FromZone = _zoneResolver.FormatZone(request.FromZone),
+                ToZone = _zoneResolver.FormatZone(request.TargetZone),
                 Status = request.Status.ToString(),
                 RejectReason = request.RejectReason
             });
