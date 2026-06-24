@@ -10,6 +10,8 @@ namespace Application.DTOs.ResponseDTOs.FileItem
         public string Name { get; set; } = null!;
         public FileType FileType { get; set; }
         public FileItemStatus Status { get; set; }
+        public ZoneReturnRequestStatus? ReturnRequestStatus { get; set; }
+        public string? ReturnTargetZone { get; set; }
 
         public Guid? CurrentVersionId { get; set; }
         public int CurrentVersionNumber { get; set; }
