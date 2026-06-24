@@ -1,13 +1,21 @@
 using Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace Infrastructure.DbContexts
 {
     public class CDESystemDbContext : DbContext
     {
-        public CDESystemDbContext() { }
+        private readonly IConfiguration _configuration;        
 
-        public CDESystemDbContext(DbContextOptions<CDESystemDbContext> options) : base(options) { }
+        public CDESystemDbContext(DbContextOptions<CDESystemDbContext> options, IConfiguration configuration) : base(options) 
+        {
+            _configuration = configuration;
+        }
+
+        protected CDESystemDbContext()
+        {
+        }
 
         // --- Đã có sẵn ---
         public virtual DbSet<Account> Accounts { get; set; }
@@ -194,9 +202,8 @@ namespace Infrastructure.DbContexts
             // --- RAG: Document / DocumentChunk (pgvector) ---
             modelBuilder.HasPostgresExtension("vector");
 
-            // Số chiều embedding = theo model embedding đang dùng.
-            // 768 = Gemini text-embedding-004 (khớp stack hiện có); đổi nếu dùng model khác (OpenAI = 1536).
-            const int EmbeddingDimension = 768;
+
+            int EmbeddingDimension = _configuration?.GetValue<int>("Ollama:EmbeddingDimension") ?? 1024;
 
             modelBuilder.Entity<Document>(b =>
             {
