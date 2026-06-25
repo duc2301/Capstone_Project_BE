@@ -22,5 +22,6 @@ namespace Domain.Entities
         public Folder Folder { get; set; } = null!;
         public ICollection<FileVersion> Versions { get; set; } = new List<FileVersion>();
         public ICollection<FilePermission> Permissions { get; set; } = new List<FilePermission>();
+        public ICollection<FileNamingMetadata> NamingMetadata { get; set; } = new List<FileNamingMetadata>();
     }
 }
