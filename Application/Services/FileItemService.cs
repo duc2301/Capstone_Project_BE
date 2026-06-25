@@ -175,7 +175,7 @@ namespace Application.Services
         public async Task<IEnumerable<FileVersionResponseDTO>> GetVersionsAsync(Guid fileItemId, Guid actorId)
         {
             var file = await GetFileItemAsync(fileItemId);
-            await _permission.RequireAsync(actorId, file.FolderId, FolderAction.View);
+            //await _permission.RequireAsync(actorId, file.FolderId, FolderAction.View);
 
             var accounts = (await _unitOfWork.Repository<Account>().GetAllAsync())
                 .ToDictionary(a => a.Id);
