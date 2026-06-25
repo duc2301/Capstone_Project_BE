@@ -3,25 +3,26 @@ using System;
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
-using Pgvector;
 
 #nullable disable
 
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    partial class CDESystemDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260622093609_AddZoneReturnRequests")]
+    partial class AddZoneReturnRequests
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
                 .HasAnnotation("ProductVersion", "10.0.9")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
-            NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "vector");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("Domain.Entities.Account", b =>
@@ -40,12 +41,6 @@ namespace Infrastructure.Migrations
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<string>("ResetPasswordToken")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("ResetPasswordTokenExpiresAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("Role")
                         .HasColumnType("integer");
@@ -463,48 +458,26 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Domain.Entities.Document", b =>
                 {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Area")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("ChunkCount")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ContentHash")
+                    b.Property<string>("Id")
                         .HasColumnType("text");
 
-                    b.Property<Guid>("FileItemId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("FileName")
+                    b.Property<string>("Author")
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("Format")
+                    b.Property<string>("Content")
+                        .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<DateTime?>("IngestedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("text");
 
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("SourceFileVersionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("FileItemId");
-
-                    b.HasIndex("ProjectId");
-
-                    b.HasIndex("SourceFileVersionId");
 
                     b.ToTable("Documents");
                 });
@@ -525,20 +498,16 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime?>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid>("DocumentId")
-                        .HasColumnType("uuid");
+                    b.Property<string>("DocumentId")
+                        .IsRequired()
+                        .HasColumnType("text");
 
-                    b.Property<Vector>("Embedding")
-                        .HasColumnType("vector(4096)");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
+                    b.PrimitiveCollection<float[]>("Embedding")
+                        .HasColumnType("real[]");
 
                     b.HasKey("Id");
 
                     b.HasIndex("DocumentId");
-
-                    b.HasIndex("ProjectId");
 
                     b.ToTable("DocumentChunks");
                 });
@@ -585,49 +554,6 @@ namespace Infrastructure.Migrations
                     b.HasIndex("FolderId");
 
                     b.ToTable("FileItems");
-                });
-
-            modelBuilder.Entity("Domain.Entities.FileNamingMetadata", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("DisplayValue")
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("FileItemId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("NamingConventionFieldId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("SelectedValueId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Value")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("NamingConventionFieldId");
-
-                    b.HasIndex("SelectedValueId");
-
-                    b.HasIndex("FileItemId", "NamingConventionFieldId")
-                        .IsUnique();
-
-                    b.HasIndex("FileItemId", "SelectedValueId")
-                        .IsUnique();
-
-                    b.ToTable("FileNamingMetadata");
                 });
 
             modelBuilder.Entity("Domain.Entities.FileNote", b =>
@@ -689,18 +615,17 @@ namespace Infrastructure.Migrations
                     b.Property<Guid>("FileItemId")
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("InheritFromParent")
+                        .HasColumnType("boolean");
+
                     b.Property<Guid?>("ProjectParticipantId")
                         .HasColumnType("uuid");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("ProjectParticipantId");
+                    b.HasIndex("FileItemId");
 
-                    b.HasIndex("FileItemId", "ProjectParticipantId")
-                        .IsUnique();
+                    b.HasIndex("ProjectParticipantId");
 
                     b.ToTable("FilePermissions");
                 });
@@ -784,9 +709,6 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("NamingConventionId")
-                        .HasColumnType("uuid");
-
                     b.Property<Guid?>("ParentFolderId")
                         .HasColumnType("uuid");
 
@@ -832,18 +754,17 @@ namespace Infrastructure.Migrations
                     b.Property<Guid>("FolderId")
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("InheritFromParent")
+                        .HasColumnType("boolean");
+
                     b.Property<Guid?>("ProjectParticipantId")
                         .HasColumnType("uuid");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("ProjectParticipantId");
+                    b.HasIndex("FolderId");
 
-                    b.HasIndex("FolderId", "ProjectParticipantId")
-                        .IsUnique();
+                    b.HasIndex("ProjectParticipantId");
 
                     b.ToTable("FolderPermissions");
                 });
@@ -1167,175 +1088,6 @@ namespace Infrastructure.Migrations
                     b.ToTable("ModelObjects");
                 });
 
-            modelBuilder.Entity("Domain.Entities.NamingConvention", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedById")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Delimiter")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("FolderId")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FolderId")
-                        .IsUnique();
-
-                    b.ToTable("NamingConventions");
-                });
-
-            modelBuilder.Entity("Domain.Entities.NamingConventionField", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedById")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text");
-
-                    b.Property<string>("DisplayName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("FieldType")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("IsLocked")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsRequired")
-                        .HasColumnType("boolean");
-
-                    b.Property<int?>("MaxLength")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("MinLength")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("NamingConventionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("OrderIndex")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("NamingConventionId", "Code")
-                        .IsUnique();
-
-                    b.ToTable("NamingConventionFields");
-                });
-
-            modelBuilder.Entity("Domain.Entities.NamingConventionFieldValue", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedById")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text");
-
-                    b.Property<string>("DisplayName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsLocked")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("NamingConventionFieldId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("OrderIndex")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("NamingConventionFieldId", "Code")
-                        .IsUnique();
-
-                    b.ToTable("NamingConventionFieldValues");
-                });
-
-            modelBuilder.Entity("Domain.Entities.NamingConventionLockedValue", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("CreatedById")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("NamingConventionFieldId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("NamingConventionFieldValueId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("NamingConventionFieldId")
-                        .IsUnique();
-
-                    b.HasIndex("NamingConventionFieldValueId")
-                        .IsUnique();
-
-                    b.ToTable("NamingConventionLockedValues");
-                });
-
             modelBuilder.Entity("Domain.Entities.Notification", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1355,12 +1107,14 @@ namespace Infrastructure.Migrations
                         .HasColumnType("text");
 
                     b.Property<string>("Message")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<DateTime>("SendAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("SenderName")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.HasKey("Id");
@@ -2067,7 +1821,7 @@ namespace Infrastructure.Migrations
             modelBuilder.Entity("Domain.Entities.DocumentChunk", b =>
                 {
                     b.HasOne("Domain.Entities.Document", "Document")
-                        .WithMany("Chunks")
+                        .WithMany()
                         .HasForeignKey("DocumentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -2084,32 +1838,6 @@ namespace Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Folder");
-                });
-
-            modelBuilder.Entity("Domain.Entities.FileNamingMetadata", b =>
-                {
-                    b.HasOne("Domain.Entities.FileItem", "FileItem")
-                        .WithMany("NamingMetadata")
-                        .HasForeignKey("FileItemId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Domain.Entities.NamingConventionField", "Field")
-                        .WithMany()
-                        .HasForeignKey("NamingConventionFieldId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Domain.Entities.NamingConventionFieldValue", "SelectedValue")
-                        .WithMany()
-                        .HasForeignKey("SelectedValueId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("Field");
-
-                    b.Navigation("FileItem");
-
-                    b.Navigation("SelectedValue");
                 });
 
             modelBuilder.Entity("Domain.Entities.FileNote", b =>
@@ -2329,58 +2057,6 @@ namespace Infrastructure.Migrations
                     b.Navigation("ModelFile");
                 });
 
-            modelBuilder.Entity("Domain.Entities.NamingConvention", b =>
-                {
-                    b.HasOne("Domain.Entities.Folder", "Folder")
-                        .WithOne("NamingConvention")
-                        .HasForeignKey("Domain.Entities.NamingConvention", "FolderId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Folder");
-                });
-
-            modelBuilder.Entity("Domain.Entities.NamingConventionField", b =>
-                {
-                    b.HasOne("Domain.Entities.NamingConvention", "NamingConvention")
-                        .WithMany("Fields")
-                        .HasForeignKey("NamingConventionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("NamingConvention");
-                });
-
-            modelBuilder.Entity("Domain.Entities.NamingConventionFieldValue", b =>
-                {
-                    b.HasOne("Domain.Entities.NamingConventionField", "Field")
-                        .WithMany("AllowedValues")
-                        .HasForeignKey("NamingConventionFieldId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Field");
-                });
-
-            modelBuilder.Entity("Domain.Entities.NamingConventionLockedValue", b =>
-                {
-                    b.HasOne("Domain.Entities.NamingConventionField", "Field")
-                        .WithOne("LockedValue")
-                        .HasForeignKey("Domain.Entities.NamingConventionLockedValue", "NamingConventionFieldId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Domain.Entities.NamingConventionFieldValue", "Value")
-                        .WithOne("LockedValue")
-                        .HasForeignKey("Domain.Entities.NamingConventionLockedValue", "NamingConventionFieldValueId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Field");
-
-                    b.Navigation("Value");
-                });
-
             modelBuilder.Entity("Domain.Entities.Notification", b =>
                 {
                     b.HasOne("Domain.Entities.Account", "Account")
@@ -2595,15 +2271,8 @@ namespace Infrastructure.Migrations
                     b.Navigation("Replies");
                 });
 
-            modelBuilder.Entity("Domain.Entities.Document", b =>
-                {
-                    b.Navigation("Chunks");
-                });
-
             modelBuilder.Entity("Domain.Entities.FileItem", b =>
                 {
-                    b.Navigation("NamingMetadata");
-
                     b.Navigation("Permissions");
 
                     b.Navigation("Versions");
@@ -2614,8 +2283,6 @@ namespace Infrastructure.Migrations
                     b.Navigation("ChildFolders");
 
                     b.Navigation("FileItems");
-
-                    b.Navigation("NamingConvention");
 
                     b.Navigation("Permissions");
                 });
@@ -2635,23 +2302,6 @@ namespace Infrastructure.Migrations
             modelBuilder.Entity("Domain.Entities.ModelFile", b =>
                 {
                     b.Navigation("Objects");
-                });
-
-            modelBuilder.Entity("Domain.Entities.NamingConvention", b =>
-                {
-                    b.Navigation("Fields");
-                });
-
-            modelBuilder.Entity("Domain.Entities.NamingConventionField", b =>
-                {
-                    b.Navigation("AllowedValues");
-
-                    b.Navigation("LockedValue");
-                });
-
-            modelBuilder.Entity("Domain.Entities.NamingConventionFieldValue", b =>
-                {
-                    b.Navigation("LockedValue");
                 });
 
             modelBuilder.Entity("Domain.Entities.Organization", b =>

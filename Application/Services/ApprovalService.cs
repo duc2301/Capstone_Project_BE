@@ -18,13 +18,16 @@ namespace Application.Services
     public class ApprovalService : IApprovalService
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IFileZoneResolverService _zoneResolver;
         private readonly ILogger<ApprovalService> _logger;
 
         public ApprovalService(
             IUnitOfWork unitOfWork,
+            IFileZoneResolverService zoneResolver,
             ILogger<ApprovalService> logger)
         {
             _unitOfWork = unitOfWork;
+            _zoneResolver = zoneResolver;
             _logger = logger;
         }
 
@@ -39,15 +42,28 @@ namespace Application.Services
             Guid actor)
         {
             var fileItem = await GetFileItemAsync(fileItemId);
-            var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, requireApprovePermission: false);
+            var folder = await GetFolderAsync(fileItem.FolderId);
+
+            RequireCanSubmitApproval(fileItem, folder.Area);
+
+            var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(
+                fileItem,
+                folder,
+                requireApprovePermission: false);
 
             await RequireGroupMemberAsync(actor, teamGroupIds);
 
             var hasPendingRequest = (await _unitOfWork.Repository<ApprovalRequest>().FindAsync(
                     a => a.FileItemId == fileItem.Id && a.Status == ApprovalRequestStatus.Pending))
                 .Any();
-            if (hasPendingRequest || fileItem.Status == FileItemStatus.PendingApproval)
+            if (hasPendingRequest)
                 throw new ApiExceptionResponse("File is already pending approval.", 409);
+
+            var hasPendingReturnRequest = (await _unitOfWork.Repository<ZoneReturnRequest>().FindAsync(
+                    r => r.FileItemId == fileItem.Id && r.Status == ZoneReturnRequestStatus.Pending))
+                .Any();
+            if (hasPendingReturnRequest)
+                throw new ApiExceptionResponse("File has a pending return to WIP request.", 409);
 
             var now = DateTime.UtcNow;
             var request = new ApprovalRequest
@@ -131,6 +147,8 @@ namespace Application.Services
             fileItem.Status = FileItemStatus.Approved;
             fileItem.UpdatedAt = now;
 
+            await MoveApprovedFileToNextZoneAsync(fileItem, folder, now);
+
             await _unitOfWork.CommitAsync();
             return await BuildResponseAsync(request, fileItem);
         }
@@ -200,6 +218,22 @@ namespace Application.Services
         }
 
         /// <summary>
+        /// File chỉ được gửi duyệt ở WIP, Shared hoặc Published.
+        /// Sau khi đã approve qua một vùng, muốn đi tiếp phải gửi request duyệt mới.
+        /// </summary>
+        private static void RequireCanSubmitApproval(FileItem fileItem, CdeArea currentZone)
+        {
+            if (currentZone == CdeArea.Archived)
+                throw new ApiExceptionResponse("Archived file cannot be submitted for approval.", 400);
+
+            if (fileItem.Status == FileItemStatus.PendingApproval)
+                throw new ApiExceptionResponse("File is already pending approval.", 409);
+
+            if (fileItem.Status == FileItemStatus.Rejected)
+                throw new ApiExceptionResponse("Rejected file cannot be submitted for approval.", 400);
+        }
+
+        /// <summary>
         /// Yêu cầu actor là member active trong team của file.
         /// </summary>
         private async Task RequireGroupMemberAsync(Guid accountId, IReadOnlyCollection<Guid> groupIds)
@@ -236,18 +270,15 @@ namespace Application.Services
         }
 
         /// <summary>
-        /// Kiểm tra điều kiện ký số trước khi approve.
-        /// Nếu file có RequiresSignature = true thì FileItem.IsSigned và transaction Signed đều phải tồn tại.
+        /// Kiểm tra chữ ký số trước khi approve chuyển file ra khỏi WIP.
+        /// Các bước Shared -> Published và Published -> Archived không yêu cầu ký lại.
         /// </summary>
         private async Task RequireSmartCaSignatureBeforeApprovalAsync(
             ApprovalRequest request,
             FileItem fileItem,
             Folder folder)
         {
-            if (folder.Area != CdeArea.Wip)
-                throw new ApiExceptionResponse("File must be in WIP zone.", 409);
-
-            if (!fileItem.RequiresSignature)
+            if (folder.Area != CdeArea.Wip || !fileItem.RequiresSignature)
                 return;
 
             var hasSignedTransaction = (await _unitOfWork.Repository<ApprovalSignatureTransaction>().FindAsync(
@@ -261,6 +292,40 @@ namespace Application.Services
                     "Document requires successful VNPT SmartCA digital signature before approval.",
                     409);
         }
+
+        /// <summary>
+        /// Sau khi Team Leader approve thành công, file được chuyển sang vùng kế tiếp:
+        /// WIP -> Shared, Shared -> Published, Published -> Archived.
+        /// File bị reject không đi qua hàm này nên vẫn giữ nguyên folder hiện tại.
+        /// </summary>
+        private async Task MoveApprovedFileToNextZoneAsync(FileItem fileItem, Folder currentFolder, DateTime now)
+        {
+            var nextZone = GetNextApprovalZone(currentFolder.Area);
+            var projectFolders = await _zoneResolver.GetProjectFoldersAsync(currentFolder.ProjectId);
+            var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(
+                fileItem,
+                currentFolder,
+                requireApprovePermission: true);
+
+            var targetFolder = await _zoneResolver.ResolveTargetFolderAsync(
+                currentFolder,
+                nextZone,
+                teamGroupIds,
+                projectFolders,
+                $"{_zoneResolver.FormatZone(nextZone)} folder not found.");
+
+            fileItem.FolderId = targetFolder.Id;
+            fileItem.UpdatedAt = now;
+        }
+
+        private static CdeArea GetNextApprovalZone(CdeArea currentZone)
+            => currentZone switch
+            {
+                CdeArea.Wip => CdeArea.Shared,
+                CdeArea.Shared => CdeArea.Published,
+                CdeArea.Published => CdeArea.Archived,
+                _ => throw new ApiExceptionResponse("File is already archived and cannot move to next approval zone.", 400)
+            };
 
         #endregion
 
@@ -349,7 +414,10 @@ namespace Application.Services
                 {
                     var fileItem = await GetFileItemAsync(request.FileItemId);
                     if (await CanViewRequestAsync(actor, request, fileItem))
-                        result.Add(BuildResponse(request, fileItem, accounts));
+                    {
+                        var folder = await GetFolderAsync(fileItem.FolderId);
+                        result.Add(BuildResponse(request, fileItem, accounts, folder));
+                    }
                 }
                 catch (ApiExceptionResponse ex) when (ex.StatusCode == 404)
                 {
@@ -367,14 +435,16 @@ namespace Application.Services
         private async Task<ApprovalRequestResponseDTO> BuildResponseAsync(ApprovalRequest request, FileItem? fileItem = null)
         {
             fileItem ??= await GetFileItemAsync(request.FileItemId);
+            var folder = await GetFolderAsync(fileItem.FolderId);
             var accounts = await GetAccountsByIdAsync();
-            return BuildResponse(request, fileItem, accounts);
+            return BuildResponse(request, fileItem, accounts, folder);
         }
 
-        private static ApprovalRequestResponseDTO BuildResponse(
+        private ApprovalRequestResponseDTO BuildResponse(
             ApprovalRequest request,
             FileItem fileItem,
-            IReadOnlyDictionary<Guid, Account> accounts)
+            IReadOnlyDictionary<Guid, Account> accounts,
+            Folder folder)
         {
             accounts.TryGetValue(request.RequestedBy, out var requester);
             Account? approver = null;
@@ -386,6 +456,8 @@ namespace Application.Services
                 Id = request.Id,
                 FileItemId = request.FileItemId,
                 FileItemName = fileItem.Name,
+                CurrentZone = _zoneResolver.FormatZone(folder.Area),
+                TargetZone = GetTargetApprovalZone(folder.Area),
                 RequiresSignature = fileItem.RequiresSignature,
                 IsSigned = fileItem.IsSigned,
                 RequestedBy = request.RequestedBy,
@@ -398,6 +470,11 @@ namespace Application.Services
                 ApprovedAt = request.ApprovedAt
             };
         }
+
+        private string? GetTargetApprovalZone(CdeArea currentZone)
+            => currentZone == CdeArea.Archived
+                ? null
+                : _zoneResolver.FormatZone(GetNextApprovalZone(currentZone));
 
         private async Task<Dictionary<Guid, Account>> GetAccountsByIdAsync()
             => (await _unitOfWork.Repository<Account>().GetAllAsync()).ToDictionary(a => a.Id);

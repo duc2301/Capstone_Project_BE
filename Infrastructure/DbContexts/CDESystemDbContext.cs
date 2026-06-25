@@ -1,13 +1,21 @@
 using Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace Infrastructure.DbContexts
 {
     public class CDESystemDbContext : DbContext
     {
-        public CDESystemDbContext() { }
+        private readonly IConfiguration _configuration;        
 
-        public CDESystemDbContext(DbContextOptions<CDESystemDbContext> options) : base(options) { }
+        public CDESystemDbContext(DbContextOptions<CDESystemDbContext> options, IConfiguration configuration) : base(options) 
+        {
+            _configuration = configuration;
+        }
+
+        protected CDESystemDbContext()
+        {
+        }
 
         // --- Đã có sẵn ---
         public virtual DbSet<Account> Accounts { get; set; }
@@ -37,6 +45,7 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<FilePermission> FilePermissions { get; set; }
         public virtual DbSet<ApprovalRequest> ApprovalRequests { get; set; }
         public virtual DbSet<ApprovalSignatureTransaction> ApprovalSignatureTransactions { get; set; }
+        public virtual DbSet<ZoneReturnRequest> ZoneReturnRequests { get; set; }
 
         // --- Module D: Phiếu yêu cầu ---
         public virtual DbSet<Submittal> Submittals { get; set; }
@@ -306,6 +315,51 @@ namespace Infrastructure.DbContexts
             //modelBuilder.Entity<NamingConventionLockedValue>()
             //    .HasIndex(lv => lv.NamingConventionFieldId)
             //    .IsUnique();   // One lock per field
+
+            // --- RAG: Document / DocumentChunk (pgvector) ---
+            modelBuilder.HasPostgresExtension("vector");
+
+
+            int EmbeddingDimension = _configuration?.GetValue<int>("Ollama:EmbeddingDimension") ?? 1024;
+
+            modelBuilder.Entity<Document>(b =>
+            {
+                b.HasIndex(d => d.ProjectId);
+                b.HasIndex(d => d.FileItemId);
+                b.HasIndex(d => d.SourceFileVersionId);
+            });
+
+            modelBuilder.Entity<DocumentChunk>(b =>
+            {
+                b.Property(c => c.Embedding)
+                    .HasColumnType($"vector({EmbeddingDimension})");
+
+                // Pre-filter bảo mật: mọi truy vấn vector lọc theo ProjectId trước khi xếp hạng.
+                b.HasIndex(c => c.ProjectId);
+
+                // Document (cha) 1 - n DocumentChunk (con): xóa Document -> xóa chunk.
+                b.HasOne(c => c.Document)
+                    .WithMany(d => d.Chunks)
+                    .HasForeignKey(c => c.DocumentId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+            modelBuilder.Entity<ZoneReturnRequest>()
+                .HasOne(r => r.FileItem)
+                .WithMany()
+                .HasForeignKey(r => r.FileItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ZoneReturnRequest>()
+                .HasOne(r => r.Requester)
+                .WithMany()
+                .HasForeignKey(r => r.RequestedBy)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ZoneReturnRequest>()
+                .HasOne(r => r.Approver)
+                .WithMany()
+                .HasForeignKey(r => r.ApprovedBy)
+                .OnDelete(DeleteBehavior.Restrict);
         }
     }
 }
