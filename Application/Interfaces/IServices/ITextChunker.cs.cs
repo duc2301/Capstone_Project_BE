@@ -7,6 +7,6 @@ namespace Application.Interfaces.IServices
 {
     public interface ITextChunker
     {
-        IReadOnlyList<string> Split(string text, int maxChars, int overlap);
+        IReadOnlyList<string> Split(string text);
     }
 }
