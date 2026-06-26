@@ -11,6 +11,7 @@
 		<PackageReference Include="AutoMapper" Version="16.1.1" />
 		<PackageReference Include="AWSSDK.S3" Version="4.0.24.5" />
 		<PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
+		<PackageReference Include="BitMiracle.Docotic.Pdf" Version="9.9.19928" />
 		<PackageReference Include="Google.Apis.Auth" Version="1.75.0" />
 		<PackageReference Include="itext.bouncy-castle-adapter" Version="8.0.5" />
 		<PackageReference Include="itext7" Version="8.0.5" />

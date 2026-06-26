@@ -3,6 +3,7 @@ using System;
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Pgvector;
@@ -12,9 +13,11 @@ using Pgvector;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    partial class CDESystemDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260624143647_Rag_Embedding_4096")]
+    partial class Rag_Embedding_4096
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -476,9 +479,6 @@ namespace Infrastructure.Migrations
                     b.Property<string>("ContentHash")
                         .HasColumnType("text");
 
-                    b.Property<string>("Discipline")
-                        .HasColumnType("text");
-
                     b.Property<Guid>("FileItemId")
                         .HasColumnType("uuid");
 
@@ -495,17 +495,11 @@ namespace Infrastructure.Migrations
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Revision")
-                        .HasColumnType("text");
-
                     b.Property<Guid>("SourceFileVersionId")
                         .HasColumnType("uuid");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
-
-                    b.Property<DateTime>("UpdateAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
@@ -515,12 +509,10 @@ namespace Infrastructure.Migrations
 
                     b.HasIndex("SourceFileVersionId");
 
-                    b.HasIndex("ProjectId", "UpdateAt");
-
                     b.ToTable("Documents");
                 });
 
-            modelBuilder.Entity("Domain.Entities.DocumentChildChunk", b =>
+            modelBuilder.Entity("Domain.Entities.DocumentChunk", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -542,49 +534,8 @@ namespace Infrastructure.Migrations
                     b.Property<Vector>("Embedding")
                         .HasColumnType("vector(4096)");
 
-                    b.Property<Guid>("ParentChunkId")
-                        .HasColumnType("uuid");
-
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DocumentId");
-
-                    b.HasIndex("ParentChunkId");
-
-                    b.HasIndex("ProjectId");
-
-                    b.ToTable("DocumentChunks");
-                });
-
-            modelBuilder.Entity("Domain.Entities.DocumentParentChunk", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("ChunkIndex")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Content")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("DocumentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int?>("PageNumber")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("SectionTitle")
-                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -592,7 +543,7 @@ namespace Infrastructure.Migrations
 
                     b.HasIndex("ProjectId");
 
-                    b.ToTable("DocumentParentChunks");
+                    b.ToTable("DocumentChunks");
                 });
 
             modelBuilder.Entity("Domain.Entities.FileItem", b =>
@@ -625,9 +576,6 @@ namespace Infrastructure.Migrations
 
                     b.Property<bool>("RequiresSignature")
                         .HasColumnType("boolean");
-
-                    b.Property<Guid?>("SignedVersionId")
-                        .HasColumnType("uuid");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
@@ -716,55 +664,11 @@ namespace Infrastructure.Migrations
                     b.ToTable("FilePermissions");
                 });
 
-            modelBuilder.Entity("Domain.Entities.FileSignaturePosition", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("FileItemId")
-                        .HasColumnType("uuid");
-
-                    b.Property<float>("Height")
-                        .HasColumnType("real");
-
-                    b.Property<int>("PageNumber")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<float>("Width")
-                        .HasColumnType("real");
-
-                    b.Property<float>("X")
-                        .HasColumnType("real");
-
-                    b.Property<float>("Y")
-                        .HasColumnType("real");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FileItemId")
-                        .IsUnique();
-
-                    b.ToTable("FileSignaturePositions");
-                });
-
             modelBuilder.Entity("Domain.Entities.FileVersion", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
-
-                    b.Property<string>("CertificateSerial")
-                        .HasColumnType("text");
 
                     b.Property<string>("Checksum")
                         .HasColumnType("text");
@@ -782,17 +686,8 @@ namespace Infrastructure.Migrations
                     b.Property<bool>("IsHidden")
                         .HasColumnType("boolean");
 
-                    b.Property<bool>("IsSigned")
-                        .HasColumnType("boolean");
-
                     b.Property<string>("PreviewStoragePath")
                         .HasColumnType("text");
-
-                    b.Property<DateTime?>("SignedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("SignedBy")
-                        .HasColumnType("uuid");
 
                     b.Property<string>("StoragePath")
                         .IsRequired()
@@ -1955,18 +1850,7 @@ namespace Infrastructure.Migrations
                     b.Navigation("ReplyToMessage");
                 });
 
-            modelBuilder.Entity("Domain.Entities.DocumentChildChunk", b =>
-                {
-                    b.HasOne("Domain.Entities.DocumentParentChunk", "ParentChunk")
-                        .WithMany("ChildChunks")
-                        .HasForeignKey("ParentChunkId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ParentChunk");
-                });
-
-            modelBuilder.Entity("Domain.Entities.DocumentParentChunk", b =>
+            modelBuilder.Entity("Domain.Entities.DocumentChunk", b =>
                 {
                     b.HasOne("Domain.Entities.Document", "Document")
                         .WithMany("Chunks")
@@ -2015,17 +1899,6 @@ namespace Infrastructure.Migrations
                     b.Navigation("FileItem");
 
                     b.Navigation("ProjectParticipant");
-                });
-
-            modelBuilder.Entity("Domain.Entities.FileSignaturePosition", b =>
-                {
-                    b.HasOne("Domain.Entities.FileItem", "FileItem")
-                        .WithMany()
-                        .HasForeignKey("FileItemId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("FileItem");
                 });
 
             modelBuilder.Entity("Domain.Entities.FileVersion", b =>
@@ -2433,11 +2306,6 @@ namespace Infrastructure.Migrations
             modelBuilder.Entity("Domain.Entities.Document", b =>
                 {
                     b.Navigation("Chunks");
-                });
-
-            modelBuilder.Entity("Domain.Entities.DocumentParentChunk", b =>
-                {
-                    b.Navigation("ChildChunks");
                 });
 
             modelBuilder.Entity("Domain.Entities.FileItem", b =>

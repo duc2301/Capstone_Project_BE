@@ -64,8 +64,6 @@ namespace Infrastructure.Configurations
             services.AddScoped<IProjectModelService, ProjectModelService>();
             services.AddScoped<IModelFileService, ModelFileService>();
 
-
-            // Auth (giống ChemXLab) + refresh token
             services.AddScoped<IJwtService, JwtService>();
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IEmailService, GmailEmailService>();
@@ -82,9 +80,12 @@ namespace Infrastructure.Configurations
             // Project flow (custom, ngoài CRUD generic): Admin tạo PM cho project, PM add bên tham gia
             services.AddScoped<IProjectFlowService, ProjectFlowService>();
 
+            services.Configure<OllamaOptions>(configuration.GetSection("Ollama"));
+
             // Hàng đợi dịch model nền (singleton: producer upload/view + consumer ModelTranslationWorker dùng chung).
             // Worker (BackgroundService) đăng ký ở Program.cs (host) vì cần Microsoft.Extensions.Hosting.
             services.AddSingleton<IModelTranslationQueue, ModelTranslationQueue>();
+            services.AddSingleton<IFileTextExtractor, FileTextExtractorService>();
 
             services.AddMemoryCache();
             services.AddHttpClient();
