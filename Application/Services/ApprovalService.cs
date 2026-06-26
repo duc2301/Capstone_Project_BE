@@ -154,6 +154,18 @@ namespace Application.Services
         }
 
         /// <summary>
+        /// Bắt buộc actor là Team Leader active của team phụ trách file (vd: trước khi đặt vị trí chữ ký
+        /// hoặc sinh PDF đã ký) — không cần ApprovalRequest đang Pending như RequireCanDecideAsync.
+        /// </summary>
+        public async Task RequireTeamLeaderAsync(Guid fileItemId, Guid actorId)
+        {
+            var fileItem = await GetFileItemAsync(fileItemId);
+            var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, requireApprovePermission: true);
+            if (!await IsGroupLeaderAsync(actorId, teamGroupIds))
+                throw new ApiExceptionResponse("Only the Team Leader can perform this action.", 403);
+        }
+
+        /// <summary>
         /// Từ chối approval request. Chỉ Team Leader mới được thực hiện. Bắt buộc có lý do.
         /// </summary>
         public async Task<ApprovalRequestResponseDTO> RejectAsync(Guid id, RejectApprovalRequestDTO dto, Guid actor)
@@ -287,9 +299,9 @@ namespace Application.Services
                          && t.Status == SignatureTransactionStatus.Signed))
                 .Any();
 
-            if (!fileItem.IsSigned || !hasSignedTransaction)
+            if (!fileItem.IsSigned || !fileItem.SignedVersionId.HasValue || !hasSignedTransaction)
                 throw new ApiExceptionResponse(
-                    "Document requires successful VNPT SmartCA digital signature before approval.",
+                    "Signed PDF must be generated before approval.",
                     409);
         }
 
