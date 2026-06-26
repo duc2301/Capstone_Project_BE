@@ -3,6 +3,7 @@ using System;
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Pgvector;
@@ -12,9 +13,11 @@ using Pgvector;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    partial class CDESystemDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260626162703_Rag_ParentChild_FTS")]
+    partial class Rag_ParentChild_FTS
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -492,6 +495,9 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime?>("IngestedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("IsLatest")
+                        .HasColumnType("boolean");
+
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
 
@@ -504,9 +510,6 @@ namespace Infrastructure.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
-                    b.Property<DateTime>("UpdateAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.HasKey("Id");
 
                     b.HasIndex("FileItemId");
@@ -515,12 +518,12 @@ namespace Infrastructure.Migrations
 
                     b.HasIndex("SourceFileVersionId");
 
-                    b.HasIndex("ProjectId", "UpdateAt");
+                    b.HasIndex("ProjectId", "IsLatest");
 
                     b.ToTable("Documents");
                 });
 
-            modelBuilder.Entity("Domain.Entities.DocumentChildChunk", b =>
+            modelBuilder.Entity("Domain.Entities.DocumentChunk", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -1899,7 +1902,7 @@ namespace Infrastructure.Migrations
                     b.Navigation("ReplyToMessage");
                 });
 
-            modelBuilder.Entity("Domain.Entities.DocumentChildChunk", b =>
+            modelBuilder.Entity("Domain.Entities.DocumentChunk", b =>
                 {
                     b.HasOne("Domain.Entities.DocumentParentChunk", "ParentChunk")
                         .WithMany("ChildChunks")
@@ -1913,7 +1916,7 @@ namespace Infrastructure.Migrations
             modelBuilder.Entity("Domain.Entities.DocumentParentChunk", b =>
                 {
                     b.HasOne("Domain.Entities.Document", "Document")
-                        .WithMany("Chunks")
+                        .WithMany("ParentChunks")
                         .HasForeignKey("DocumentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -2365,7 +2368,7 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Domain.Entities.Document", b =>
                 {
-                    b.Navigation("Chunks");
+                    b.Navigation("ParentChunks");
                 });
 
             modelBuilder.Entity("Domain.Entities.DocumentParentChunk", b =>

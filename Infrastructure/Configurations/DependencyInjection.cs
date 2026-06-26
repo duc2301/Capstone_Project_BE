@@ -83,6 +83,7 @@ namespace Infrastructure.Configurations
             // Hàng đợi dịch model nền (singleton: producer upload/view + consumer ModelTranslationWorker dùng chung).
             // Worker (BackgroundService) đăng ký ở Program.cs (host) vì cần Microsoft.Extensions.Hosting.
             services.AddSingleton<IModelTranslationQueue, ModelTranslationQueue>();
+            services.AddSingleton<IFileTextExtractor, FileTextExtractorService>();
 
             services.AddMemoryCache();
             services.AddHttpClient();
