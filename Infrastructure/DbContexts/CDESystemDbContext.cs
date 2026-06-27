@@ -46,6 +46,7 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<ApprovalRequest> ApprovalRequests { get; set; }
         public virtual DbSet<ApprovalSignatureTransaction> ApprovalSignatureTransactions { get; set; }
         public virtual DbSet<ZoneReturnRequest> ZoneReturnRequests { get; set; }
+        public virtual DbSet<FileSignaturePosition> FileSignaturePositions { get; set; }
 
         // --- Module D: Phiếu yêu cầu ---
         public virtual DbSet<Submittal> Submittals { get; set; }
@@ -255,6 +256,17 @@ namespace Infrastructure.DbContexts
                 .WithMany()
                 .HasForeignKey(r => r.ApprovedBy)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // Moi FileItem chi giu 1 vi tri chu ky hien hanh.
+            modelBuilder.Entity<FileSignaturePosition>()
+                .HasIndex(p => p.FileItemId)
+                .IsUnique();
+
+            modelBuilder.Entity<FileSignaturePosition>()
+                .HasOne(p => p.FileItem)
+                .WithMany()
+                .HasForeignKey(p => p.FileItemId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }
