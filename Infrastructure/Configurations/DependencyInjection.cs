@@ -62,9 +62,11 @@ namespace Infrastructure.Configurations
             services.AddScoped<IProjectModelService, ProjectModelService>();
             services.AddScoped<IModelFileService, ModelFileService>();
 
+
             services.AddScoped<IJwtService, JwtService>();
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IEmailService, GmailEmailService>();
+            services.AddScoped<IEmbeddingService, EmbeddingService>();
 
             // Profile self-service (GET/PUT/change-password trên chính user hiện tại)
             services.AddScoped<IProfileService, ProfileService>();
@@ -84,6 +86,7 @@ namespace Infrastructure.Configurations
             // Worker (BackgroundService) đăng ký ở Program.cs (host) vì cần Microsoft.Extensions.Hosting.
             services.AddSingleton<IModelTranslationQueue, ModelTranslationQueue>();
             services.AddSingleton<IFileTextExtractor, FileTextExtractorService>();
+            services.AddSingleton<ITextChunker, TextChunkerService>();
 
             services.AddMemoryCache();
             services.AddHttpClient();
