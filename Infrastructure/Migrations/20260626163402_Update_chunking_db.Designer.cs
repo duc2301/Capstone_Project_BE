@@ -3,6 +3,7 @@ using System;
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Pgvector;
@@ -12,9 +13,11 @@ using Pgvector;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    partial class CDESystemDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260626163402_Update_chunking_db")]
+    partial class Update_chunking_db
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -626,9 +629,6 @@ namespace Infrastructure.Migrations
                     b.Property<bool>("RequiresSignature")
                         .HasColumnType("boolean");
 
-                    b.Property<Guid?>("SignedVersionId")
-                        .HasColumnType("uuid");
-
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -716,55 +716,11 @@ namespace Infrastructure.Migrations
                     b.ToTable("FilePermissions");
                 });
 
-            modelBuilder.Entity("Domain.Entities.FileSignaturePosition", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("FileItemId")
-                        .HasColumnType("uuid");
-
-                    b.Property<float>("Height")
-                        .HasColumnType("real");
-
-                    b.Property<int>("PageNumber")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<float>("Width")
-                        .HasColumnType("real");
-
-                    b.Property<float>("X")
-                        .HasColumnType("real");
-
-                    b.Property<float>("Y")
-                        .HasColumnType("real");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FileItemId")
-                        .IsUnique();
-
-                    b.ToTable("FileSignaturePositions");
-                });
-
             modelBuilder.Entity("Domain.Entities.FileVersion", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
-
-                    b.Property<string>("CertificateSerial")
-                        .HasColumnType("text");
 
                     b.Property<string>("Checksum")
                         .HasColumnType("text");
@@ -782,17 +738,8 @@ namespace Infrastructure.Migrations
                     b.Property<bool>("IsHidden")
                         .HasColumnType("boolean");
 
-                    b.Property<bool>("IsSigned")
-                        .HasColumnType("boolean");
-
                     b.Property<string>("PreviewStoragePath")
                         .HasColumnType("text");
-
-                    b.Property<DateTime?>("SignedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("SignedBy")
-                        .HasColumnType("uuid");
 
                     b.Property<string>("StoragePath")
                         .IsRequired()
@@ -2015,17 +1962,6 @@ namespace Infrastructure.Migrations
                     b.Navigation("FileItem");
 
                     b.Navigation("ProjectParticipant");
-                });
-
-            modelBuilder.Entity("Domain.Entities.FileSignaturePosition", b =>
-                {
-                    b.HasOne("Domain.Entities.FileItem", "FileItem")
-                        .WithMany()
-                        .HasForeignKey("FileItemId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("FileItem");
                 });
 
             modelBuilder.Entity("Domain.Entities.FileVersion", b =>

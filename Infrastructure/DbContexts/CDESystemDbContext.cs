@@ -46,6 +46,7 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<ApprovalRequest> ApprovalRequests { get; set; }
         public virtual DbSet<ApprovalSignatureTransaction> ApprovalSignatureTransactions { get; set; }
         public virtual DbSet<ZoneReturnRequest> ZoneReturnRequests { get; set; }
+        public virtual DbSet<FileSignaturePosition> FileSignaturePositions { get; set; }
 
         // --- Module D: Phiếu yêu cầu ---
         public virtual DbSet<Submittal> Submittals { get; set; }
@@ -69,7 +70,8 @@ namespace Infrastructure.DbContexts
 
         // --- Module H: Nhật ký / RAG ---
         public virtual DbSet<AuditLog> AuditLogs { get; set; }
-        public virtual DbSet<DocumentChunk> DocumentChunks { get; set; }
+        public virtual DbSet<DocumentChildChunk> DocumentChunks { get; set; }
+        public virtual DbSet<DocumentParentChunk> DocumentParentChunks { get; set; }
 
         // --- Module J: Hợp đồng / Bill thầu ---
         public virtual DbSet<Contract> Contracts { get; set; }
@@ -203,28 +205,39 @@ namespace Infrastructure.DbContexts
             modelBuilder.HasPostgresExtension("vector");
 
 
-            int EmbeddingDimension = _configuration?.GetValue<int>("Ollama:EmbeddingDimension") ?? 1024;
+            int EmbeddingDimension = _configuration?.GetValue<int>("Ollama:EmbeddingDimension") ?? 4096;
 
             modelBuilder.Entity<Document>(b =>
             {
                 b.HasIndex(d => d.ProjectId);
                 b.HasIndex(d => d.FileItemId);
                 b.HasIndex(d => d.SourceFileVersionId);
+                b.HasIndex(d => new { d.ProjectId, d.UpdateAt });   // hard-filter bản mới nhất
             });
 
-            modelBuilder.Entity<DocumentChunk>(b =>
+            modelBuilder.Entity<DocumentParentChunk>(b =>
+            {
+                b.HasOne(p => p.Document)
+                    .WithMany(d => d.Chunks)
+                    .HasForeignKey(p => p.DocumentId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                b.HasIndex(p => p.ProjectId);
+                b.HasIndex(p => p.DocumentId);
+            });
+            
+            modelBuilder.Entity<DocumentChildChunk>(b =>
             {
                 b.Property(c => c.Embedding)
                     .HasColumnType($"vector({EmbeddingDimension})");
 
-                // Pre-filter bảo mật: mọi truy vấn vector lọc theo ProjectId trước khi xếp hạng.
-                b.HasIndex(c => c.ProjectId);
-
-                // Document (cha) 1 - n DocumentChunk (con): xóa Document -> xóa chunk.
-                b.HasOne(c => c.Document)
-                    .WithMany(d => d.Chunks)
-                    .HasForeignKey(c => c.DocumentId)
+                b.HasOne(c => c.ParentChunk)
+                    .WithMany(p => p.ChildChunks)
+                    .HasForeignKey(c => c.ParentChunkId)
                     .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasIndex(c => c.ProjectId);      
+                b.HasIndex(c => c.DocumentId);
+                b.HasIndex(c => c.ParentChunkId);
             });
             modelBuilder.Entity<ZoneReturnRequest>()
                 .HasOne(r => r.FileItem)
@@ -243,6 +256,17 @@ namespace Infrastructure.DbContexts
                 .WithMany()
                 .HasForeignKey(r => r.ApprovedBy)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // Moi FileItem chi giu 1 vi tri chu ky hien hanh.
+            modelBuilder.Entity<FileSignaturePosition>()
+                .HasIndex(p => p.FileItemId)
+                .IsUnique();
+
+            modelBuilder.Entity<FileSignaturePosition>()
+                .HasOne(p => p.FileItem)
+                .WithMany()
+                .HasForeignKey(p => p.FileItemId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }

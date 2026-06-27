@@ -43,6 +43,8 @@ namespace Infrastructure.Configurations
             services.AddScoped<IFileZoneResolverService, FileZoneResolverService>();
             services.AddScoped<IFileItemService, FileItemService>();
             services.AddScoped<IApprovalService, ApprovalService>();
+            services.AddScoped<IFileSignaturePositionService, FileSignaturePositionService>();
+            services.AddScoped<IPdfSignatureService, PdfSignatureService>();
             services.AddScoped<IVnptSmartCaService, VnptSmartCaService>();
             services.AddScoped<IZoneReturnRequestService, ZoneReturnRequestService>();
             // Kho file: chọn provider qua "FileStorage:Provider" (Local mặc định | ViettelS3).
@@ -83,6 +85,7 @@ namespace Infrastructure.Configurations
             // Hàng đợi dịch model nền (singleton: producer upload/view + consumer ModelTranslationWorker dùng chung).
             // Worker (BackgroundService) đăng ký ở Program.cs (host) vì cần Microsoft.Extensions.Hosting.
             services.AddSingleton<IModelTranslationQueue, ModelTranslationQueue>();
+            services.AddSingleton<IFileTextExtractor, FileTextExtractorService>();
 
             services.AddMemoryCache();
             services.AddHttpClient();

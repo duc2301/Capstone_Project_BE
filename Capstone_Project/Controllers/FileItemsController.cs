@@ -18,19 +18,25 @@ namespace Capstone_Project.Controllers
         private readonly IApprovalService _approval;
         private readonly IZoneReturnRequestService _zoneReturnRequestService;
         private readonly IFileViewService _view;
+        private readonly IFileSignaturePositionService _signaturePosition;
+        private readonly IPdfSignatureService _pdfSignature;
 
         public FileItemsController(
             IFileItemService service,
             IFileUploadService upload,
             IApprovalService approval,
             IZoneReturnRequestService zoneReturnRequestService,
-            IFileViewService view)
+            IFileViewService view,
+            IFileSignaturePositionService signaturePosition,
+            IPdfSignatureService pdfSignature)
         {
             _service = service;
             _upload = upload;
             _approval = approval;
             _zoneReturnRequestService = zoneReturnRequestService;
             _view = view;
+            _signaturePosition = signaturePosition;
+            _pdfSignature = pdfSignature;
         }
 
         // Luồng tải file lên (multipart/form-data): file + FolderId + FileType + (Name tùy chọn).
@@ -98,6 +104,36 @@ namespace Capstone_Project.Controllers
         [HttpPost("{fileId:guid}/return-requests")]
         public async Task<IActionResult> CreateReturnRequest(Guid fileId, [FromBody] CreateZoneReturnRequestDTO dto)
             => Ok(await _zoneReturnRequestService.CreateAsync(fileId, dto, User.GetAccountId()));
+
+        /// <summary>
+        /// Luu vi tri dat chu ky truc quan tren PDF (chi PDF, chi khi file dang o WIP).
+        /// </summary>
+        [HttpPost("{fileId:guid}/signature-position")]
+        public async Task<IActionResult> SaveSignaturePosition(Guid fileId, [FromBody] SaveSignaturePositionDTO dto)
+            => Ok(ApiResponse.Success(
+                "Signature position saved",
+                await _signaturePosition.SaveAsync(fileId, dto, User.GetAccountId())));
+
+        /// <summary>
+        /// Lay vi tri dat chu ky truc quan da luu cua file.
+        /// </summary>
+        [HttpGet("{fileId:guid}/signature-position")]
+        public async Task<IActionResult> GetSignaturePosition(Guid fileId)
+            => Ok(ApiResponse.Success("Signature position retrieved", await _signaturePosition.GetAsync(fileId)));
+
+        /// <summary>
+        /// Kich thuoc trang PDF thuc te (points) -> FE dung de tinh ty le dat vi tri ky, tranh gia dinh A4 co dinh.
+        /// </summary>
+        [HttpGet("{fileId:guid}/pdf-page-info")]
+        public async Task<IActionResult> GetPdfPageInfo(Guid fileId, [FromQuery] int pageNumber = 1)
+            => Ok(ApiResponse.Success("PDF page info retrieved", await _signaturePosition.GetPageInfoAsync(fileId, pageNumber)));
+
+        /// <summary>
+        /// Lay thong tin (metadata) ban PDF da ky truc quan. Tai noi dung file qua endpoint /download hien co.
+        /// </summary>
+        [HttpGet("{fileId:guid}/signed-file")]
+        public async Task<IActionResult> GetSignedFile(Guid fileId)
+            => Ok(await _pdfSignature.GetSignedFileInfoAsync(fileId, User.GetAccountId()));
 
         // Danh sách file trong 1 folder (FE gọi khi mở/chọn folder).
         [HttpGet("by-folder/{folderId:guid}")]

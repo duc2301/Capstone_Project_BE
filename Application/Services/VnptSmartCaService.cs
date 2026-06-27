@@ -31,6 +31,7 @@ namespace Application.Services
 
         private readonly IUnitOfWork _unitOfWork;
         private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IPdfSignatureService _pdfSignatureService;
         private readonly VnptSmartCaOptions _options;
         private readonly ILogger<VnptSmartCaService> _logger;
 
@@ -42,11 +43,13 @@ namespace Application.Services
         public VnptSmartCaService(
             IUnitOfWork unitOfWork,
             IHttpClientFactory httpClientFactory,
+            IPdfSignatureService pdfSignatureService,
             IOptions<VnptSmartCaOptions> options,
             ILogger<VnptSmartCaService> logger)
         {
             _unitOfWork = unitOfWork;
             _httpClientFactory = httpClientFactory;
+            _pdfSignatureService = pdfSignatureService;
             _options = options.Value;
             _logger = logger;
         }
@@ -199,14 +202,13 @@ namespace Application.Services
             transaction.UpdatedAt = now;
 
             var signatureValue = ExtractSignatureValue(external.RawResponse);
+            var justSigned = false;
             if (signatureValue != null && transaction.Status != SignatureTransactionStatus.Signed)
             {
                 transaction.Status = SignatureTransactionStatus.Signed;
                 transaction.SignedAt = now;
                 transaction.SignedBy = currentUserId;
-
-                validation.Context!.FileItem.IsSigned = true;
-                validation.Context.FileItem.UpdatedAt = now;
+                justSigned = true;
             }
             else
             {
@@ -221,7 +223,17 @@ namespace Application.Services
 
             await _unitOfWork.CommitAsync();
 
-            return ApiResponse.Success("Transaction status retrieved", new TransactionStatusDto
+            // Sau khi VNPT bao da ky, sinh ban PDF da stamp chu ky truc quan.
+            // FileItem.IsSigned chi duoc danh dau true trong PdfSignatureService, sau khi PDF sinh thanh cong.
+            var message = "Transaction status retrieved";
+            if (justSigned)
+            {
+                var pdfResult = await _pdfSignatureService.GenerateSignedPdfAsync(approvalId, currentUserId);
+                if (!pdfResult.IsSuccess)
+                    message = "SmartCA signed successfully but signed PDF generation failed.";
+            }
+
+            return ApiResponse.Success(message, new TransactionStatusDto
             {
                 TransactionId = transaction.TransactionId,
                 Status = transaction.Status

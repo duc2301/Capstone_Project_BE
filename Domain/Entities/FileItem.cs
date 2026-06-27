@@ -15,6 +15,7 @@ namespace Domain.Entities
         public bool RequiresSignature { get; set; }
         public bool IsSigned { get; set; }
         public Guid? CurrentVersionId { get; set; }
+        public Guid? SignedVersionId { get; set; }
         public Guid? CreatedByAccountId { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }

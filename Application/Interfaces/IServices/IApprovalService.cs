@@ -29,5 +29,8 @@ namespace Application.Interfaces.IServices
 
         // Từ chối file đang chờ phê duyệt (lý do bắt buộc).
         Task<ApprovalRequestResponseDTO> RejectAsync(Guid id, RejectApprovalRequestDTO dto, Guid actorId);
+
+        // Bắt buộc actor là Team Leader active của team phụ trách file (ném 403 nếu không phải).
+        Task RequireTeamLeaderAsync(Guid fileItemId, Guid actorId);
     }
 }
