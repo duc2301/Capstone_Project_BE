@@ -28,6 +28,12 @@ namespace Domain.Entities
         // Thông điệp lỗi khi ViewerStatus = Failed (không nuốt lỗi — để chẩn đoán/hiển thị).
         public string? ViewerError { get; set; }
 
+        // --- Chu ky truc quan (visual signature) tren PDF ---
+        public bool IsSigned { get; set; }
+        public DateTime? SignedAt { get; set; }
+        public Guid? SignedBy { get; set; }
+        public string? CertificateSerial { get; set; }
+
         public FileItem FileItem { get; set; } = null!;
     }
 }
