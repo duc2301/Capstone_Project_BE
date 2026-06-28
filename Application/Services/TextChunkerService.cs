@@ -22,8 +22,8 @@ namespace Application.Services
 
         public IReadOnlyList<ChunkedParent> Chunk(string text)
         {
-            int maxParentChars = int.Parse(_configuration["MaxParentChars"]);
-            int maxChildChars = int.Parse(_configuration["MaxChildChars"]);
+            int maxParentChars = int.Parse(_configuration["ParentChunkSize"]);
+            int maxChildChars = int.Parse(_configuration["ChildChunkSize"]);
             int childOverlap = int.Parse(_configuration["ChildOverlap"]);
 
             if (string.IsNullOrWhiteSpace(text)) return Array.Empty<ChunkedParent>();

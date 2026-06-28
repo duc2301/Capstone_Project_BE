@@ -205,7 +205,7 @@ namespace Infrastructure.DbContexts
             modelBuilder.HasPostgresExtension("vector");
 
 
-            int EmbeddingDimension = _configuration?.GetValue<int>("Ollama:EmbeddingDimension") ?? 4096;
+            int EmbeddingDimension = _configuration?.GetValue<int>("Ollama:EmbeddingDimension") ?? 1024;
 
             modelBuilder.Entity<Document>(b =>
             {
