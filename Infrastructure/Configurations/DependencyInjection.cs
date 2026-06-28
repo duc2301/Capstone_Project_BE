@@ -69,6 +69,7 @@ namespace Infrastructure.Configurations
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IEmailService, GmailEmailService>();
             services.AddScoped<IEmbeddingService, EmbeddingService>();
+            services.AddScoped<IDocumentIngestService, DocumentIngestService>();
 
             // Profile self-service (GET/PUT/change-password trên chính user hiện tại)
             services.AddScoped<IProfileService, ProfileService>();
