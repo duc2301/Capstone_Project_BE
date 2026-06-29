@@ -22,9 +22,9 @@ namespace Application.Services
 
         public IReadOnlyList<ChunkedParent> Chunk(string text)
         {
-            int maxParentChars = int.Parse(_configuration["ParentChunkSize"]);
-            int maxChildChars = int.Parse(_configuration["ChildChunkSize"]);
-            int childOverlap = int.Parse(_configuration["ChildOverlap"]);
+            int maxParentChars = int.Parse(_configuration["TextChunker:ParentChunkSize"]);
+            int maxChildChars = int.Parse(_configuration["TextChunker:ChildChunkSize"]);
+            int childOverlap = int.Parse(_configuration["TextChunker:ChildOverlap"]);
 
             if (string.IsNullOrWhiteSpace(text)) return Array.Empty<ChunkedParent>();
             if (childOverlap >= maxChildChars) childOverlap = maxChildChars / 4;   // guard

@@ -13,7 +13,6 @@ namespace Application.Services
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IOptions<OllamaOptions> _options;
 
-
         public async Task<float[]> EmbedAsync(string text, CancellationToken ct = default)
         {
             var client = _httpClientFactory.CreateClient();
