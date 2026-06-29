@@ -15,14 +15,16 @@ namespace Application.Services
         private readonly IFileTextExtractor _extractor;
         private readonly ITextChunker _chunker;
         private readonly IEmbeddingService _embedding;
+        private readonly IChunkContextEnricher _enricher;
 
-        public DocumentIngestService(IUnitOfWork unitOfWork, IFileStorageService storage, IFileTextExtractor extractor, ITextChunker chunker, IEmbeddingService embedding)
+        public DocumentIngestService(IUnitOfWork unitOfWork, IFileStorageService storage, IFileTextExtractor extractor, ITextChunker chunker, IEmbeddingService embedding, IChunkContextEnricher enricher)
         {
             _unitOfWork = unitOfWork;
             _storage = storage;
             _extractor = extractor;
             _chunker = chunker;
             _embedding = embedding;
+            _enricher = enricher;
         }
 
         public async Task<Guid> IngestFileAsync(Guid fileItemId, CancellationToken ct = default)
@@ -44,10 +46,10 @@ namespace Application.Services
             if (folder == null)
                 throw new ApiExceptionResponse("Folder not found", 404);
 
-            if (folder.Area != CdeArea.Published)
-            {
-                throw new ApiExceptionResponse("Chỉ đọc file khi đã ở published", 400);
-            }
+            //if (folder.Area != CdeArea.Published)
+            //{
+            //    throw new ApiExceptionResponse("Chỉ đọc file khi đã ở published", 400);
+            //}
             
             var contentHash = version.Checksum;
             var existing = await _unitOfWork.Repository<Document>()
@@ -94,9 +96,14 @@ namespace Application.Services
                     ChunkIndex = p,
                     Content = parents[p].Content
                 };
+
+                var ctx = await _enricher.EnrichAsync(prefix, parents[p].Content, ct);
                 foreach (var child in parents[p].Children)
                 {
-                    var vector = await _embedding.EmbedAsync($"{prefix}\n\n{child}", ct);
+                    var embedInput = string.IsNullOrWhiteSpace(ctx)
+                        ? $"{prefix}\n\n{child}"
+                        : $"{prefix}\n{ctx}\n\n{child}";
+                    var vector = await _embedding.EmbedAsync(embedInput, ct);
                     parentEntity.ChildChunks.Add(new DocumentChildChunk
                     {
                         Id = Guid.NewGuid(),
@@ -104,7 +111,7 @@ namespace Application.Services
                         ProjectId = folder.ProjectId,
                         ParentChunkId = parentEntity.Id,
                         ChunkIndex = childIndex++,
-                        Content = child,
+                        Content = embedInput,
                         Embedding = new Vector(vector),
                         CreatedAt = DateTime.UtcNow
                     });
