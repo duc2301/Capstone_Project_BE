@@ -70,6 +70,7 @@ namespace Infrastructure.Configurations
             services.AddScoped<IEmailService, GmailEmailService>();
             services.AddScoped<IEmbeddingService, EmbeddingService>();
             services.AddScoped<IDocumentIngestService, DocumentIngestService>();
+            services.AddScoped<IChunkContextEnricher, ChunkContextEnricher>();
 
             // Profile self-service (GET/PUT/change-password trên chính user hiện tại)
             services.AddScoped<IProfileService, ProfileService>();
