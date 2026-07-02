@@ -44,6 +44,7 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<FileNote> FileNotes { get; set; }
         public virtual DbSet<FilePermission> FilePermissions { get; set; }
         public virtual DbSet<ApprovalRequest> ApprovalRequests { get; set; }
+        public virtual DbSet<ApprovalRequestSigner> ApprovalRequestSigners { get; set; }
         public virtual DbSet<ApprovalSignatureTransaction> ApprovalSignatureTransactions { get; set; }
         public virtual DbSet<ZoneReturnRequest> ZoneReturnRequests { get; set; }
         public virtual DbSet<FileSignaturePosition> FileSignaturePositions { get; set; }
@@ -183,6 +184,24 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(a => a.ApproverId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            modelBuilder.Entity<ApprovalRequestSigner>()
+                .HasOne(s => s.ApprovalRequest)
+                .WithMany(a => a.Signers)
+                .HasForeignKey(s => s.ApprovalRequestId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<ApprovalRequestSigner>()
+                .HasOne(s => s.SignerAccount)
+                .WithMany()
+                .HasForeignKey(s => s.SignerAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ApprovalRequestSigner>()
+                .HasOne(s => s.SignerGroup)
+                .WithMany()
+                .HasForeignKey(s => s.SignerGroupId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             modelBuilder.Entity<ApprovalSignatureTransaction>()
                 .HasOne(t => t.ApprovalRequest)
                 .WithMany()
@@ -205,7 +224,9 @@ namespace Infrastructure.DbContexts
             modelBuilder.HasPostgresExtension("vector");
 
 
-            int EmbeddingDimension = _configuration?.GetValue<int>("Ollama:EmbeddingDimension") ?? 1024;
+            var embeddingDimension = _configuration?.GetValue<int>("Ollama:EmbeddingDimension") ?? 1024;
+            if (embeddingDimension <= 0)
+                embeddingDimension = 1024;
 
             modelBuilder.Entity<Document>(b =>
             {
@@ -228,7 +249,7 @@ namespace Infrastructure.DbContexts
             modelBuilder.Entity<DocumentChildChunk>(b =>
             {
                 b.Property(c => c.Embedding)
-                    .HasColumnType($"vector({EmbeddingDimension})");
+                    .HasColumnType($"vector({embeddingDimension})");
 
                 b.HasOne(c => c.ParentChunk)
                     .WithMany(p => p.ChildChunks)
