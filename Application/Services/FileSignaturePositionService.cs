@@ -11,7 +11,7 @@ using iText.Kernel.Pdf;
 namespace Application.Services
 {
     /// <summary>
-    /// Luu vi tri dat chu ky truc quan tren file PDF. Chi ap dung cho FileType.Pdf va khi file dang o WIP.
+    /// Luu vi tri dat chu ky truc quan tren file PDF.
     /// </summary>
     public class FileSignaturePositionService : IFileSignaturePositionService
     {
@@ -35,11 +35,6 @@ namespace Application.Services
 
             if (fileItem.FileType != FileType.Pdf)
                 throw new ApiExceptionResponse("Only PDF files support visual signature.", 400);
-
-            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
-                ?? throw new ApiExceptionResponse("File folder not found.", 404);
-            if (folder.Area != CdeArea.Wip)
-                throw new ApiExceptionResponse("File must be in WIP to set signature position.", 409);
 
             var version = await GetCurrentPdfVersionAsync(fileItem);
             var (pageCount, _, pageWidth, pageHeight) = await ReadPageInfoAsync(version.StoragePath, dto.PageNumber);
