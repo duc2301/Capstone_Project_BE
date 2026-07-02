@@ -43,6 +43,8 @@ namespace Infrastructure.Configurations
             services.AddScoped<IFileZoneResolverService, FileZoneResolverService>();
             services.AddScoped<IFileItemService, FileItemService>();
             services.AddScoped<IApprovalService, ApprovalService>();
+            services.AddScoped<IFileSignaturePositionService, FileSignaturePositionService>();
+            services.AddScoped<IPdfSignatureService, PdfSignatureService>();
             services.AddScoped<IVnptSmartCaService, VnptSmartCaService>();
             services.AddScoped<IZoneReturnRequestService, ZoneReturnRequestService>();
             // Kho file: chọn provider qua "FileStorage:Provider" (Local mặc định | ViettelS3).
@@ -64,9 +66,13 @@ namespace Infrastructure.Configurations
             services.AddScoped<IFilePermissionService, FilePermissionService>();
             services.AddScoped<IFolderPermissionService, FolderPermissionService>();
 
+
             services.AddScoped<IJwtService, JwtService>();
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IEmailService, GmailEmailService>();
+            services.AddScoped<IEmbeddingService, EmbeddingService>();
+            services.AddScoped<IDocumentIngestService, DocumentIngestService>();
+            services.AddScoped<IChunkContextEnricher, ChunkContextEnricher>();
 
             // Profile self-service (GET/PUT/change-password trên chính user hiện tại)
             services.AddScoped<IProfileService, ProfileService>();
@@ -85,6 +91,8 @@ namespace Infrastructure.Configurations
             // Hàng đợi dịch model nền (singleton: producer upload/view + consumer ModelTranslationWorker dùng chung).
             // Worker (BackgroundService) đăng ký ở Program.cs (host) vì cần Microsoft.Extensions.Hosting.
             services.AddSingleton<IModelTranslationQueue, ModelTranslationQueue>();
+            services.AddSingleton<IFileTextExtractor, FileTextExtractorService>();
+            services.AddSingleton<ITextChunker, TextChunkerService>();
 
             services.AddMemoryCache();
             services.AddHttpClient();
