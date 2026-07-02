@@ -49,11 +49,6 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<ZoneReturnRequest> ZoneReturnRequests { get; set; }
         public virtual DbSet<FileSignaturePosition> FileSignaturePositions { get; set; }
 
-        // --- Module D: Phiếu yêu cầu ---
-        public virtual DbSet<Submittal> Submittals { get; set; }
-        public virtual DbSet<SubmittalStep> SubmittalSteps { get; set; }
-        public virtual DbSet<SubmittalAttachment> SubmittalAttachments { get; set; }
-        public virtual DbSet<SubmittalCitedFolder> SubmittalCitedFolders { get; set; }
 
         // --- Module E: Thảo luận ---
         public virtual DbSet<Discussion> Discussions { get; set; }
@@ -78,11 +73,6 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<Contract> Contracts { get; set; }
         public virtual DbSet<ContractAppendix> ContractAppendices { get; set; }
         public virtual DbSet<BillItem> BillItems { get; set; }
-
-        // --- Module K: Mô hình BIM ---
-        public virtual DbSet<ProjectModel> ProjectModels { get; set; }
-        public virtual DbSet<ModelFile> ModelFiles { get; set; }
-        public virtual DbSet<ModelObject> ModelObjects { get; set; }
 
         // --- Module L: Giải phóng mặt bằng / Công trường số ---
         public virtual DbSet<ProjectLocation> ProjectLocations { get; set; }
@@ -146,12 +136,6 @@ namespace Infrastructure.DbContexts
                 .HasOne(fp => fp.ProjectParticipant)
                 .WithMany()
                 .HasForeignKey(fp => fp.ProjectParticipantId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            modelBuilder.Entity<Submittal>()
-                .HasOne(s => s.ParentSubmittal)
-                .WithMany(s => s.ChildSubmittals)
-                .HasForeignKey(s => s.ParentSubmittalId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<BillItem>()

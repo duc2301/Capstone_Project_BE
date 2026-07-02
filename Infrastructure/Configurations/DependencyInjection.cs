@@ -22,7 +22,7 @@ namespace Infrastructure.Configurations
             services.Configure<VnptSmartCaOptions>(configuration.GetSection("VnptSmartCA"));
 
             services.AddDbContext<CDESystemDbContext>(options =>
-                options.UseNpgsql(connectionString, x => x.UseVector())                
+                options.UseNpgsql(connectionString, x => x.UseVector())
             );
 
 
@@ -57,13 +57,9 @@ namespace Infrastructure.Configurations
             services.AddScoped<IFileUploadService, FileUploadService>();
             services.AddSingleton<IOfficeToPdfConverter, SyncfusionOfficeToPdfConverter>();
             services.AddScoped<IFileViewService, FileViewService>();
-            services.AddScoped<ISubmittalService, SubmittalService>();
             services.AddScoped<IDiscussionService, DiscussionService>();
             services.AddScoped<IIssueService, IssueService>();
             services.AddScoped<IContractService, ContractService>();
-            services.AddScoped<IProjectModelService, ProjectModelService>();
-            services.AddScoped<IModelFileService, ModelFileService>();
-
 
             services.AddScoped<IJwtService, JwtService>();
             services.AddScoped<IAuthService, AuthService>();
