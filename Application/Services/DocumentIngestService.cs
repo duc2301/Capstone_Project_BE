@@ -5,6 +5,7 @@ using Domain.Entities;
 using Domain.Enum.Cde;
 using Domain.Enum.Rag;
 using Pgvector;
+using System.Text;
 
 namespace Application.Services
 {
@@ -25,6 +26,17 @@ namespace Application.Services
             _chunker = chunker;
             _embedding = embedding;
             _enricher = enricher;
+        }
+
+        // Postgres text không nhận NUL (0x00). Bỏ NUL + control char C0, giữ \t \n \r + ký tự thường (kể cả tiếng Việt).
+        private static string SanitizeText(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+            var sb = new StringBuilder(text.Length);
+            foreach (var ch in text)
+                if (ch == '\t' || ch == '\n' || ch == '\r' || !char.IsControl(ch))
+                    sb.Append(ch);
+            return sb.ToString();
         }
 
         public async Task<Guid> IngestFileAsync(Guid fileItemId, CancellationToken ct = default)
@@ -61,8 +73,9 @@ namespace Application.Services
 
             await using var stream = await _storage.OpenReadAsync(version.StoragePath, ct);
             var text = await _extractor.ExtractTextAsync(stream, version.Format, ct);
+            text = SanitizeText(text);
 
-            if (string.IsNullOrWhiteSpace(text)) 
+            if (string.IsNullOrWhiteSpace(text))
                 throw new ApiExceptionResponse("Không trích được nội dung văn bản", 400);
 
             var parents = _chunker.Chunk(text);
@@ -98,6 +111,8 @@ namespace Application.Services
                 };
 
                 var ctx = await _enricher.EnrichAsync(prefix, parents[p].Content, ct);
+                parentEntity.Content = ctx + "\n\n" + parents[p].Content;
+
                 foreach (var child in parents[p].Children)
                 {
                     var embedInput = string.IsNullOrWhiteSpace(ctx)
@@ -111,7 +126,7 @@ namespace Application.Services
                         ProjectId = folder.ProjectId,
                         ParentChunkId = parentEntity.Id,
                         ChunkIndex = childIndex++,
-                        Content = embedInput,
+                        Content = child,
                         Embedding = new Vector(vector),
                         CreatedAt = DateTime.UtcNow
                     });
