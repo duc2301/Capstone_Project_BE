@@ -19,7 +19,7 @@ namespace Application.Services
 
         private const int CandidateK = 40;      
         private const int MaxFiles = 10;        
-        private const double MaxDistance = 0.6;
+        private const double MaxDistance = 0.4;
 
         public async Task<IReadOnlyList<FileSearchResultDTO>> SearchAsync(
             Guid projectId, string query, CancellationToken ct = default)

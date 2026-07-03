@@ -28,8 +28,8 @@ namespace Infrastructure.Repositories
                 .AsNoTracking()
                 .Include(c => c.ParentChunk).ThenInclude(p => p.Document)
                 .Where(c => c.ProjectId == projectId
-                && c.ParentChunk.Document.Status == DocumentIngestStatus.Embedded
-                && c.ParentChunk.Document.Area == CdeArea.Published)
+                && c.ParentChunk.Document.Status == DocumentIngestStatus.Embedded)
+                //&& c.ParentChunk.Document.Area == CdeArea.Published)
                 .OrderBy(c => c.Embedding!.CosineDistance(queryEmbedding))
                 .Take(k)
                 .Select(c => new DocumentSearchHit(

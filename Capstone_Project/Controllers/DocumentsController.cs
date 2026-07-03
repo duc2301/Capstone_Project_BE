@@ -33,7 +33,7 @@ namespace Capstone_Project.Controllers
         public async Task<IActionResult> Search(
         [FromQuery] Guid projectId, [FromQuery] string query, CancellationToken ct)
         {
-            var accountId = User.GetAccountId();           // ném 401 nếu chưa đăng nhập
+            var accountId = User.GetAccountId(); // ném 401 nếu chưa đăng nhập
 
             // check user thuộc dự án (Admin bỏ qua)
             if (!User.IsAdmin())
