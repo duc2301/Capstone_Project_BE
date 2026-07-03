@@ -172,7 +172,7 @@ namespace Application.Services
             if (fileItem == null)
                 return ApiResponse.Fail("File not found.");
 
-            await _permission.RequireAsync(actor, fileItem.FolderId, FolderAction.Download);
+            //await _permission.RequireAsync(actor, fileItem.FolderId, FolderAction.Download);
 
             if (!fileItem.SignedVersionId.HasValue)
                 return ApiResponse.Fail("Signed PDF not available.");
