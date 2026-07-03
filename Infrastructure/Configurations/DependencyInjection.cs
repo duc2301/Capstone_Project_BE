@@ -1,9 +1,11 @@
+using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Application.Mapping;
 using Application.Options;
 using Application.Services;
 using Infrastructure.DbContexts;
+using Infrastructure.Repositories;
 using Infrastructure.UnitOfWorks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -67,6 +69,8 @@ namespace Infrastructure.Configurations
             services.AddScoped<IEmbeddingService, EmbeddingService>();
             services.AddScoped<IDocumentIngestService, DocumentIngestService>();
             services.AddScoped<IChunkContextEnricher, ChunkContextEnricher>();
+            services.AddScoped<IDocumentSearchRepository, DocumentSearchRepository>();
+            services.AddScoped<ISemanticSearchService, SemanticSearchService>();
 
             // Profile self-service (GET/PUT/change-password trên chính user hiện tại)
             services.AddScoped<IProfileService, ProfileService>();

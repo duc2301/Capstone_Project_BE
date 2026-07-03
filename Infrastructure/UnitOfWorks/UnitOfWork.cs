@@ -25,6 +25,10 @@ namespace Infrastructure.UnitOfWorks
         public IRefreshTokenRepository RefreshTokenRepository =>
             _refreshTokenRepository ??= new RefreshTokenRepository(_context);
 
+        private IDocumentSearchRepository? _documentSearchRepository;
+        public IDocumentSearchRepository DocumentSearchRepository =>
+            _documentSearchRepository ??= new DocumentSearchRepository(_context);
+
         private readonly Dictionary<Type, object> _repositories = new();
         public IGenericRepository<T> Repository<T>() where T : class
         {
