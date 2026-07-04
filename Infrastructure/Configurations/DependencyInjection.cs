@@ -1,9 +1,11 @@
+using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Application.Mapping;
 using Application.Options;
 using Application.Services;
 using Infrastructure.DbContexts;
+using Infrastructure.Repositories;
 using Infrastructure.UnitOfWorks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -66,6 +68,7 @@ namespace Infrastructure.Configurations
             services.AddScoped<IFilePermissionService, FilePermissionService>();
             services.AddScoped<IFolderPermissionService, FolderPermissionService>();
             services.AddScoped<IFolderTreeService, FolderTreeService>();
+            services.AddScoped<IFolderTreeRepository, FolderTreeRepository>();
 
             services.AddScoped<IJwtService, JwtService>();
             services.AddScoped<IAuthService, AuthService>();

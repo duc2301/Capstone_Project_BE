@@ -2,7 +2,6 @@
 using Application.DTOs.RequestDTOs.Permission;
 using Application.Interfaces.IServices;
 using Capstone_Project.Extensions;
-using Domain.Enum.Cde;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
@@ -12,13 +11,11 @@ namespace Capstone_Project.Controllers
     {
         private readonly IFilePermissionService _filePermissionService;
         private readonly IFolderPermissionService _folderPermissionService;
-        private readonly IFolderTreeService _folderTreeService;
 
-        public PermissionController(IFilePermissionService filePermissionService, IFolderPermissionService folderPermissionService, IFolderTreeService folderTreeService)
+        public PermissionController(IFilePermissionService filePermissionService, IFolderPermissionService folderPermissionService)
         {
             _filePermissionService = filePermissionService;
             _folderPermissionService = folderPermissionService;
-            _folderTreeService = folderTreeService;
         }
 
         #region file permission
@@ -107,12 +104,5 @@ namespace Capstone_Project.Controllers
         }
 
         #endregion
-
-        [HttpGet("tree")]
-        public async Task<IActionResult> GetTree([FromQuery] Guid projectId, [FromQuery] CdeArea? area)
-        {
-            var tree = await _folderTreeService.GetTreeAsync(projectId, area);
-            return Ok(ApiResponse.Success("CDE tree retrieved", tree));
-        }
     }
 }
