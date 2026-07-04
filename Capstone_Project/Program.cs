@@ -35,6 +35,7 @@ builder.Services.SwaggerServices(builder);
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<IUserIdProvider, NameIdentifierUserIdProvider>();
 builder.Services.AddScoped<INotificationPusher, SignalRNotificationPusher>();
+builder.Services.AddScoped<IMarkupBroadcaster, SignalRMarkupBroadcaster>();
 
 // CORS — withCredentials cần cho SignalR
 builder.Services.AddCors(options =>
@@ -79,5 +80,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.MapHub<NotificationHub>("/hubs/notifications");
+app.MapHub<MarkupHub>("/hubs/markup");
 
 app.Run();

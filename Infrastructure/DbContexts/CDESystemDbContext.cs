@@ -41,6 +41,7 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<FolderPermission> FolderPermissions { get; set; }
         public virtual DbSet<FileItem> FileItems { get; set; }
         public virtual DbSet<FileVersion> FileVersions { get; set; }
+        public virtual DbSet<MarkupSet> MarkupSets { get; set; }
         public virtual DbSet<FileNote> FileNotes { get; set; }
         public virtual DbSet<FilePermission> FilePermissions { get; set; }
         public virtual DbSet<ApprovalRequest> ApprovalRequests { get; set; }
@@ -272,6 +273,40 @@ namespace Infrastructure.DbContexts
                 .WithMany()
                 .HasForeignKey(p => p.FileItemId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<MarkupSet>()
+                .HasOne(m => m.FileItem)
+                .WithMany()
+                .HasForeignKey(m => m.FileItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<MarkupSet>()
+                .HasOne(m => m.FileVersion)
+                .WithMany()
+                .HasForeignKey(m => m.FileVersionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<MarkupSet>(b =>
+            {
+                b.HasIndex(m => m.FileItemId);
+                b.HasIndex(m => m.FileVersionId);
+                b.HasIndex(m => m.IssueId);
+            });
+
+            modelBuilder.Entity<FileNote>()
+                .HasOne(n => n.MarkupSet)
+                .WithMany(m => m.Notes)
+                .HasForeignKey(n => n.MarkupSetId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<FileNote>()
+                .HasOne(n => n.FileVersion)
+                .WithMany()
+                .HasForeignKey(n => n.FileVersionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<FileNote>()
+                .HasIndex(n => n.MarkupSetId);
         }
     }
 }

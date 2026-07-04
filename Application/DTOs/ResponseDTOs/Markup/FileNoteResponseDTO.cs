@@ -1,9 +1,8 @@
-using Domain.Common;
 using Domain.Enum.File;
 
-namespace Domain.Entities
+namespace Application.DTOs.ResponseDTOs.Markup
 {
-    public class FileNote : IEntity, IAuditable
+    public class FileNoteResponseDTO : IResponseDto
     {
         public Guid Id { get; set; }
         public Guid MarkupSetId { get; set; }
@@ -16,11 +15,10 @@ namespace Domain.Entities
         public string? ViewpointStateJson { get; set; }
         public string? MarkupSvg { get; set; }
         public string? ThumbnailDataUrl { get; set; }
-        public FileNoteStatus Status { get; set; } = FileNoteStatus.Open;
+        public FileNoteStatus Status { get; set; }
         public Guid? AuthorAccountId { get; set; }
+        public string? AuthorName { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
-        public MarkupSet MarkupSet { get; set; } = null!;
-        public FileVersion FileVersion { get; set; } = null!;
     }
 }
