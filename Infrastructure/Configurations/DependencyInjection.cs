@@ -65,7 +65,7 @@ namespace Infrastructure.Configurations
             services.AddScoped<IModelFileService, ModelFileService>();
             services.AddScoped<IFilePermissionService, FilePermissionService>();
             services.AddScoped<IFolderPermissionService, FolderPermissionService>();
-
+            services.AddScoped<IFolderTreeService, FolderTreeService>();
 
             services.AddScoped<IJwtService, JwtService>();
             services.AddScoped<IAuthService, AuthService>();
