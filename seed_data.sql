@@ -51,7 +51,7 @@ TRUNCATE TABLE
     "IssueCitedFolders", "IssueAttachments", "IssueMentions", "IssueComments", "Issues",
     "DiscussionCitedFolders", "MessageAttachments", "MessageMentions", "DiscussionMessages", "Discussions",
     "SubmittalCitedFolders", "SubmittalAttachments", "SubmittalSteps", "Submittals",
-    "FileNotes", "FilePermissions", "FileVersions", "FileItems", "FolderPermissions", "Folders",
+    "FileNotes", "MarkupSets", "FilePermissions", "FileVersions", "FileItems", "FolderPermissions", "Folders",
     "PackageAssignments", "ContractPackages",
     "ProjectInvitations", "ProjectParticipants", "ProjectModels", "ProjectLocations", "Projects",
     "GroupMembers", "Groups", "Organizations",
@@ -241,10 +241,15 @@ INSERT INTO "FilePermissions" ("Id","FileItemId","ProjectParticipantId","CanView
 ('f4000000-0000-0000-0000-000000000001','f2000000-0000-0000-0000-000000000005','d3000000-0000-0000-0000-000000000001',true,false,false,true,false,true,false);
 
 -- ============================================================================
--- 17) FILE NOTES (markup/ghi chú trên 1 phiên bản file)
+-- 17) MARKUP SETS + FILE NOTES (đợt markup + ghi chú)
+--     MarkupSetStatus: Open=0,Resolved=1,Closed=2 | FileNoteStatus: Open=0,Resolved=1
+--     MarkupType: Rectangle=0..Cloud=7, Viewpoint=8
 -- ============================================================================
-INSERT INTO "FileNotes" ("Id","FileVersionId","AuthorAccountId","Content","PageNumber","CoordinateJson","CreatedAt") VALUES
-('f5000000-0000-0000-0000-000000000001','f3000000-0000-0000-0000-000000000001','a0000000-0000-0000-0000-000000000006','Cần kiểm tra cao độ sàn tầng 1 so với hồ sơ kết cấu.',1,'{"x":120,"y":340}','2026-02-10 09:00:00+07');
+INSERT INTO "MarkupSets" ("Id","FileItemId","FileVersionId","Title","Status","IssueId","SnapshotStoragePath","CreatedByAccountId","CreatedAt","UpdatedAt") VALUES
+('f6000000-0000-0000-0000-000000000001','f2000000-0000-0000-0000-000000000001','f3000000-0000-0000-0000-000000000001','Rà soát cao độ sàn tầng 1',0,NULL,NULL,'a0000000-0000-0000-0000-000000000006','2026-02-10 09:00:00+07',NULL);
+
+INSERT INTO "FileNotes" ("Id","MarkupSetId","FileVersionId","PageNumber","MarkupType","CoordinateJson","StyleJson","Content","Status","AuthorAccountId","CreatedAt","UpdatedAt") VALUES
+('f5000000-0000-0000-0000-000000000001','f6000000-0000-0000-0000-000000000001','f3000000-0000-0000-0000-000000000001',1,0,'{"x":0.15,"y":0.38,"w":0.30,"h":0.12}','{"color":"#BA1A1A","strokeWidth":2}','Cần kiểm tra cao độ sàn tầng 1 so với hồ sơ kết cấu.',0,'a0000000-0000-0000-0000-000000000006','2026-02-10 09:00:00+07',NULL);
 
 -- ============================================================================
 -- 18) SUBMITTALS  Status: Draft=0,Submitted=1,UnderReview=2,Verified=3,

@@ -2,6 +2,7 @@
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Pgvector;
@@ -11,9 +12,11 @@ using Pgvector;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    partial class CDESystemDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260703144855_AddMarkupViewpoint")]
+    partial class AddMarkupViewpoint
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1198,8 +1201,11 @@ namespace Infrastructure.Migrations
                     b.Property<Guid>("FileVersionId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("IssueId")
+                    b.Property<Guid?>("ScopeId")
                         .HasColumnType("uuid");
+
+                    b.Property<int>("ScopeType")
+                        .HasColumnType("integer");
 
                     b.Property<string>("SnapshotStoragePath")
                         .HasColumnType("text");
@@ -1219,7 +1225,7 @@ namespace Infrastructure.Migrations
 
                     b.HasIndex("FileVersionId");
 
-                    b.HasIndex("IssueId");
+                    b.HasIndex("ScopeType", "ScopeId");
 
                     b.ToTable("MarkupSets");
                 });
