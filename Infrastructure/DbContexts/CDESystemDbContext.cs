@@ -288,6 +288,7 @@ namespace Infrastructure.DbContexts
                 .WithMany()
                 .HasForeignKey(p => p.FileItemId)
                 .OnDelete(DeleteBehavior.Cascade);
+            // Xoá đợt markup -> xoá các ghi chú của nó (Cascade). FileVersion giữ Restrict.
         }
     }
 }
