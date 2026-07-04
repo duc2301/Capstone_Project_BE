@@ -5,6 +5,7 @@ using Domain.Entities;
 using Domain.Enum.Cde;
 using Domain.Enum.Rag;
 using Pgvector;
+using System.Text;
 
 namespace Application.Services
 {
@@ -25,6 +26,17 @@ namespace Application.Services
             _chunker = chunker;
             _embedding = embedding;
             _enricher = enricher;
+        }
+
+        // Postgres text không nhận NUL (0x00). Bỏ NUL + control char C0, giữ \t \n \r + ký tự thường (kể cả tiếng Việt).
+        private static string SanitizeText(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+            var sb = new StringBuilder(text.Length);
+            foreach (var ch in text)
+                if (ch == '\t' || ch == '\n' || ch == '\r' || !char.IsControl(ch))
+                    sb.Append(ch);
+            return sb.ToString();
         }
 
         public async Task<Guid> IngestFileAsync(Guid fileItemId, CancellationToken ct = default)
@@ -61,8 +73,9 @@ namespace Application.Services
 
             await using var stream = await _storage.OpenReadAsync(version.StoragePath, ct);
             var text = await _extractor.ExtractTextAsync(stream, version.Format, ct);
+            text = SanitizeText(text);
 
-            if (string.IsNullOrWhiteSpace(text)) 
+            if (string.IsNullOrWhiteSpace(text))
                 throw new ApiExceptionResponse("Không trích được nội dung văn bản", 400);
 
             var parents = _chunker.Chunk(text);
@@ -85,39 +98,58 @@ namespace Application.Services
             };
 
             var prefix = $"[Tài liệu: {fileItem.Name} | Dự án: {folder.ProjectId} | Khu vực: {folder.Area} | Bản: {document.Revision}]";
-            int childIndex = 0;
+
+            var parentEntities = new List<DocumentParentChunk>(parents.Count);
             for (int p = 0; p < parents.Count; p++)
-            {
-                var parentEntity = new DocumentParentChunk
+                parentEntities.Add(new DocumentParentChunk
                 {
                     Id = Guid.NewGuid(),
                     DocumentId = document.Id,
                     ProjectId = folder.ProjectId,
                     ChunkIndex = p,
                     Content = parents[p].Content
-                };
+                });
 
-                var ctx = await _enricher.EnrichAsync(prefix, parents[p].Content, ct);
+            // PHA 1: enrich SONG SONG (bounded) — chat model nạp 1 lần, các generate chồng nhau
+            var ctxs = new string?[parents.Count];
+            await Parallel.ForEachAsync(
+                Enumerable.Range(0, parents.Count),
+                new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = ct },
+                async (p, token) => ctxs[p] = await _enricher.EnrichAsync(prefix, parents[p].Content, token));
+
+            // PHA 2: dựng child + gom embedInput
+            int childIndex = 0;
+            var toEmbed = new List<string>();
+            var childEntities = new List<DocumentChildChunk>();
+            for (int p = 0; p < parents.Count; p++)
+            {
+                var ctx = ctxs[p];
+                if (!string.IsNullOrWhiteSpace(ctx))
+                    parentEntities[p].Content = ctx + "\n\n" + parents[p].Content;
+
                 foreach (var child in parents[p].Children)
                 {
-                    var embedInput = string.IsNullOrWhiteSpace(ctx)
-                        ? $"{prefix}\n\n{child}"
-                        : $"{prefix}\n{ctx}\n\n{child}";
-                    var vector = await _embedding.EmbedAsync(embedInput, ct);
-                    parentEntity.ChildChunks.Add(new DocumentChildChunk
+                    var embedInput = string.IsNullOrWhiteSpace(ctx) ? $"{prefix}\n\n{child}" : $"{prefix}\n{ctx}\n\n{child}";
+                    var ce = new DocumentChildChunk
                     {
                         Id = Guid.NewGuid(),
                         DocumentId = document.Id,
                         ProjectId = folder.ProjectId,
-                        ParentChunkId = parentEntity.Id,
+                        ParentChunkId = parentEntities[p].Id,
                         ChunkIndex = childIndex++,
-                        Content = embedInput,
-                        Embedding = new Vector(vector),
+                        Content = child,
                         CreatedAt = DateTime.UtcNow
-                    });
-                }                                 
-                document.Chunks.Add(parentEntity); 
-            }                                      
+                    };
+                    parentEntities[p].ChildChunks.Add(ce);
+                    toEmbed.Add(embedInput);
+                    childEntities.Add(ce);
+                }
+                document.Chunks.Add(parentEntities[p]);
+            }
+
+            var vectors = await _embedding.EmbedBatchAsync(toEmbed, ct);
+            for (int i = 0; i < childEntities.Count; i++)
+                childEntities[i].Embedding = new Vector(vectors[i]);
 
             foreach (var old in existing)
                 _unitOfWork.Repository<Document>().Delete(old);

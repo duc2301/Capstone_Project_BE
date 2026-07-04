@@ -11,6 +11,7 @@ namespace Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // FileNotes cũ (nếu có) không có MarkupSetId hợp lệ; dữ liệu mẫu -> xoá để tránh vi phạm FK.
             migrationBuilder.Sql("DELETE FROM \"FileNotes\";");
 
             migrationBuilder.DropForeignKey(
@@ -42,6 +43,12 @@ namespace Infrastructure.Migrations
                 nullable: false,
                 defaultValue: new Guid("00000000-0000-0000-0000-000000000000"));
 
+            migrationBuilder.AddColumn<string>(
+                name: "MarkupSvg",
+                table: "FileNotes",
+                type: "text",
+                nullable: true);
+
             migrationBuilder.AddColumn<int>(
                 name: "MarkupType",
                 table: "FileNotes",
@@ -62,10 +69,22 @@ namespace Infrastructure.Migrations
                 type: "text",
                 nullable: true);
 
+            migrationBuilder.AddColumn<string>(
+                name: "ThumbnailDataUrl",
+                table: "FileNotes",
+                type: "text",
+                nullable: true);
+
             migrationBuilder.AddColumn<DateTime>(
                 name: "UpdatedAt",
                 table: "FileNotes",
                 type: "timestamp with time zone",
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "ViewpointStateJson",
+                table: "FileNotes",
+                type: "text",
                 nullable: true);
 
             migrationBuilder.CreateTable(
@@ -77,8 +96,7 @@ namespace Infrastructure.Migrations
                     FileVersionId = table.Column<Guid>(type: "uuid", nullable: false),
                     Title = table.Column<string>(type: "text", nullable: true),
                     Status = table.Column<int>(type: "integer", nullable: false),
-                    ScopeType = table.Column<int>(type: "integer", nullable: false),
-                    ScopeId = table.Column<Guid>(type: "uuid", nullable: true),
+                    IssueId = table.Column<Guid>(type: "uuid", nullable: true),
                     SnapshotStoragePath = table.Column<string>(type: "text", nullable: true),
                     CreatedByAccountId = table.Column<Guid>(type: "uuid", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
@@ -117,9 +135,9 @@ namespace Infrastructure.Migrations
                 column: "FileVersionId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_MarkupSets_ScopeType_ScopeId",
+                name: "IX_MarkupSets_IssueId",
                 table: "MarkupSets",
-                columns: new[] { "ScopeType", "ScopeId" });
+                column: "IssueId");
 
             migrationBuilder.AddForeignKey(
                 name: "FK_FileNotes_FileVersions_FileVersionId",
@@ -161,6 +179,10 @@ namespace Infrastructure.Migrations
                 table: "FileNotes");
 
             migrationBuilder.DropColumn(
+                name: "MarkupSvg",
+                table: "FileNotes");
+
+            migrationBuilder.DropColumn(
                 name: "MarkupType",
                 table: "FileNotes");
 
@@ -173,7 +195,15 @@ namespace Infrastructure.Migrations
                 table: "FileNotes");
 
             migrationBuilder.DropColumn(
+                name: "ThumbnailDataUrl",
+                table: "FileNotes");
+
+            migrationBuilder.DropColumn(
                 name: "UpdatedAt",
+                table: "FileNotes");
+
+            migrationBuilder.DropColumn(
+                name: "ViewpointStateJson",
                 table: "FileNotes");
 
             migrationBuilder.AlterColumn<string>(

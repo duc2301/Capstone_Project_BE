@@ -69,30 +69,59 @@ namespace Application.Services
             return parents;
         }
 
-        private static List<string> SplitChildren(string parent, int maxChildChars, int overlap)
+        private static List<string> SplitChildren(string parent, int maxChildChars, int overlapChars)
         {
+            var sentences = SplitSentences(parent);
             var children = new List<string>();
-            int start = 0;
+            var current = new List<string>();
+            int currentLen = 0;
 
-            while (start < parent.Length)
+            foreach (var s in sentences)
             {
-                int end = Math.Min(start + maxChildChars, parent.Length);
-
-                // Nếu chưa hết text, lùi 'end' về dấu ngắt gần nhất để không cắt giữa từ/câu.
-                if (end < parent.Length)
+                // vượt ngưỡng -> chốt child, mở child mới với overlap là vài câu cuối
+                if (currentLen > 0 && currentLen + s.Length + 1 > maxChildChars)
                 {
-                    int cut = parent.LastIndexOfAny(Breakers, end - 1, end - start);
-                    if (cut > start + maxChildChars / 2)   // chỉ lùi nếu không quá ngắn
-                        end = cut + 1;
+                    children.Add(string.Join(" ", current));
+
+                    var carry = new List<string>();
+                    int carryLen = 0;
+                    for (int i = current.Count - 1; i >= 0 && carryLen < overlapChars; i--)
+                    {
+                        carry.Insert(0, current[i]);
+                        carryLen += current[i].Length + 1;
+                    }
+                    current = carry;
+                    currentLen = carryLen;
                 }
-
-                var child = parent[start..end].Trim();
-                if (child.Length > 0) children.Add(child);
-
-                if (end >= parent.Length) break;
-                start = Math.Max(end - overlap, start + 1);   // overlap + đảm bảo luôn tiến (chống treo)
+                current.Add(s);
+                currentLen += s.Length + 1;
             }
+            if (current.Count > 0) children.Add(string.Join(" ", current));
             return children;
+        }
+
+        private static List<string> SplitSentences(string text)
+        {
+            var result = new List<string>();
+            int start = 0;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                bool punctEnd = (c == '.' || c == '!' || c == '?' || c == '…')
+                                && (i + 1 >= text.Length || char.IsWhiteSpace(text[i + 1]));
+                if (punctEnd || c == '\n')
+                {
+                    var s = text[start..(i + 1)].Trim();
+                    if (s.Length > 0) result.Add(s);
+                    start = i + 1;
+                }
+            }
+            if (start < text.Length)
+            {
+                var s = text[start..].Trim();
+                if (s.Length > 0) result.Add(s);
+            }
+            return result;
         }
     }
 }
