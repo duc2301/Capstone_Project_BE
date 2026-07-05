@@ -67,6 +67,8 @@ namespace Infrastructure.Configurations
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IEmailService, GmailEmailService>();
             services.AddScoped<IEmbeddingService, EmbeddingService>();
+            services.AddScoped<IFileContentReader, FileContentReader>();
+            services.AddScoped<IAIService, AIService>();
             services.AddScoped<IDocumentIngestService, DocumentIngestService>();
             services.AddScoped<IChunkContextEnricher, ChunkContextEnricher>();
             services.AddScoped<IDocumentSearchRepository, DocumentSearchRepository>();

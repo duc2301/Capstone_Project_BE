@@ -5,54 +5,36 @@ using Domain.Entities;
 using Domain.Enum.Cde;
 using Domain.Enum.Rag;
 using Pgvector;
-using System.Text;
 
 namespace Application.Services
 {
     public class DocumentIngestService : IDocumentIngestService
     {
         private readonly IUnitOfWork _unitOfWork;
-        private readonly IFileStorageService _storage;
-        private readonly IFileTextExtractor _extractor;
+        private readonly IFileContentReader _reader;
         private readonly ITextChunker _chunker;
         private readonly IEmbeddingService _embedding;
         private readonly IChunkContextEnricher _enricher;
 
-        public DocumentIngestService(IUnitOfWork unitOfWork, IFileStorageService storage, IFileTextExtractor extractor, ITextChunker chunker, IEmbeddingService embedding, IChunkContextEnricher enricher)
+        public DocumentIngestService(IUnitOfWork unitOfWork, IFileContentReader reader, ITextChunker chunker, IEmbeddingService embedding, IChunkContextEnricher enricher)
         {
             _unitOfWork = unitOfWork;
-            _storage = storage;
-            _extractor = extractor;
+            _reader = reader;
             _chunker = chunker;
             _embedding = embedding;
             _enricher = enricher;
         }
 
-        // Postgres text không nhận NUL (0x00). Bỏ NUL + control char C0, giữ \t \n \r + ký tự thường (kể cả tiếng Việt).
-        private static string SanitizeText(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return text;
-            var sb = new StringBuilder(text.Length);
-            foreach (var ch in text)
-                if (ch == '\t' || ch == '\n' || ch == '\r' || !char.IsControl(ch))
-                    sb.Append(ch);
-            return sb.ToString();
-        }
-
         public async Task<Guid> IngestFileAsync(Guid fileItemId, CancellationToken ct = default)
         {
-            var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId);
-            if (fileItem == null)
-            {
-                throw new ApiExceptionResponse("File item not found", 404);
-            } else if (fileItem.CurrentVersionId is null)
-            {
-                throw new ApiExceptionResponse("File chưa có phiên bản nội dung", 400);
-            }
+            // Đọc file dùng chung: load FileItem + version + trích text + sanitize
+            var extracted = await _reader.LoadTextAsync(fileItemId, ct);
+            if (extracted is null)
+                throw new ApiExceptionResponse("Không tìm thấy file hoặc phiên bản nội dung", 404);
 
-            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId);
-            if (version == null)
-                throw new ApiExceptionResponse("File version not found", 404);
+            var fileItem = extracted.Item;
+            var version = extracted.Version;
+            var text = extracted.Text;
 
             var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
             if (folder == null)
@@ -62,7 +44,7 @@ namespace Application.Services
             //{
             //    throw new ApiExceptionResponse("Chỉ đọc file khi đã ở published", 400);
             //}
-            
+
             var contentHash = version.Checksum;
             var existing = await _unitOfWork.Repository<Document>()
                 .FindAsync(d => d.FileItemId == fileItemId);
@@ -70,10 +52,6 @@ namespace Application.Services
                 d => d.Status == DocumentIngestStatus.Embedded && d.ContentHash == contentHash);
             if (alreadyEmbedded is not null)
                 return alreadyEmbedded.Id;
-
-            await using var stream = await _storage.OpenReadAsync(version.StoragePath, ct);
-            var text = await _extractor.ExtractTextAsync(stream, version.Format, ct);
-            text = SanitizeText(text);
 
             if (string.IsNullOrWhiteSpace(text))
                 throw new ApiExceptionResponse("Không trích được nội dung văn bản", 400);
@@ -110,14 +88,12 @@ namespace Application.Services
                     Content = parents[p].Content
                 });
 
-            // PHA 1: enrich SONG SONG (bounded) — chat model nạp 1 lần, các generate chồng nhau
             var ctxs = new string?[parents.Count];
             await Parallel.ForEachAsync(
                 Enumerable.Range(0, parents.Count),
                 new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = ct },
                 async (p, token) => ctxs[p] = await _enricher.EnrichAsync(prefix, parents[p].Content, token));
 
-            // PHA 2: dựng child + gom embedInput
             int childIndex = 0;
             var toEmbed = new List<string>();
             var childEntities = new List<DocumentChildChunk>();
