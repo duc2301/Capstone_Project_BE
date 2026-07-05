@@ -24,5 +24,8 @@ namespace Application.Interfaces.IRepositories
         Task<bool> CanViewFolderAsync(Guid folderId, Guid accountId);
 
         Task<List<FileItem>> GetFilesByFolderIdAsync(Guid folderId);
+
+        // Subfolder TRỰC TIẾP (1 cấp, không phải template) của 1 folder.
+        Task<List<Folder>> GetChildFoldersAsync(Guid parentFolderId);
     }
 }

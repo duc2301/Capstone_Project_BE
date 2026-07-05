@@ -34,5 +34,14 @@ namespace Capstone_Project.Controllers
             var files = await _folderTreeService.GetFilesByFolderAsync(folderId, User.GetAccountId(), User.IsAdmin());
             return Ok(ApiResponse.Success("Folder files retrieved", files));
         }
+
+        // Nội dung 1 cấp khi user click vào 1 folder trên cây:
+        // subfolder trực tiếp (đã lọc theo quyền View) + file của chính folder đó.
+        [HttpGet("folders/{folderId:guid}/contents")]
+        public async Task<IActionResult> GetFolderContents(Guid folderId)
+        {
+            var contents = await _folderTreeService.GetFolderContentsAsync(folderId, User.GetAccountId(), User.IsAdmin());
+            return Ok(ApiResponse.Success("Folder contents retrieved", contents));
+        }
     }
 }

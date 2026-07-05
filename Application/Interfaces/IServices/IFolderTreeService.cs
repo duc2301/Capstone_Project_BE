@@ -12,5 +12,9 @@ namespace Application.Interfaces.IServices
 
         // Danh sách file trong 1 folder khi user click vào folder đó; ném 403 nếu không có quyền View.
         Task<List<FileItemResponseDTO>> GetFilesByFolderAsync(Guid folderId, Guid accountId, bool isSystemAdmin);
+
+        // Nội dung 1 cấp khi user click vào folder trên cây: subfolder trực tiếp
+        // (đã lọc theo quyền View) + file của chính folder đó; ném 403 nếu không có quyền View.
+        Task<FolderContentsDTO> GetFolderContentsAsync(Guid folderId, Guid accountId, bool isSystemAdmin);
     }
 }
