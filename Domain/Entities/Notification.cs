@@ -13,6 +13,7 @@ namespace Domain.Entities
         public DateTime SendAt { get; set; }
         public string? SenderName { get; set; }
         public bool IsRead { get; set; } = true;
+        public bool IsEmailSent { get; set; } = false;
         public Guid AccountId { get; set; }
 
         // Liên kết tới đối tượng nguồn (Submittal/Discussion/Issue/FileVersion...) -> FE bấm vô nhảy đúng chỗ
