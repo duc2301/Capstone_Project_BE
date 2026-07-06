@@ -41,18 +41,15 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<FolderPermission> FolderPermissions { get; set; }
         public virtual DbSet<FileItem> FileItems { get; set; }
         public virtual DbSet<FileVersion> FileVersions { get; set; }
+        public virtual DbSet<MarkupSet> MarkupSets { get; set; }
         public virtual DbSet<FileNote> FileNotes { get; set; }
         public virtual DbSet<FilePermission> FilePermissions { get; set; }
         public virtual DbSet<ApprovalRequest> ApprovalRequests { get; set; }
+        public virtual DbSet<ApprovalRequestSigner> ApprovalRequestSigners { get; set; }
         public virtual DbSet<ApprovalSignatureTransaction> ApprovalSignatureTransactions { get; set; }
         public virtual DbSet<ZoneReturnRequest> ZoneReturnRequests { get; set; }
         public virtual DbSet<FileSignaturePosition> FileSignaturePositions { get; set; }
 
-        // --- Module D: Phiếu yêu cầu ---
-        public virtual DbSet<Submittal> Submittals { get; set; }
-        public virtual DbSet<SubmittalStep> SubmittalSteps { get; set; }
-        public virtual DbSet<SubmittalAttachment> SubmittalAttachments { get; set; }
-        public virtual DbSet<SubmittalCitedFolder> SubmittalCitedFolders { get; set; }
 
         // --- Module E: Thảo luận ---
         public virtual DbSet<Discussion> Discussions { get; set; }
@@ -77,11 +74,6 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<Contract> Contracts { get; set; }
         public virtual DbSet<ContractAppendix> ContractAppendices { get; set; }
         public virtual DbSet<BillItem> BillItems { get; set; }
-
-        // --- Module K: Mô hình BIM ---
-        public virtual DbSet<ProjectModel> ProjectModels { get; set; }
-        public virtual DbSet<ModelFile> ModelFiles { get; set; }
-        public virtual DbSet<ModelObject> ModelObjects { get; set; }
 
         // --- Module L: Giải phóng mặt bằng / Công trường số ---
         public virtual DbSet<ProjectLocation> ProjectLocations { get; set; }
@@ -177,11 +169,7 @@ namespace Infrastructure.DbContexts
                 .IsUnique();
             });
 
-            modelBuilder.Entity<Submittal>()
-                .HasOne(s => s.ParentSubmittal)
-                .WithMany(s => s.ChildSubmittals)
-                .HasForeignKey(s => s.ParentSubmittalId)
-                .OnDelete(DeleteBehavior.Restrict);
+            
 
             modelBuilder.Entity<BillItem>()
                 .HasOne(b => b.ParentBillItem)
@@ -211,6 +199,24 @@ namespace Infrastructure.DbContexts
                 .HasOne(a => a.Approver)
                 .WithMany()
                 .HasForeignKey(a => a.ApproverId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ApprovalRequestSigner>()
+                .HasOne(s => s.ApprovalRequest)
+                .WithMany(a => a.Signers)
+                .HasForeignKey(s => s.ApprovalRequestId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<ApprovalRequestSigner>()
+                .HasOne(s => s.SignerAccount)
+                .WithMany()
+                .HasForeignKey(s => s.SignerAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ApprovalRequestSigner>()
+                .HasOne(s => s.SignerGroup)
+                .WithMany()
+                .HasForeignKey(s => s.SignerGroupId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<ApprovalSignatureTransaction>()
@@ -322,7 +328,9 @@ namespace Infrastructure.DbContexts
             modelBuilder.HasPostgresExtension("vector");
 
 
-            int EmbeddingDimension = _configuration?.GetValue<int>("Ollama:EmbeddingDimension") ?? 1024;
+            var embeddingDimension = _configuration?.GetValue<int>("Ollama:EmbeddingDimension") ?? 1024;
+            if (embeddingDimension <= 0)
+                embeddingDimension = 1024;
 
             modelBuilder.Entity<Document>(b =>
             {
@@ -345,7 +353,7 @@ namespace Infrastructure.DbContexts
             modelBuilder.Entity<DocumentChildChunk>(b =>
             {
                 b.Property(c => c.Embedding)
-                    .HasColumnType($"vector({EmbeddingDimension})");
+                    .HasColumnType($"vector({embeddingDimension})");
 
                 b.HasOne(c => c.ParentChunk)
                     .WithMany(p => p.ChildChunks)
@@ -384,6 +392,40 @@ namespace Infrastructure.DbContexts
                 .WithMany()
                 .HasForeignKey(p => p.FileItemId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<MarkupSet>()
+                .HasOne(m => m.FileItem)
+                .WithMany()
+                .HasForeignKey(m => m.FileItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<MarkupSet>()
+                .HasOne(m => m.FileVersion)
+                .WithMany()
+                .HasForeignKey(m => m.FileVersionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<MarkupSet>(b =>
+            {
+                b.HasIndex(m => m.FileItemId);
+                b.HasIndex(m => m.FileVersionId);
+                b.HasIndex(m => m.IssueId);
+            });
+
+            modelBuilder.Entity<FileNote>()
+                .HasOne(n => n.MarkupSet)
+                .WithMany(m => m.Notes)
+                .HasForeignKey(n => n.MarkupSetId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<FileNote>()
+                .HasOne(n => n.FileVersion)
+                .WithMany()
+                .HasForeignKey(n => n.FileVersionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<FileNote>()
+                .HasIndex(n => n.MarkupSetId);
         }
     }
 }

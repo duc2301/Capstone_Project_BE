@@ -33,6 +33,10 @@ namespace Infrastructure.UnitOfWorks
         public IFolderPermissionRepository FolderPermissionRepository =>
             _folderPermissionRepository ??= new FolderPermissionRepository(_context);
 
+        private IDocumentSearchRepository? _documentSearchRepository;
+        public IDocumentSearchRepository DocumentSearchRepository =>
+            _documentSearchRepository ??= new DocumentSearchRepository(_context);
+
         private readonly Dictionary<Type, object> _repositories = new();
         public IGenericRepository<T> Repository<T>() where T : class
         {

@@ -1,4 +1,5 @@
 using Domain.Enum.File;
+using Domain.Enum.Cde;
 
 namespace Domain.Entities
 {
@@ -16,6 +17,9 @@ namespace Domain.Entities
         public Guid FileItemId { get; set; }
         public Guid RequestedBy { get; set; }
         public Guid? ApproverId { get; set; }
+        public CdeArea FromZone { get; set; }
+        public CdeArea TargetZone { get; set; }
+        public bool RequiresSignature { get; set; }
         public ApprovalRequestStatus Status { get; set; }
         public string? RejectReason { get; set; }
         public DateTime CreatedAt { get; set; }
@@ -24,5 +28,6 @@ namespace Domain.Entities
         public FileItem FileItem { get; set; } = null!;
         public Account Requester { get; set; } = null!;
         public Account? Approver { get; set; }
+        public ICollection<ApprovalRequestSigner> Signers { get; set; } = new List<ApprovalRequestSigner>();
     }
 }

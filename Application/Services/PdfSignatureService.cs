@@ -26,20 +26,17 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IFileStorageService _storage;
         private readonly IFolderPermissionService _permission;
-        private readonly IApprovalService _approvalService;
         private readonly ILogger<PdfSignatureService> _logger;
 
         public PdfSignatureService(
             IUnitOfWork unitOfWork,
             IFileStorageService storage,
             IFolderPermissionService permission,
-            IApprovalService approvalService,
             ILogger<PdfSignatureService> logger)
         {
             _unitOfWork = unitOfWork;
             _storage = storage;
             _permission = permission;
-            _approvalService = approvalService;
             _logger = logger;
         }
 
@@ -55,8 +52,6 @@ namespace Application.Services
 
             if (fileItem.FileType != FileType.Pdf)
                 return ApiResponse.Fail("Only PDF files support visual signature.");
-
-            await _approvalService.RequireTeamLeaderAsync(fileItem.Id, actor);
 
             // Idempotent: neu file da ky xong (vd goi lai sau khi zone da chuyen sang Shared), tra luon ket qua cu.
             if (fileItem.IsSigned && fileItem.SignedVersionId.HasValue)
@@ -74,14 +69,17 @@ namespace Application.Services
             if (folder == null)
                 return ApiResponse.Fail("File folder not found.");
 
-            if (folder.Area != CdeArea.Wip)
-                return ApiResponse.Fail("File must be in WIP to generate signed PDF.");
-
-            if (!fileItem.RequiresSignature)
+            if (!approval.RequiresSignature)
                 return ApiResponse.Fail("This file does not require digital signature.");
 
             if (approval.Status != ApprovalRequestStatus.Pending)
                 return ApiResponse.Fail("Approval request must be pending.");
+
+            var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
+                    s => s.ApprovalRequestId == approval.Id))
+                .ToList();
+            if (signers.Count == 0 || signers.Any(s => s.Status != ApprovalRequestSignerStatus.Signed))
+                return ApiResponse.Fail("All required digital signers must sign before generating signed PDF.");
 
             var position = (await _unitOfWork.Repository<FileSignaturePosition>().FindAsync(
                     p => p.FileItemId == fileItem.Id))
@@ -158,12 +156,8 @@ namespace Application.Services
                 return ApiResponse.Fail("SmartCA signed successfully but signed PDF generation failed.");
             }
 
-            // Ky xong la dieu kien duy nhat con thieu de duyet -> tu dong approve + chuyen vung WIP -> Shared.
-            // De ngoai try/catch o tren: loi o day (vd khong phai Team Leader) khong duoc bao thanh "PDF generation failed".
-            await _approvalService.ApproveAsync(approvalId, actor);
-
             var info = await BuildSignedFileInfoAsync(fileItem, signedVersion, transaction);
-            return ApiResponse.Success("Signed PDF generated, approved and moved to next zone successfully", info);
+            return ApiResponse.Success("Signed PDF generated successfully", info);
         }
 
         public async Task<ApiResponse> GetSignedFileInfoAsync(Guid fileItemId, Guid actor)

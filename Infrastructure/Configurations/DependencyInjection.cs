@@ -24,7 +24,7 @@ namespace Infrastructure.Configurations
             services.Configure<VnptSmartCaOptions>(configuration.GetSection("VnptSmartCA"));
 
             services.AddDbContext<CDESystemDbContext>(options =>
-                options.UseNpgsql(connectionString, x => x.UseVector())                
+                options.UseNpgsql(connectionString, x => x.UseVector())
             );
 
 
@@ -59,12 +59,10 @@ namespace Infrastructure.Configurations
             services.AddScoped<IFileUploadService, FileUploadService>();
             services.AddSingleton<IOfficeToPdfConverter, SyncfusionOfficeToPdfConverter>();
             services.AddScoped<IFileViewService, FileViewService>();
-            services.AddScoped<ISubmittalService, SubmittalService>();
+            services.AddScoped<IMarkupService, MarkupService>();
             services.AddScoped<IDiscussionService, DiscussionService>();
             services.AddScoped<IIssueService, IssueService>();
             services.AddScoped<IContractService, ContractService>();
-            services.AddScoped<IProjectModelService, ProjectModelService>();
-            services.AddScoped<IModelFileService, ModelFileService>();
             services.AddScoped<IFilePermissionService, FilePermissionService>();
             services.AddScoped<IFolderPermissionService, FolderPermissionService>();
             services.AddScoped<IFolderTreeService, FolderTreeService>();
@@ -74,8 +72,12 @@ namespace Infrastructure.Configurations
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IEmailService, GmailEmailService>();
             services.AddScoped<IEmbeddingService, EmbeddingService>();
+            services.AddScoped<IFileContentReader, FileContentReader>();
+            services.AddScoped<IAIService, AIService>();
             services.AddScoped<IDocumentIngestService, DocumentIngestService>();
             services.AddScoped<IChunkContextEnricher, ChunkContextEnricher>();
+            services.AddScoped<IDocumentSearchRepository, DocumentSearchRepository>();
+            services.AddScoped<ISemanticSearchService, SemanticSearchService>();
 
             // Profile self-service (GET/PUT/change-password trên chính user hiện tại)
             services.AddScoped<IProfileService, ProfileService>();
