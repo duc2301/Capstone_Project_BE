@@ -297,16 +297,22 @@ namespace Application.Services
             if (!request.RequiresSignature)
                 return Array.Empty<ApprovalRequestSigner>();
 
-            var accountIds = (dto?.SignerAccountIds ?? new List<Guid>())
-                .Where(id => id != Guid.Empty)
-                .Distinct()
-                .ToList();
-            var groupIds = (dto?.SignerGroupIds ?? new List<Guid>())
-                .Where(id => id != Guid.Empty)
-                .Distinct()
-                .ToList();
+            var mustAssignExplicitSigners = request.FromZone == CdeArea.Shared
+                                            && request.TargetZone == CdeArea.Published;
+            var accountIds = mustAssignExplicitSigners
+                ? (dto?.SignerAccountIds ?? new List<Guid>())
+                    .Where(id => id != Guid.Empty)
+                    .Distinct()
+                    .ToList()
+                : new List<Guid>();
+            var groupIds = mustAssignExplicitSigners
+                ? (dto?.SignerGroupIds ?? new List<Guid>())
+                    .Where(id => id != Guid.Empty)
+                    .Distinct()
+                    .ToList()
+                : defaultTeamGroupIds.ToList();
 
-            if (accountIds.Count == 0 && groupIds.Count == 0)
+            if (!mustAssignExplicitSigners && accountIds.Count == 0 && groupIds.Count == 0)
                 groupIds = defaultTeamGroupIds.ToList();
 
             if (accountIds.Count == 0 && groupIds.Count == 0)
@@ -402,13 +408,28 @@ namespace Application.Services
             if (!request.RequiresSignature)
                 return;
 
-            var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
-                    s => s.ApprovalRequestId == request.Id))
-                .ToList();
+            if (IsExplicitSignerApproval(request))
+            {
+                var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
+                        s => s.ApprovalRequestId == request.Id))
+                    .ToList();
 
-            if (signers.Count == 0 || signers.Any(s => s.Status != ApprovalRequestSignerStatus.Signed))
-                throw new ApiExceptionResponse("All required digital signers must sign before approval.", 409);
+                if (signers.Count == 0 || signers.Any(s => s.Status != ApprovalRequestSignerStatus.Signed))
+                    throw new ApiExceptionResponse("All required digital signers must sign before approval.", 409);
+
+                return;
+            }
+
+            var hasSignedTransaction = (await _unitOfWork.Repository<ApprovalSignatureTransaction>().FindAsync(
+                    t => t.ApprovalRequestId == request.Id
+                         && t.Status == SignatureTransactionStatus.Signed))
+                .Any();
+            if (!hasSignedTransaction)
+                throw new ApiExceptionResponse("Digital signature must be completed before approval.", 409);
         }
+
+        private static bool IsExplicitSignerApproval(ApprovalRequest request)
+            => request.FromZone == CdeArea.Shared && request.TargetZone == CdeArea.Published;
 
         /// <summary>
         /// Sau khi Team Leader approve thành công, file được chuyển sang vùng kế tiếp:

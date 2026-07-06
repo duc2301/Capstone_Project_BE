@@ -11,7 +11,7 @@ using iText.Kernel.Pdf;
 namespace Application.Services
 {
     /// <summary>
-    /// Luu vi tri dat chu ky truc quan tren file PDF.
+    /// Luu vi tri dat chu ky truc quan tren PDF/Word.
     /// </summary>
     public class FileSignaturePositionService : IFileSignaturePositionService
     {
@@ -33,18 +33,22 @@ namespace Application.Services
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
-            if (fileItem.FileType != FileType.Pdf)
-                throw new ApiExceptionResponse("Only PDF files support visual signature.", 400);
+            var version = await GetCurrentVersionAsync(fileItem);
+            var isPdf = fileItem.FileType == FileType.Pdf;
+            var isWord = IsWordFormat(version.Format);
+            if (!isPdf && !isWord)
+                throw new ApiExceptionResponse("Only PDF and Word files support visual signature.", 400);
 
-            var version = await GetCurrentPdfVersionAsync(fileItem);
-            var (pageCount, _, pageWidth, pageHeight) = await ReadPageInfoAsync(version.StoragePath, dto.PageNumber);
+            var (pageCount, _, pageWidth, pageHeight) = isPdf
+                ? await ReadPdfPageInfoAsync(version.StoragePath, dto.PageNumber)
+                : ReadWordPageInfo(dto.PageNumber);
 
             if (dto.PageNumber < 1 || dto.PageNumber > pageCount)
                 throw new ApiExceptionResponse($"Page number must be between 1 and {pageCount}.", 400);
 
             if (dto.X < 0 || dto.Y < 0 || dto.Width <= 0 || dto.Height <= 0
                 || dto.X + dto.Width > pageWidth || dto.Y + dto.Height > pageHeight)
-                throw new ApiExceptionResponse("Signature position must be inside the PDF page boundary.", 400);
+                throw new ApiExceptionResponse("Signature position must be inside the page boundary.", 400);
 
             var now = DateTime.UtcNow;
             var existing = (await _unitOfWork.Repository<FileSignaturePosition>().FindAsync(
@@ -91,11 +95,15 @@ namespace Application.Services
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
-            if (fileItem.FileType != FileType.Pdf)
-                throw new ApiExceptionResponse("Only PDF files support visual signature.", 400);
+            var version = await GetCurrentVersionAsync(fileItem);
+            var isPdf = fileItem.FileType == FileType.Pdf;
+            var isWord = IsWordFormat(version.Format);
+            if (!isPdf && !isWord)
+                throw new ApiExceptionResponse("Only PDF and Word files support visual signature.", 400);
 
-            var version = await GetCurrentPdfVersionAsync(fileItem);
-            var (pageCount, resolvedPageNumber, pageWidth, pageHeight) = await ReadPageInfoAsync(version.StoragePath, pageNumber);
+            var (pageCount, resolvedPageNumber, pageWidth, pageHeight) = isPdf
+                ? await ReadPdfPageInfoAsync(version.StoragePath, pageNumber)
+                : ReadWordPageInfo(pageNumber);
 
             return new PdfPageInfoResponseDTO
             {
@@ -107,7 +115,7 @@ namespace Application.Services
             };
         }
 
-        private async Task<FileVersion> GetCurrentPdfVersionAsync(FileItem fileItem)
+        private async Task<FileVersion> GetCurrentVersionAsync(FileItem fileItem)
         {
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
@@ -116,9 +124,13 @@ namespace Application.Services
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
         }
 
-        private async Task<(int PageCount, int PageNumber, float PageWidth, float PageHeight)> ReadPageInfoAsync(string storagePath, int pageNumber)
+        private async Task<(int PageCount, int PageNumber, float PageWidth, float PageHeight)> ReadPdfPageInfoAsync(string storagePath, int pageNumber)
         {
-            using var stream = await _storage.OpenReadAsync(storagePath);
+            await using var source = await _storage.OpenReadAsync(storagePath);
+            using var stream = new MemoryStream();
+            await source.CopyToAsync(stream);
+            stream.Position = 0;
+
             using var reader = new PdfReader(stream);
             using var document = new PdfDocument(reader);
 
@@ -126,6 +138,18 @@ namespace Application.Services
             var targetPage = pageNumber >= 1 && pageNumber <= pageCount ? pageNumber : 1;
             var size = document.GetPage(targetPage).GetPageSize();
             return (pageCount, targetPage, size.GetWidth(), size.GetHeight());
+        }
+
+        private static (int PageCount, int PageNumber, float PageWidth, float PageHeight) ReadWordPageInfo(int pageNumber)
+        {
+            var targetPage = Math.Max(1, pageNumber);
+            return (targetPage, targetPage, 595f, 842f);
+        }
+
+        private static bool IsWordFormat(string? format)
+        {
+            var normalized = (format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
+            return normalized is "doc" or "docx";
         }
 
         private static FileSignaturePositionResponseDTO Map(FileSignaturePosition position) => new()

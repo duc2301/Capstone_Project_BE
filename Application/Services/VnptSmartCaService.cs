@@ -32,6 +32,7 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IPdfSignatureService _pdfSignatureService;
+        private readonly IApprovalService _approvalService;
         private readonly VnptSmartCaOptions _options;
         private readonly ILogger<VnptSmartCaService> _logger;
 
@@ -44,12 +45,14 @@ namespace Application.Services
             IUnitOfWork unitOfWork,
             IHttpClientFactory httpClientFactory,
             IPdfSignatureService pdfSignatureService,
+            IApprovalService approvalService,
             IOptions<VnptSmartCaOptions> options,
             ILogger<VnptSmartCaService> logger)
         {
             _unitOfWork = unitOfWork;
             _httpClientFactory = httpClientFactory;
             _pdfSignatureService = pdfSignatureService;
+            _approvalService = approvalService;
             _options = options.Value;
             _logger = logger;
         }
@@ -204,26 +207,28 @@ namespace Application.Services
             transaction.UpdatedAt = now;
 
             var signatureValue = ExtractSignatureValue(external.RawResponse);
+            var newStatus = signatureValue != null
+                ? SignatureTransactionStatus.Signed
+                : ExtractStatus(external.RawResponse);
             var justSigned = false;
-            if (signatureValue != null && transaction.Status != SignatureTransactionStatus.Signed)
+
+            if (newStatus is SignatureTransactionStatus.Signed
+                or SignatureTransactionStatus.Failed
+                or SignatureTransactionStatus.Expired)
             {
-                transaction.Status = SignatureTransactionStatus.Signed;
-                transaction.SignedAt = now;
-                transaction.SignedBy = currentUserId;
-                validation.Context!.Signer.Status = ApprovalRequestSignerStatus.Signed;
+                transaction.Status = newStatus.Value;
+            }
+
+            if (transaction.Status == SignatureTransactionStatus.Signed
+                && validation.Context!.Signer.Status != ApprovalRequestSignerStatus.Signed)
+            {
+                transaction.SignedAt ??= now;
+                transaction.SignedBy ??= currentUserId;
+                validation.Context.Signer.Status = ApprovalRequestSignerStatus.Signed;
                 validation.Context.Signer.SignedAt = now;
                 validation.Context.Signer.CertificateSerial = transaction.CertificateSerial;
+                await CompleteImplicitSignersAsync(validation.Context.ApprovalRequest, transaction.CertificateSerial, now);
                 justSigned = true;
-            }
-            else
-            {
-                var newStatus = ExtractStatus(external.RawResponse);
-                if (newStatus is SignatureTransactionStatus.Signed
-                    or SignatureTransactionStatus.Failed
-                    or SignatureTransactionStatus.Expired)
-                {
-                    transaction.Status = newStatus.Value;
-                }
             }
 
             await _unitOfWork.CommitAsync();
@@ -233,14 +238,20 @@ namespace Application.Services
             var message = "Transaction status retrieved";
             if (justSigned)
             {
-                if (await AreAllSignersSignedAsync(approvalId))
+                if (await AreRequiredSignersCompleteAsync(validation.Context!.ApprovalRequest))
                 {
-                    message = await CompleteSignedFileAsync(validation.Context!, currentUserId);
+                    message = await CompleteSignedFileAndApproveAsync(validation.Context!, currentUserId);
                 }
                 else
                 {
                     message = "Signer signed successfully. Waiting for remaining required signers.";
                 }
+            }
+            else if (transaction.Status == SignatureTransactionStatus.Signed
+                     && validation.Context!.ApprovalRequest.Status == ApprovalRequestStatus.Pending
+                     && await AreRequiredSignersCompleteAsync(validation.Context.ApprovalRequest))
+            {
+                message = await CompleteSignedFileAndApproveAsync(validation.Context, currentUserId);
             }
 
             return ApiResponse.Success(message, new TransactionStatusDto
@@ -349,29 +360,62 @@ namespace Application.Services
             return signers.FirstOrDefault(s => s.SignerGroupId.HasValue && activeGroupIds.Contains(s.SignerGroupId.Value));
         }
 
-        private async Task<bool> AreAllSignersSignedAsync(Guid approvalId)
+        private async Task<bool> AreRequiredSignersCompleteAsync(ApprovalRequest approval)
         {
             var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
-                    s => s.ApprovalRequestId == approvalId))
+                    s => s.ApprovalRequestId == approval.Id))
                 .ToList();
 
-            return signers.Count > 0 && signers.All(s => s.Status == ApprovalRequestSignerStatus.Signed);
+            return IsExplicitSignerApproval(approval)
+                ? signers.Count > 0 && signers.All(s => s.Status == ApprovalRequestSignerStatus.Signed)
+                : signers.Any(s => s.Status == ApprovalRequestSignerStatus.Signed);
         }
 
-        private async Task<string> CompleteSignedFileAsync(SigningContext context, Guid currentUserId)
+        private async Task CompleteImplicitSignersAsync(ApprovalRequest approval, string? certificateSerial, DateTime signedAt)
         {
-            if (context.FileItem.FileType == FileType.Pdf)
+            if (IsExplicitSignerApproval(approval))
+                return;
+
+            var signers = await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
+                s => s.ApprovalRequestId == approval.Id);
+            foreach (var signer in signers.Where(s => s.Status != ApprovalRequestSignerStatus.Signed))
             {
-                var pdfResult = await _pdfSignatureService.GenerateSignedPdfAsync(context.ApprovalRequest.Id, currentUserId);
-                return pdfResult.IsSuccess
-                    ? "Signed PDF generated successfully."
-                    : "SmartCA signed successfully but signed PDF generation failed.";
+                signer.Status = ApprovalRequestSignerStatus.Signed;
+                signer.SignedAt = signedAt;
+                signer.CertificateSerial = certificateSerial;
+            }
+        }
+
+        private static bool IsExplicitSignerApproval(ApprovalRequest approval)
+            => approval.FromZone == CdeArea.Shared && approval.TargetZone == CdeArea.Published;
+
+        private async Task<string> CompleteSignedFileAndApproveAsync(SigningContext context, Guid currentUserId)
+        {
+            if (context.FileItem.FileType == FileType.Pdf || await IsWordFileAsync(context.FileItem))
+            {
+                var signedFileResult = await _pdfSignatureService.GenerateSignedPdfAsync(context.ApprovalRequest.Id, currentUserId);
+                if (!signedFileResult.IsSuccess)
+                    return signedFileResult.Message;
+            }
+            else if (!context.FileItem.IsSigned)
+            {
+                context.FileItem.IsSigned = true;
+                context.FileItem.UpdatedAt = DateTime.UtcNow;
+                await _unitOfWork.CommitAsync();
             }
 
-            context.FileItem.IsSigned = true;
-            context.FileItem.UpdatedAt = DateTime.UtcNow;
-            await _unitOfWork.CommitAsync();
-            return "All required signers signed successfully.";
+            await _approvalService.ApproveAsync(context.ApprovalRequest.Id, currentUserId);
+            return "Signed file generated successfully and approval completed.";
+        }
+
+        private async Task<bool> IsWordFileAsync(FileItem fileItem)
+        {
+            if (fileItem.FileType != FileType.Office || !fileItem.CurrentVersionId.HasValue)
+                return false;
+
+            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value);
+            var format = (version?.Format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
+            return format is "doc" or "docx";
         }
 
         /// <summary>
