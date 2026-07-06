@@ -393,24 +393,6 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(p => p.FileItemId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            modelBuilder.Entity<ApprovalRequestSigner>()
-                .HasOne(s => s.ApprovalRequest)
-                .WithMany(r => r.Signers)
-                .HasForeignKey(s => s.ApprovalRequestId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            modelBuilder.Entity<ApprovalRequestSigner>()
-                .HasOne(s => s.SignerAccount)
-                .WithMany()
-                .HasForeignKey(s => s.SignerAccountId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            modelBuilder.Entity<ApprovalRequestSigner>()
-                .HasOne(s => s.SignerGroup)
-                .WithMany()
-                .HasForeignKey(s => s.SignerGroupId)
-                .OnDelete(DeleteBehavior.Restrict);
-
             modelBuilder.Entity<MarkupSet>()
                 .HasOne(m => m.FileItem)
                 .WithMany()
