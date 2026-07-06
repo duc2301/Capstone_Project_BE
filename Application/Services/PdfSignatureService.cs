@@ -14,6 +14,8 @@ using iText.Layout;
 using iText.Layout.Element;
 using iText.Layout.Properties;
 using Microsoft.Extensions.Logging;
+using Syncfusion.DocIO;
+using Syncfusion.DocIO.DLS;
 
 namespace Application.Services
 {
@@ -26,20 +28,17 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IFileStorageService _storage;
         private readonly IFolderPermissionService _permission;
-        private readonly IApprovalService _approvalService;
         private readonly ILogger<PdfSignatureService> _logger;
 
         public PdfSignatureService(
             IUnitOfWork unitOfWork,
             IFileStorageService storage,
             IFolderPermissionService permission,
-            IApprovalService approvalService,
             ILogger<PdfSignatureService> logger)
         {
             _unitOfWork = unitOfWork;
             _storage = storage;
             _permission = permission;
-            _approvalService = approvalService;
             _logger = logger;
         }
 
@@ -52,11 +51,6 @@ namespace Application.Services
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(approval.FileItemId);
             if (fileItem == null)
                 return ApiResponse.Fail("File not found.");
-
-            if (fileItem.FileType != FileType.Pdf)
-                return ApiResponse.Fail("Only PDF files support visual signature.");
-
-            await _approvalService.RequireTeamLeaderAsync(fileItem.Id, actor);
 
             // Idempotent: neu file da ky xong (vd goi lai sau khi zone da chuyen sang Shared), tra luon ket qua cu.
             if (fileItem.IsSigned && fileItem.SignedVersionId.HasValue)
@@ -74,24 +68,22 @@ namespace Application.Services
             if (folder == null)
                 return ApiResponse.Fail("File folder not found.");
 
-            if (folder.Area != CdeArea.Wip)
-                return ApiResponse.Fail("File must be in WIP to generate signed PDF.");
-
-            if (!fileItem.RequiresSignature)
+            if (!approval.RequiresSignature)
                 return ApiResponse.Fail("This file does not require digital signature.");
 
             if (approval.Status != ApprovalRequestStatus.Pending)
                 return ApiResponse.Fail("Approval request must be pending.");
 
-            var position = (await _unitOfWork.Repository<FileSignaturePosition>().FindAsync(
-                    p => p.FileItemId == fileItem.Id))
-                .FirstOrDefault();
-            if (position == null)
-                return ApiResponse.Fail("Signature position must be set before signing.");
-
             var transaction = await GetLatestSignedTransactionAsync(fileItem.Id, approvalId);
             if (transaction == null)
                 return ApiResponse.Fail("SmartCA signing transaction must be completed (Signed) before generating signed PDF.");
+
+            var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
+                    s => s.ApprovalRequestId == approval.Id))
+                .ToList();
+            if (IsExplicitSignerApproval(approval)
+                && (signers.Count == 0 || signers.Any(s => s.Status != ApprovalRequestSignerStatus.Signed)))
+                return ApiResponse.Fail("All required digital signers must sign before generating signed PDF.");
 
             if (!fileItem.CurrentVersionId.HasValue)
                 return ApiResponse.Fail("File has no content version.");
@@ -100,6 +92,17 @@ namespace Application.Services
             if (currentVersion == null)
                 return ApiResponse.Fail("Current version not found.");
 
+            var isPdf = fileItem.FileType == FileType.Pdf;
+            var isWord = IsWordFormat(currentVersion.Format);
+            if (!isPdf && !isWord)
+                return ApiResponse.Fail("Only PDF and Word files support visual signature.");
+
+            var position = (await _unitOfWork.Repository<FileSignaturePosition>().FindAsync(
+                    p => p.FileItemId == fileItem.Id))
+                .FirstOrDefault();
+            if (position == null)
+                return ApiResponse.Fail("Signature position must be set before signing.");
+
             FileVersion signedVersion;
             try
             {
@@ -107,16 +110,29 @@ namespace Application.Services
                 var signedAt = transaction.SignedAt ?? DateTime.UtcNow;
                 var signerAccount = await _unitOfWork.Repository<Account>().GetByIdAsync(signedBy);
 
-                var stampedBytes = await StampSignatureAsync(
-                    currentVersion.StoragePath,
-                    position,
-                    signerAccount?.UserName ?? signedBy.ToString(),
-                    signedAt,
-                    transaction.CertificateSerial,
-                    transaction.TransactionId);
+                var signedFormat = isPdf ? "pdf" : NormalizeWordFormat(currentVersion.Format);
+                var signedExtension = $".{signedFormat}";
+                var signedByName = signerAccount?.UserName ?? signedBy.ToString();
+
+                var stampedBytes = isPdf
+                    ? await StampPdfSignatureAsync(
+                        currentVersion.StoragePath,
+                        position!,
+                        signedByName,
+                        signedAt,
+                        transaction.CertificateSerial,
+                        transaction.TransactionId)
+                    : await StampWordSignatureAsync(
+                        currentVersion.StoragePath,
+                        signedFormat,
+                        position,
+                        signedByName,
+                        signedAt,
+                        transaction.CertificateSerial,
+                        transaction.TransactionId);
 
                 using var output = new MemoryStream(stampedBytes);
-                var stored = await _storage.SaveAsync(output, folder.ProjectId, fileItem.FolderId, ".pdf");
+                var stored = await _storage.SaveAsync(output, folder.ProjectId, fileItem.FolderId, signedExtension);
 
                 var now = DateTime.UtcNow;
                 var nextVersionNumber = (await _unitOfWork.Repository<FileVersion>().FindAsync(
@@ -132,7 +148,7 @@ namespace Application.Services
                     VersionNumber = nextVersionNumber,
                     StoragePath = stored.RelativePath,
                     FileSizeBytes = stored.SizeBytes,
-                    Format = "pdf",
+                    Format = signedFormat,
                     Checksum = stored.Checksum,
                     IsHidden = false,
                     UploadedByAccountId = actor,
@@ -155,15 +171,19 @@ namespace Application.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to generate signed PDF for approval {ApprovalId}", approvalId);
-                return ApiResponse.Fail("SmartCA signed successfully but signed PDF generation failed.");
+                var reason = ex.InnerException?.Message ?? ex.Message;
+                return ApiResponse.Fail(
+                    $"SmartCA signed successfully but signed file generation failed: {reason}",
+                    new
+                    {
+                        errorType = ex.GetType().Name,
+                        message = ex.Message,
+                        innerMessage = ex.InnerException?.Message
+                    });
             }
 
-            // Ky xong la dieu kien duy nhat con thieu de duyet -> tu dong approve + chuyen vung WIP -> Shared.
-            // De ngoai try/catch o tren: loi o day (vd khong phai Team Leader) khong duoc bao thanh "PDF generation failed".
-            await _approvalService.ApproveAsync(approvalId, actor);
-
             var info = await BuildSignedFileInfoAsync(fileItem, signedVersion, transaction);
-            return ApiResponse.Success("Signed PDF generated, approved and moved to next zone successfully", info);
+            return ApiResponse.Success("Signed file generated successfully", info);
         }
 
         public async Task<ApiResponse> GetSignedFileInfoAsync(Guid fileItemId, Guid actor)
@@ -175,7 +195,7 @@ namespace Application.Services
             await _permission.RequireAsync(actor, fileItem.FolderId, FolderAction.Download);
 
             if (!fileItem.SignedVersionId.HasValue)
-                return ApiResponse.Fail("Signed PDF not available.");
+                return ApiResponse.Fail("Signed file not available.");
 
             var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.SignedVersionId.Value);
             if (version == null)
@@ -210,7 +230,7 @@ namespace Application.Services
             {
                 Id = signedVersion.Id,
                 FileItemId = fileItem.Id,
-                FileName = $"{fileItem.Name}_signed.pdf",
+                FileName = $"{fileItem.Name}_signed.{NormalizeSignedFormat(signedVersion.Format)}",
                 SignedVersionId = signedVersion.Id,
                 VersionNumber = signedVersion.VersionNumber,
                 StoragePath = signedVersion.StoragePath,
@@ -222,7 +242,7 @@ namespace Application.Services
             };
         }
 
-        private async Task<byte[]> StampSignatureAsync(
+        private async Task<byte[]> StampPdfSignatureAsync(
             string storagePath,
             FileSignaturePosition position,
             string signedByName,
@@ -230,7 +250,7 @@ namespace Application.Services
             string? certificateSerial,
             string? transactionId)
         {
-            using var inputStream = await _storage.OpenReadAsync(storagePath);
+            using var inputStream = await OpenSeekableReadStreamAsync(storagePath);
             using var outputStream = new MemoryStream();
             var reader = new PdfReader(inputStream);
             var writer = new PdfWriter(outputStream);
@@ -252,6 +272,108 @@ namespace Application.Services
 
             return outputStream.ToArray();
         }
+
+        private async Task<byte[]> StampWordSignatureAsync(
+            string storagePath,
+            string format,
+            FileSignaturePosition position,
+            string signedByName,
+            DateTime signedAt,
+            string? certificateSerial,
+            string? transactionId)
+        {
+            using var inputStream = await OpenSeekableReadStreamAsync(storagePath);
+            using var document = new WordDocument(inputStream, GetWordFormatType(format));
+
+            var section = document.Sections.Count > 0
+                ? document.Sections[0]
+                : document.AddSection();
+            var signatureParagraph = section.Paragraphs.Count > 0
+                ? section.Paragraphs[0]
+                : section.AddParagraph();
+            var shape = signatureParagraph.AppendShape(
+                AutoShapeType.RoundedRectangle,
+                Math.Max(80, position.Width),
+                Math.Max(40, position.Height));
+
+            shape.HorizontalOrigin = HorizontalOrigin.Page;
+            shape.VerticalOrigin = VerticalOrigin.Page;
+            shape.HorizontalPosition = position.X;
+            shape.VerticalPosition = position.Y;
+            shape.WrapFormat.TextWrappingStyle = TextWrappingStyle.InFrontOfText;
+
+            AddWordShapeText(shape, "DA KY SO", bold: true, fontSize: 9);
+            AddWordShapeText(shape, signedByName, bold: true, fontSize: 8);
+            AddWordShapeText(shape, signedAt.ToString("dd/MM/yyyy HH:mm:ss"), fontSize: 7);
+
+            if (!string.IsNullOrWhiteSpace(certificateSerial))
+                AddWordShapeText(shape, $"Serial: {certificateSerial}", fontSize: 6);
+
+            if (!string.IsNullOrWhiteSpace(transactionId))
+                AddWordShapeText(shape, $"Txn: {transactionId}", fontSize: 6);
+
+            AddWordSignatureParagraph(section, "ĐÃ KÝ SỐ", bold: true, fontSize: 14);
+            AddWordSignatureParagraph(section, $"Người ký: {signedByName}", bold: true);
+            AddWordSignatureParagraph(section, $"Thời gian ký: {signedAt:dd/MM/yyyy HH:mm:ss}");
+
+            if (!string.IsNullOrWhiteSpace(certificateSerial))
+                AddWordSignatureParagraph(section, $"Serial chứng thư: {certificateSerial}");
+
+            if (!string.IsNullOrWhiteSpace(transactionId))
+                AddWordSignatureParagraph(section, $"Mã giao dịch: {transactionId}");
+
+            AddWordSignatureParagraph(section, "Tài liệu đã được ký số qua VNPT SmartCA.");
+
+            using var outputStream = new MemoryStream();
+            document.Save(outputStream, GetWordFormatType(format));
+            document.Close();
+            return outputStream.ToArray();
+        }
+
+        private static void AddWordSignatureParagraph(IWSection section, string text, bool bold = false, float fontSize = 10)
+        {
+        }
+
+        private static void AddWordShapeText(Shape shape, string text, bool bold = false, float fontSize = 8)
+        {
+            var paragraph = shape.TextBody.AddParagraph() as WParagraph
+                ?? throw new InvalidOperationException("Cannot add signature text to Word shape.");
+            paragraph.ParagraphFormat.AfterSpacing = 0;
+
+            var range = paragraph.AppendText(text);
+            range.CharacterFormat.Bold = bold;
+            range.CharacterFormat.FontName = "Arial";
+            range.CharacterFormat.FontSize = fontSize;
+        }
+
+        private async Task<MemoryStream> OpenSeekableReadStreamAsync(string storagePath)
+        {
+            await using var source = await _storage.OpenReadAsync(storagePath);
+            var buffer = new MemoryStream();
+            await source.CopyToAsync(buffer);
+            buffer.Position = 0;
+            return buffer;
+        }
+
+        private static bool IsWordFormat(string? format)
+            => NormalizeSignedFormat(format) is "doc" or "docx";
+
+        private static bool IsExplicitSignerApproval(ApprovalRequest approval)
+            => approval.FromZone == CdeArea.Shared && approval.TargetZone == CdeArea.Published;
+
+        private static string NormalizeWordFormat(string? format)
+            => NormalizeSignedFormat(format) == "doc" ? "doc" : "docx";
+
+        private static string NormalizeSignedFormat(string? format)
+        {
+            var normalized = (format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
+            return string.IsNullOrWhiteSpace(normalized) ? "pdf" : normalized;
+        }
+
+        private static FormatType GetWordFormatType(string format)
+            => NormalizeSignedFormat(format) == "doc"
+                ? FormatType.Doc
+                : FormatType.Docx;
 
         private static readonly Lazy<PdfFont> _regularFont = new(() => LoadEmbeddedFont("NotoSans-Regular.ttf"));
         private static readonly Lazy<PdfFont> _boldFont = new(() => LoadEmbeddedFont("NotoSans-Bold.ttf"));
