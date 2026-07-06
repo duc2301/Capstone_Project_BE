@@ -1,4 +1,3 @@
-using Application.DTOs.ResponseDTOs.ProjectModel;
 using Domain.Enum.Project;
 
 namespace Application.DTOs.ResponseDTOs.Project
@@ -13,6 +12,5 @@ namespace Application.DTOs.ResponseDTOs.Project
         public ProjectPhase Phase { get; set; }
 
         public ProjectLocationResponseDTO? Location { get; set; }
-        public List<ProjectModelResponseDTO> Models { get; set; } = new();
     }
 }

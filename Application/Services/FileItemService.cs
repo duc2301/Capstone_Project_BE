@@ -114,7 +114,7 @@ namespace Application.Services
         {
             _ = await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
                 ?? throw new ApiExceptionResponse("Folder not found.", 404);
-            await _permission.RequireAsync(actorId, folderId, FolderAction.View);
+            //await _permission.RequireAsync(actorId, folderId, FolderAction.View);
 
             var files = (await _unitOfWork.Repository<FileItem>()
                     .FindAsync(f => f.FolderId == folderId))
@@ -175,7 +175,7 @@ namespace Application.Services
         public async Task<IEnumerable<FileVersionResponseDTO>> GetVersionsAsync(Guid fileItemId, Guid actorId)
         {
             var file = await GetFileItemAsync(fileItemId);
-            await _permission.RequireAsync(actorId, file.FolderId, FolderAction.View);
+            //await _permission.RequireAsync(actorId, file.FolderId, FolderAction.View);
 
             var accounts = (await _unitOfWork.Repository<Account>().GetAllAsync())
                 .ToDictionary(a => a.Id);

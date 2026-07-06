@@ -54,12 +54,13 @@ namespace Application.Services
         }
 
         private static string BuildPrompt(string fileMeta, string parent) =>
-            "Dưới đây là metadata và đoạn lớn của một tài liệu trong hệ thống CDE xây dựng.\n" +
-            $"[metadata]: {fileMeta}\n" +
-            $"[đoạn lớn]: {parent}\n\n" +
-
-            "Hãy viết 1–2 câu tiếng Việt ngắn gọn nêu đoạn nhỏ này nói về gì và thuộc phần nào dùng để định vị nội dung " +
-            "của tài liệu,dùng để cải thiện tìm kiếm. Chỉ trả về câu mô tả, không thêm gì khác.";
+            "Bạn đang lập chỉ mục tìm kiếm cho tài liệu trong hệ thống CDE xây dựng.\n" +
+            $"Metadata tài liệu: {fileMeta}\n" +
+            "Đoạn nội dung cần định vị:\n" +
+            $"{parent}\n\n" +
+            "Nhiệm vụ: viết 1–2 câu TIẾNG VIỆT nêu ngắn gọn đoạn này nói về gì và thuộc phần nào " +
+            "của tài liệu, nhằm cải thiện tìm kiếm.\n" +
+            "Chỉ trả về đúng câu tiếng Việt đó — KHÔNG thêm nhãn, KHÔNG dùng tiếng Anh, hỉ đưa ra kết quả, KHÔNG thêm bất kỳ lời mở đầu, lời giải thích hay câu kết luận nào";
 
         private static string? Clean(string? raw)
         {

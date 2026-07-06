@@ -11,17 +11,15 @@ namespace Application.Services
     public class DocumentIngestService : IDocumentIngestService
     {
         private readonly IUnitOfWork _unitOfWork;
-        private readonly IFileStorageService _storage;
-        private readonly IFileTextExtractor _extractor;
+        private readonly IFileContentReader _reader;
         private readonly ITextChunker _chunker;
         private readonly IEmbeddingService _embedding;
         private readonly IChunkContextEnricher _enricher;
 
-        public DocumentIngestService(IUnitOfWork unitOfWork, IFileStorageService storage, IFileTextExtractor extractor, ITextChunker chunker, IEmbeddingService embedding, IChunkContextEnricher enricher)
+        public DocumentIngestService(IUnitOfWork unitOfWork, IFileContentReader reader, ITextChunker chunker, IEmbeddingService embedding, IChunkContextEnricher enricher)
         {
             _unitOfWork = unitOfWork;
-            _storage = storage;
-            _extractor = extractor;
+            _reader = reader;
             _chunker = chunker;
             _embedding = embedding;
             _enricher = enricher;
@@ -29,18 +27,14 @@ namespace Application.Services
 
         public async Task<Guid> IngestFileAsync(Guid fileItemId, CancellationToken ct = default)
         {
-            var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId);
-            if (fileItem == null)
-            {
-                throw new ApiExceptionResponse("File item not found", 404);
-            } else if (fileItem.CurrentVersionId is null)
-            {
-                throw new ApiExceptionResponse("File chưa có phiên bản nội dung", 400);
-            }
+            // Đọc file dùng chung: load FileItem + version + trích text + sanitize
+            var extracted = await _reader.LoadTextAsync(fileItemId, ct);
+            if (extracted is null)
+                throw new ApiExceptionResponse("Không tìm thấy file hoặc phiên bản nội dung", 404);
 
-            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId);
-            if (version == null)
-                throw new ApiExceptionResponse("File version not found", 404);
+            var fileItem = extracted.Item;
+            var version = extracted.Version;
+            var text = extracted.Text;
 
             var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
             if (folder == null)
@@ -50,7 +44,7 @@ namespace Application.Services
             //{
             //    throw new ApiExceptionResponse("Chỉ đọc file khi đã ở published", 400);
             //}
-            
+
             var contentHash = version.Checksum;
             var existing = await _unitOfWork.Repository<Document>()
                 .FindAsync(d => d.FileItemId == fileItemId);
@@ -59,10 +53,7 @@ namespace Application.Services
             if (alreadyEmbedded is not null)
                 return alreadyEmbedded.Id;
 
-            await using var stream = await _storage.OpenReadAsync(version.StoragePath, ct);
-            var text = await _extractor.ExtractTextAsync(stream, version.Format, ct);
-
-            if (string.IsNullOrWhiteSpace(text)) 
+            if (string.IsNullOrWhiteSpace(text))
                 throw new ApiExceptionResponse("Không trích được nội dung văn bản", 400);
 
             var parents = _chunker.Chunk(text);
@@ -85,39 +76,56 @@ namespace Application.Services
             };
 
             var prefix = $"[Tài liệu: {fileItem.Name} | Dự án: {folder.ProjectId} | Khu vực: {folder.Area} | Bản: {document.Revision}]";
-            int childIndex = 0;
+
+            var parentEntities = new List<DocumentParentChunk>(parents.Count);
             for (int p = 0; p < parents.Count; p++)
-            {
-                var parentEntity = new DocumentParentChunk
+                parentEntities.Add(new DocumentParentChunk
                 {
                     Id = Guid.NewGuid(),
                     DocumentId = document.Id,
                     ProjectId = folder.ProjectId,
                     ChunkIndex = p,
                     Content = parents[p].Content
-                };
+                });
 
-                var ctx = await _enricher.EnrichAsync(prefix, parents[p].Content, ct);
+            var ctxs = new string?[parents.Count];
+            await Parallel.ForEachAsync(
+                Enumerable.Range(0, parents.Count),
+                new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = ct },
+                async (p, token) => ctxs[p] = await _enricher.EnrichAsync(prefix, parents[p].Content, token));
+
+            int childIndex = 0;
+            var toEmbed = new List<string>();
+            var childEntities = new List<DocumentChildChunk>();
+            for (int p = 0; p < parents.Count; p++)
+            {
+                var ctx = ctxs[p];
+                if (!string.IsNullOrWhiteSpace(ctx))
+                    parentEntities[p].Content = ctx + "\n\n" + parents[p].Content;
+
                 foreach (var child in parents[p].Children)
                 {
-                    var embedInput = string.IsNullOrWhiteSpace(ctx)
-                        ? $"{prefix}\n\n{child}"
-                        : $"{prefix}\n{ctx}\n\n{child}";
-                    var vector = await _embedding.EmbedAsync(embedInput, ct);
-                    parentEntity.ChildChunks.Add(new DocumentChildChunk
+                    var embedInput = string.IsNullOrWhiteSpace(ctx) ? $"{prefix}\n\n{child}" : $"{prefix}\n{ctx}\n\n{child}";
+                    var ce = new DocumentChildChunk
                     {
                         Id = Guid.NewGuid(),
                         DocumentId = document.Id,
                         ProjectId = folder.ProjectId,
-                        ParentChunkId = parentEntity.Id,
+                        ParentChunkId = parentEntities[p].Id,
                         ChunkIndex = childIndex++,
-                        Content = embedInput,
-                        Embedding = new Vector(vector),
+                        Content = child,
                         CreatedAt = DateTime.UtcNow
-                    });
-                }                                 
-                document.Chunks.Add(parentEntity); 
-            }                                      
+                    };
+                    parentEntities[p].ChildChunks.Add(ce);
+                    toEmbed.Add(embedInput);
+                    childEntities.Add(ce);
+                }
+                document.Chunks.Add(parentEntities[p]);
+            }
+
+            var vectors = await _embedding.EmbedBatchAsync(toEmbed, ct);
+            for (int i = 0; i < childEntities.Count; i++)
+                childEntities[i].Embedding = new Vector(vectors[i]);
 
             foreach (var old in existing)
                 _unitOfWork.Repository<Document>().Delete(old);

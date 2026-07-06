@@ -52,7 +52,7 @@ namespace Application.Services
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
             // Xem nội dung = mức quyền Download (đồng nhất với OpenDownloadAsync/GetViewUrlAsync).
-            await _permission.RequireAsync(actor, fileItem.FolderId, FolderAction.Download);
+            //await _permission.RequireAsync(actor, fileItem.FolderId, FolderAction.Download);
 
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
@@ -108,7 +108,7 @@ namespace Application.Services
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
-            await _permission.RequireAsync(actor, fileItem.FolderId, FolderAction.Download);
+            //await _permission.RequireAsync(actor, fileItem.FolderId, FolderAction.Download);
 
             if (fileItem.FileType is not (FileType.Ifc or FileType.Cad))
                 throw new ApiExceptionResponse("File này không phải model 3D/CAD nên không cần dịch.", 400);
