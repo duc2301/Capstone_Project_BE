@@ -32,6 +32,7 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IPdfSignatureService _pdfSignatureService;
+        private readonly IApprovalService _approvalService;
         private readonly VnptSmartCaOptions _options;
         private readonly ILogger<VnptSmartCaService> _logger;
 
@@ -44,12 +45,14 @@ namespace Application.Services
             IUnitOfWork unitOfWork,
             IHttpClientFactory httpClientFactory,
             IPdfSignatureService pdfSignatureService,
+            IApprovalService approvalService,
             IOptions<VnptSmartCaOptions> options,
             ILogger<VnptSmartCaService> logger)
         {
             _unitOfWork = unitOfWork;
             _httpClientFactory = httpClientFactory;
             _pdfSignatureService = pdfSignatureService;
+            _approvalService = approvalService;
             _options = options.Value;
             _logger = logger;
         }
@@ -106,6 +109,7 @@ namespace Application.Services
 
             var hasPendingTransaction = (await _unitOfWork.Repository<ApprovalSignatureTransaction>().FindAsync(
                     t => t.ApprovalRequestId == approvalId
+                         && t.SignedBy == currentUserId
                          && t.Status == SignatureTransactionStatus.WaitingConfirm))
                 .Any();
             if (hasPendingTransaction)
@@ -149,6 +153,7 @@ namespace Application.Services
                 TransactionId = transactionId,
                 CertificateSerial = request.CertificateSerial,
                 Sad = ExtractString(external.RawResponse, "sad", "SAD"),
+                SignedBy = currentUserId,
                 Status = SignatureTransactionStatus.WaitingConfirm,
                 CreatedAt = now,
                 UpdatedAt = now,
@@ -202,23 +207,28 @@ namespace Application.Services
             transaction.UpdatedAt = now;
 
             var signatureValue = ExtractSignatureValue(external.RawResponse);
+            var newStatus = signatureValue != null
+                ? SignatureTransactionStatus.Signed
+                : ExtractStatus(external.RawResponse);
             var justSigned = false;
-            if (signatureValue != null && transaction.Status != SignatureTransactionStatus.Signed)
+
+            if (newStatus is SignatureTransactionStatus.Signed
+                or SignatureTransactionStatus.Failed
+                or SignatureTransactionStatus.Expired)
             {
-                transaction.Status = SignatureTransactionStatus.Signed;
-                transaction.SignedAt = now;
-                transaction.SignedBy = currentUserId;
-                justSigned = true;
+                transaction.Status = newStatus.Value;
             }
-            else
+
+            if (transaction.Status == SignatureTransactionStatus.Signed
+                && validation.Context!.Signer.Status != ApprovalRequestSignerStatus.Signed)
             {
-                var newStatus = ExtractStatus(external.RawResponse);
-                if (newStatus is SignatureTransactionStatus.Signed
-                    or SignatureTransactionStatus.Failed
-                    or SignatureTransactionStatus.Expired)
-                {
-                    transaction.Status = newStatus.Value;
-                }
+                transaction.SignedAt ??= now;
+                transaction.SignedBy ??= currentUserId;
+                validation.Context.Signer.Status = ApprovalRequestSignerStatus.Signed;
+                validation.Context.Signer.SignedAt = now;
+                validation.Context.Signer.CertificateSerial = transaction.CertificateSerial;
+                await CompleteImplicitSignersAsync(validation.Context.ApprovalRequest, transaction.CertificateSerial, now);
+                justSigned = true;
             }
 
             await _unitOfWork.CommitAsync();
@@ -228,9 +238,20 @@ namespace Application.Services
             var message = "Transaction status retrieved";
             if (justSigned)
             {
-                var pdfResult = await _pdfSignatureService.GenerateSignedPdfAsync(approvalId, currentUserId);
-                if (!pdfResult.IsSuccess)
-                    message = "SmartCA signed successfully but signed PDF generation failed.";
+                if (await AreRequiredSignersCompleteAsync(validation.Context!.ApprovalRequest))
+                {
+                    message = await CompleteSignedFileAndApproveAsync(validation.Context!, currentUserId);
+                }
+                else
+                {
+                    message = "Signer signed successfully. Waiting for remaining required signers.";
+                }
+            }
+            else if (transaction.Status == SignatureTransactionStatus.Signed
+                     && validation.Context!.ApprovalRequest.Status == ApprovalRequestStatus.Pending
+                     && await AreRequiredSignersCompleteAsync(validation.Context.ApprovalRequest))
+            {
+                message = await CompleteSignedFileAndApproveAsync(validation.Context, currentUserId);
             }
 
             return ApiResponse.Success(message, new TransactionStatusDto
@@ -293,26 +314,108 @@ namespace Application.Services
             if (account == null || account.Status != AccountStatus.Active)
                 return SigningValidationResult.Fail("Current user must be active.");
 
-            var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, folder, requireApprovePermission: true);
-            if (!await IsActiveTeamLeaderAsync(currentUserId, teamGroupIds))
-                return SigningValidationResult.Fail("Current user must be active Team Leader.");
-
             if (approval.Status != ApprovalRequestStatus.Pending)
                 return SigningValidationResult.Fail("Approval request must be pending.");
 
             if (fileItem.Status != FileItemStatus.PendingApproval)
                 return SigningValidationResult.Fail("File must be pending approval.");
 
-            if (folder.Area != CdeArea.Wip)
-                return SigningValidationResult.Fail("File must be in WIP zone.");
-
-            if (!fileItem.RequiresSignature)
+            if (!approval.RequiresSignature)
                 return SigningValidationResult.Fail("This file does not require digital signature.");
 
-            if (blockSignedFile && fileItem.IsSigned)
-                return SigningValidationResult.Fail("This file has already been signed.");
+            var signer = await ResolveSignerAsync(approval.Id, currentUserId);
+            if (signer == null)
+                return SigningValidationResult.Fail("Current user is not required to sign this approval request.");
 
-            return SigningValidationResult.Success(new SigningContext(approval, fileItem, folder));
+            if (blockSignedFile && signer.Status == ApprovalRequestSignerStatus.Signed)
+                return SigningValidationResult.Fail("Current user has already signed this approval request.");
+
+            return SigningValidationResult.Success(new SigningContext(approval, fileItem, folder, signer));
+        }
+
+        private async Task<ApprovalRequestSigner?> ResolveSignerAsync(Guid approvalId, Guid currentUserId)
+        {
+            var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
+                    s => s.ApprovalRequestId == approvalId))
+                .ToList();
+
+            var accountSigner = signers.FirstOrDefault(s => s.SignerAccountId == currentUserId);
+            if (accountSigner != null)
+                return accountSigner;
+
+            var groupIds = signers
+                .Where(s => s.SignerGroupId.HasValue)
+                .Select(s => s.SignerGroupId!.Value)
+                .ToHashSet();
+            if (groupIds.Count == 0)
+                return null;
+
+            var activeGroupIds = (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                    m => m.AccountId == currentUserId
+                         && groupIds.Contains(m.GroupId)
+                         && m.Status == GroupMemberStatus.Active))
+                .Select(m => m.GroupId)
+                .ToHashSet();
+
+            return signers.FirstOrDefault(s => s.SignerGroupId.HasValue && activeGroupIds.Contains(s.SignerGroupId.Value));
+        }
+
+        private async Task<bool> AreRequiredSignersCompleteAsync(ApprovalRequest approval)
+        {
+            var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
+                    s => s.ApprovalRequestId == approval.Id))
+                .ToList();
+
+            return IsExplicitSignerApproval(approval)
+                ? signers.Count > 0 && signers.All(s => s.Status == ApprovalRequestSignerStatus.Signed)
+                : signers.Any(s => s.Status == ApprovalRequestSignerStatus.Signed);
+        }
+
+        private async Task CompleteImplicitSignersAsync(ApprovalRequest approval, string? certificateSerial, DateTime signedAt)
+        {
+            if (IsExplicitSignerApproval(approval))
+                return;
+
+            var signers = await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
+                s => s.ApprovalRequestId == approval.Id);
+            foreach (var signer in signers.Where(s => s.Status != ApprovalRequestSignerStatus.Signed))
+            {
+                signer.Status = ApprovalRequestSignerStatus.Signed;
+                signer.SignedAt = signedAt;
+                signer.CertificateSerial = certificateSerial;
+            }
+        }
+
+        private static bool IsExplicitSignerApproval(ApprovalRequest approval)
+            => approval.FromZone == CdeArea.Shared && approval.TargetZone == CdeArea.Published;
+
+        private async Task<string> CompleteSignedFileAndApproveAsync(SigningContext context, Guid currentUserId)
+        {
+            if (context.FileItem.FileType == FileType.Pdf || await IsWordFileAsync(context.FileItem))
+            {
+                var signedFileResult = await _pdfSignatureService.GenerateSignedPdfAsync(context.ApprovalRequest.Id, currentUserId);
+                if (!signedFileResult.IsSuccess)
+                    return signedFileResult.Message;
+            }
+            else if (!context.FileItem.IsSigned)
+            {
+                context.FileItem.IsSigned = true;
+                context.FileItem.UpdatedAt = DateTime.UtcNow;
+                await _unitOfWork.CommitAsync();
+            }
+
+            await _approvalService.ApproveAsync(context.ApprovalRequest.Id, currentUserId);
+            return "Signed file generated successfully and approval completed.";
+        }
+
+        private async Task<bool> IsWordFileAsync(FileItem fileItem)
+        {
+            if (fileItem.FileType != FileType.Office || !fileItem.CurrentVersionId.HasValue)
+                return false;
+
+            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value);
+            var format = (version?.Format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
+            return format is "doc" or "docx";
         }
 
         /// <summary>
@@ -859,7 +962,8 @@ namespace Application.Services
         private sealed record SigningContext(
             ApprovalRequest ApprovalRequest,
             FileItem FileItem,
-            Folder Folder);
+            Folder Folder,
+            ApprovalRequestSigner Signer);
 
         private sealed record SigningValidationResult(SigningContext? Context, string? Error)
         {
