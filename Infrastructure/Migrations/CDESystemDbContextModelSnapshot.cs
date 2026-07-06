@@ -2363,34 +2363,6 @@ namespace Infrastructure.Migrations
                     b.Navigation("DiscussionMessage");
                 });
 
-            modelBuilder.Entity("Domain.Entities.ModelFile", b =>
-                {
-                    b.HasOne("Domain.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Domain.Entities.ProjectModel", "ProjectModel")
-                        .WithMany("ModelFiles")
-                        .HasForeignKey("ProjectModelId");
-
-                    b.Navigation("Project");
-
-                    b.Navigation("ProjectModel");
-                });
-
-            modelBuilder.Entity("Domain.Entities.ModelObject", b =>
-                {
-                    b.HasOne("Domain.Entities.ModelFile", "ModelFile")
-                        .WithMany("Objects")
-                        .HasForeignKey("ModelFileId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ModelFile");
-                });
-
             modelBuilder.Entity("Domain.Entities.NamingConvention", b =>
                 {
                     b.HasOne("Domain.Entities.Folder", "Folder")
