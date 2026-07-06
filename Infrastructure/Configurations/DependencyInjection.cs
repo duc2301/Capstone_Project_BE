@@ -65,6 +65,9 @@ namespace Infrastructure.Configurations
             // Notification dispatcher (event -> tạo Notification rows)
             services.AddScoped<INotificationService, NotificationService>();
 
+            // Background Service: Gửi email digest thông báo chưa đọc
+            services.AddHostedService<Infrastructure.BackgroundServices.NotificationEmailDigestBackgroundService>();
+
             // Invitation flow: Manager mời account vô dự án -> accept tạo ProjectParticipant
             services.AddScoped<IInvitationService, InvitationService>();
 
