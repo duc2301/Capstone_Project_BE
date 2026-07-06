@@ -52,6 +52,8 @@ namespace Application.Services
                 requireApprovePermission: false);
 
             await RequireGroupMemberAsync(actor, teamGroupIds);
+            var targetZone = ResolveApprovalTargetZone(dto?.TargetZone, folder.Area);
+            RequireSignatureRulesForTransition(dto, folder.Area, targetZone);
 
             var hasPendingRequest = (await _unitOfWork.Repository<ApprovalRequest>().FindAsync(
                     a => a.FileItemId == fileItem.Id && a.Status == ApprovalRequestStatus.Pending))
@@ -71,16 +73,24 @@ namespace Application.Services
                 Id = Guid.NewGuid(),
                 FileItemId = fileItem.Id,
                 RequestedBy = actor,
+                FromZone = folder.Area,
+                TargetZone = targetZone,
+                RequiresSignature = dto?.RequiresSignature ?? false,
                 Status = ApprovalRequestStatus.Pending,
                 CreatedAt = now
             };
 
-            fileItem.RequiresSignature = dto?.RequiresSignature ?? false;
-            fileItem.IsSigned = false;
+            var signers = await BuildApprovalSignersAsync(request, dto, teamGroupIds);
+
+            fileItem.RequiresSignature = request.RequiresSignature;
+            if (request.RequiresSignature)
+                fileItem.IsSigned = false;
             fileItem.Status = FileItemStatus.PendingApproval;
             fileItem.UpdatedAt = now;
 
             await _unitOfWork.Repository<ApprovalRequest>().CreateAsync(request);
+            foreach (var signer in signers)
+                await _unitOfWork.Repository<ApprovalRequestSigner>().CreateAsync(signer);
             await _unitOfWork.CommitAsync();
 
             return await BuildResponseAsync(request, fileItem);
@@ -136,7 +146,7 @@ namespace Application.Services
             var folder = await GetFolderAsync(fileItem.FolderId);
 
             await RequireCanDecideAsync(actor, request, fileItem, folder);
-            await RequireSmartCaSignatureBeforeApprovalAsync(request, fileItem, folder);
+            await RequireSignersCompleteBeforeApprovalAsync(request);
 
             var now = DateTime.UtcNow;
             request.Status = ApprovalRequestStatus.Approved;
@@ -145,9 +155,10 @@ namespace Application.Services
             request.RejectReason = null;
 
             fileItem.Status = FileItemStatus.Approved;
+            fileItem.RequiresSignature = false;
             fileItem.UpdatedAt = now;
 
-            await MoveApprovedFileToNextZoneAsync(fileItem, folder, now);
+            await MoveApprovedFileToTargetZoneAsync(fileItem, folder, request.TargetZone, now);
 
             await _unitOfWork.CommitAsync();
             return await BuildResponseAsync(request, fileItem);
@@ -187,6 +198,7 @@ namespace Application.Services
             request.RejectReason = reason;
 
             fileItem.Status = FileItemStatus.Rejected;
+            fileItem.RequiresSignature = false;
             fileItem.UpdatedAt = now;
 
             await _unitOfWork.CommitAsync();
@@ -245,6 +257,112 @@ namespace Application.Services
                 throw new ApiExceptionResponse("Rejected file cannot be submitted for approval.", 400);
         }
 
+        private static CdeArea ResolveApprovalTargetZone(string? targetZone, CdeArea currentZone)
+        {
+            var expectedZone = GetNextApprovalZone(currentZone);
+            if (string.IsNullOrWhiteSpace(targetZone))
+                return expectedZone;
+
+            if (!Enum.TryParse<CdeArea>(targetZone.Trim(), ignoreCase: true, out var parsed))
+                throw new ApiExceptionResponse("Invalid target zone.", 400);
+
+            if (parsed != expectedZone)
+                throw new ApiExceptionResponse($"Approval can only move file from {currentZone} to {expectedZone}.", 400);
+
+            return parsed;
+        }
+
+        private static void RequireSignatureRulesForTransition(
+            SubmitApprovalRequestDTO? dto,
+            CdeArea currentZone,
+            CdeArea targetZone)
+        {
+            if ((currentZone, targetZone) is not (CdeArea.Shared, CdeArea.Published))
+                return;
+
+            if (dto?.RequiresSignature != true)
+                throw new ApiExceptionResponse("Shared to Published approval requires digital signature.", 400);
+
+            var hasSignerAccounts = dto.SignerAccountIds.Any(id => id != Guid.Empty);
+            var hasSignerGroups = dto.SignerGroupIds.Any(id => id != Guid.Empty);
+            if (!hasSignerAccounts && !hasSignerGroups)
+                throw new ApiExceptionResponse("Shared to Published approval requires at least one signer.", 400);
+        }
+
+        private async Task<IReadOnlyCollection<ApprovalRequestSigner>> BuildApprovalSignersAsync(
+            ApprovalRequest request,
+            SubmitApprovalRequestDTO? dto,
+            IReadOnlyCollection<Guid> defaultTeamGroupIds)
+        {
+            if (!request.RequiresSignature)
+                return Array.Empty<ApprovalRequestSigner>();
+
+            var mustAssignExplicitSigners = request.FromZone == CdeArea.Shared
+                                            && request.TargetZone == CdeArea.Published;
+            var accountIds = mustAssignExplicitSigners
+                ? (dto?.SignerAccountIds ?? new List<Guid>())
+                    .Where(id => id != Guid.Empty)
+                    .Distinct()
+                    .ToList()
+                : new List<Guid>();
+            var groupIds = mustAssignExplicitSigners
+                ? (dto?.SignerGroupIds ?? new List<Guid>())
+                    .Where(id => id != Guid.Empty)
+                    .Distinct()
+                    .ToList()
+                : defaultTeamGroupIds.ToList();
+
+            if (!mustAssignExplicitSigners && accountIds.Count == 0 && groupIds.Count == 0)
+                groupIds = defaultTeamGroupIds.ToList();
+
+            if (accountIds.Count == 0 && groupIds.Count == 0)
+                throw new ApiExceptionResponse("At least one signer is required when digital signature is required.", 400);
+
+            await EnsureSignerAccountsExistAsync(accountIds);
+            await EnsureSignerGroupsExistAsync(groupIds);
+
+            return accountIds
+                .Select(accountId => new ApprovalRequestSigner
+                {
+                    Id = Guid.NewGuid(),
+                    ApprovalRequestId = request.Id,
+                    SignerAccountId = accountId,
+                    Status = ApprovalRequestSignerStatus.Pending
+                })
+                .Concat(groupIds.Select(groupId => new ApprovalRequestSigner
+                {
+                    Id = Guid.NewGuid(),
+                    ApprovalRequestId = request.Id,
+                    SignerGroupId = groupId,
+                    Status = ApprovalRequestSignerStatus.Pending
+                }))
+                .ToList();
+        }
+
+        private async Task EnsureSignerAccountsExistAsync(IReadOnlyCollection<Guid> accountIds)
+        {
+            if (accountIds.Count == 0) return;
+
+            var activeAccountIds = (await _unitOfWork.Repository<Account>().FindAsync(
+                    a => accountIds.Contains(a.Id)))
+                .Select(a => a.Id)
+                .ToHashSet();
+            if (accountIds.Any(id => !activeAccountIds.Contains(id)))
+                throw new ApiExceptionResponse("One or more signer accounts do not exist.", 400);
+        }
+
+        private async Task EnsureSignerGroupsExistAsync(IReadOnlyCollection<Guid> groupIds)
+        {
+            if (groupIds.Count == 0) return;
+
+            var existingGroupIds = (await _unitOfWork.Repository<Group>().FindAsync(
+                    g => groupIds.Contains(g.Id)))
+                .Select(g => g.Id)
+                .ToHashSet();
+            if (groupIds.Any(id => !existingGroupIds.Contains(id)))
+                throw new ApiExceptionResponse("One or more signer groups do not exist.", 400);
+        }
+
         /// <summary>
         /// Yêu cầu actor là member active trong team của file.
         /// </summary>
@@ -285,34 +403,41 @@ namespace Application.Services
         /// Kiểm tra chữ ký số trước khi approve chuyển file ra khỏi WIP.
         /// Các bước Shared -> Published và Published -> Archived không yêu cầu ký lại.
         /// </summary>
-        private async Task RequireSmartCaSignatureBeforeApprovalAsync(
-            ApprovalRequest request,
-            FileItem fileItem,
-            Folder folder)
+        private async Task RequireSignersCompleteBeforeApprovalAsync(ApprovalRequest request)
         {
-            if (folder.Area != CdeArea.Wip || !fileItem.RequiresSignature)
+            if (!request.RequiresSignature)
                 return;
+
+            if (IsExplicitSignerApproval(request))
+            {
+                var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
+                        s => s.ApprovalRequestId == request.Id))
+                    .ToList();
+
+                if (signers.Count == 0 || signers.Any(s => s.Status != ApprovalRequestSignerStatus.Signed))
+                    throw new ApiExceptionResponse("All required digital signers must sign before approval.", 409);
+
+                return;
+            }
 
             var hasSignedTransaction = (await _unitOfWork.Repository<ApprovalSignatureTransaction>().FindAsync(
                     t => t.ApprovalRequestId == request.Id
-                         && t.FileItemId == fileItem.Id
                          && t.Status == SignatureTransactionStatus.Signed))
                 .Any();
-
-            if (!fileItem.IsSigned || !fileItem.SignedVersionId.HasValue || !hasSignedTransaction)
-                throw new ApiExceptionResponse(
-                    "Signed PDF must be generated before approval.",
-                    409);
+            if (!hasSignedTransaction)
+                throw new ApiExceptionResponse("Digital signature must be completed before approval.", 409);
         }
+
+        private static bool IsExplicitSignerApproval(ApprovalRequest request)
+            => request.FromZone == CdeArea.Shared && request.TargetZone == CdeArea.Published;
 
         /// <summary>
         /// Sau khi Team Leader approve thành công, file được chuyển sang vùng kế tiếp:
         /// WIP -> Shared, Shared -> Published, Published -> Archived.
         /// File bị reject không đi qua hàm này nên vẫn giữ nguyên folder hiện tại.
         /// </summary>
-        private async Task MoveApprovedFileToNextZoneAsync(FileItem fileItem, Folder currentFolder, DateTime now)
+        private async Task MoveApprovedFileToTargetZoneAsync(FileItem fileItem, Folder currentFolder, CdeArea targetZone, DateTime now)
         {
-            var nextZone = GetNextApprovalZone(currentFolder.Area);
             var projectFolders = await _zoneResolver.GetProjectFoldersAsync(currentFolder.ProjectId);
             var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(
                 fileItem,
@@ -321,10 +446,10 @@ namespace Application.Services
 
             var targetFolder = await _zoneResolver.ResolveTargetFolderAsync(
                 currentFolder,
-                nextZone,
+                targetZone,
                 teamGroupIds,
                 projectFolders,
-                $"{_zoneResolver.FormatZone(nextZone)} folder not found.");
+                $"{_zoneResolver.FormatZone(targetZone)} folder not found.");
 
             fileItem.FolderId = targetFolder.Id;
             fileItem.UpdatedAt = now;
@@ -419,6 +544,7 @@ namespace Application.Services
         {
             var result = new List<ApprovalRequestResponseDTO>();
             var accounts = await GetAccountsByIdAsync();
+            var groups = await GetGroupsByIdAsync();
 
             foreach (var request in requests)
             {
@@ -428,7 +554,7 @@ namespace Application.Services
                     if (await CanViewRequestAsync(actor, request, fileItem))
                     {
                         var folder = await GetFolderAsync(fileItem.FolderId);
-                        result.Add(BuildResponse(request, fileItem, accounts, folder));
+                        result.Add(await BuildResponseAsync(request, fileItem, accounts, groups, folder));
                     }
                 }
                 catch (ApiExceptionResponse ex) when (ex.StatusCode == 404)
@@ -449,13 +575,15 @@ namespace Application.Services
             fileItem ??= await GetFileItemAsync(request.FileItemId);
             var folder = await GetFolderAsync(fileItem.FolderId);
             var accounts = await GetAccountsByIdAsync();
-            return BuildResponse(request, fileItem, accounts, folder);
+            var groups = await GetGroupsByIdAsync();
+            return await BuildResponseAsync(request, fileItem, accounts, groups, folder);
         }
 
-        private ApprovalRequestResponseDTO BuildResponse(
+        private async Task<ApprovalRequestResponseDTO> BuildResponseAsync(
             ApprovalRequest request,
             FileItem fileItem,
             IReadOnlyDictionary<Guid, Account> accounts,
+            IReadOnlyDictionary<Guid, Group> groups,
             Folder folder)
         {
             accounts.TryGetValue(request.RequestedBy, out var requester);
@@ -463,15 +591,43 @@ namespace Application.Services
             if (request.ApproverId.HasValue)
                 accounts.TryGetValue(request.ApproverId.Value, out approver);
 
+            var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
+                    s => s.ApprovalRequestId == request.Id))
+                .Select(s =>
+                {
+                    Account? account = null;
+                    Group? group = null;
+                    if (s.SignerAccountId.HasValue)
+                        accounts.TryGetValue(s.SignerAccountId.Value, out account);
+                    if (s.SignerGroupId.HasValue)
+                        groups.TryGetValue(s.SignerGroupId.Value, out group);
+
+                    return new ApprovalRequestSignerResponseDTO
+                    {
+                        Id = s.Id,
+                        SignerAccountId = s.SignerAccountId,
+                        SignerAccountName = account?.UserName,
+                        SignerGroupId = s.SignerGroupId,
+                        SignerGroupName = group?.Name,
+                        Status = s.Status,
+                        SignedAt = s.SignedAt,
+                        CertificateSerial = s.CertificateSerial
+                    };
+                })
+                .ToList();
+
             return new ApprovalRequestResponseDTO
             {
                 Id = request.Id,
                 FileItemId = request.FileItemId,
                 FileItemName = fileItem.Name,
-                CurrentZone = _zoneResolver.FormatZone(folder.Area),
-                TargetZone = GetTargetApprovalZone(folder.Area),
-                RequiresSignature = fileItem.RequiresSignature,
-                IsSigned = fileItem.IsSigned,
+                CurrentZone = _zoneResolver.FormatZone(request.FromZone),
+                TargetZone = _zoneResolver.FormatZone(request.TargetZone),
+                RequiresSignature = request.RequiresSignature,
+                IsSigned = request.RequiresSignature
+                    ? signers.Count > 0 && signers.All(s => s.Status == ApprovalRequestSignerStatus.Signed)
+                    : fileItem.IsSigned,
+                Signers = signers,
                 RequestedBy = request.RequestedBy,
                 RequestedByName = requester?.UserName,
                 ApproverId = request.ApproverId,
@@ -483,13 +639,11 @@ namespace Application.Services
             };
         }
 
-        private string? GetTargetApprovalZone(CdeArea currentZone)
-            => currentZone == CdeArea.Archived
-                ? null
-                : _zoneResolver.FormatZone(GetNextApprovalZone(currentZone));
-
         private async Task<Dictionary<Guid, Account>> GetAccountsByIdAsync()
             => (await _unitOfWork.Repository<Account>().GetAllAsync()).ToDictionary(a => a.Id);
+
+        private async Task<Dictionary<Guid, Group>> GetGroupsByIdAsync()
+            => (await _unitOfWork.Repository<Group>().GetAllAsync()).ToDictionary(g => g.Id);
 
         #endregion
     }

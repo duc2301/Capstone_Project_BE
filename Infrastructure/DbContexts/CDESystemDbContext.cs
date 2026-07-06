@@ -44,6 +44,7 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<FileNote> FileNotes { get; set; }
         public virtual DbSet<FilePermission> FilePermissions { get; set; }
         public virtual DbSet<ApprovalRequest> ApprovalRequests { get; set; }
+        public virtual DbSet<ApprovalRequestSigner> ApprovalRequestSigners { get; set; }
         public virtual DbSet<ApprovalSignatureTransaction> ApprovalSignatureTransactions { get; set; }
         public virtual DbSet<ZoneReturnRequest> ZoneReturnRequests { get; set; }
         public virtual DbSet<FileSignaturePosition> FileSignaturePositions { get; set; }
@@ -267,6 +268,24 @@ namespace Infrastructure.DbContexts
                 .WithMany()
                 .HasForeignKey(p => p.FileItemId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<ApprovalRequestSigner>()
+                .HasOne(s => s.ApprovalRequest)
+                .WithMany(r => r.Signers)
+                .HasForeignKey(s => s.ApprovalRequestId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<ApprovalRequestSigner>()
+                .HasOne(s => s.SignerAccount)
+                .WithMany()
+                .HasForeignKey(s => s.SignerAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ApprovalRequestSigner>()
+                .HasOne(s => s.SignerGroup)
+                .WithMany()
+                .HasForeignKey(s => s.SignerGroupId)
+                .OnDelete(DeleteBehavior.Restrict);
         }
     }
 }
