@@ -25,6 +25,14 @@ namespace Infrastructure.UnitOfWorks
         public IRefreshTokenRepository RefreshTokenRepository =>
             _refreshTokenRepository ??= new RefreshTokenRepository(_context);
 
+        private IFilePermissionRepository? _filePermissionRepository;
+        public IFilePermissionRepository FilePermissionRepository =>
+            _filePermissionRepository ??= new FilePermissionRepository(_context);
+
+        private IFolderPermissionRepository? _folderPermissionRepository;
+        public IFolderPermissionRepository FolderPermissionRepository =>
+            _folderPermissionRepository ??= new FolderPermissionRepository(_context);
+
         private IDocumentSearchRepository? _documentSearchRepository;
         public IDocumentSearchRepository DocumentSearchRepository =>
             _documentSearchRepository ??= new DocumentSearchRepository(_context);

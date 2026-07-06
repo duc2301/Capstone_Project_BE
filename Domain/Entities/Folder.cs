@@ -16,11 +16,12 @@ namespace Domain.Entities
         public Guid? CreatedByAccountId { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
-
+        public Guid? NamingConventionId { get; set; }
         public Project Project { get; set; } = null!;
         public Folder? ParentFolder { get; set; }
         public ICollection<Folder> ChildFolders { get; set; } = new List<Folder>();
         public ICollection<FileItem> FileItems { get; set; } = new List<FileItem>();
         public ICollection<FolderPermission> Permissions { get; set; } = new List<FolderPermission>();
+        public NamingConvention? NamingConvention { get; set; }
     }
 }

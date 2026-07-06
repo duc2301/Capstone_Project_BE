@@ -1,3 +1,5 @@
+using Domain.Enum.Permission;
+
 namespace Domain.Entities
 {
     // ACL trên thư mục, gán cho Nhóm hoặc Tổ chức.
@@ -15,7 +17,7 @@ namespace Domain.Entities
         public bool CanVerify { get; set; }     // Thẩm tra
         public bool CanApprove { get; set; }    // Duyệt
 
-        public bool InheritFromParent { get; set; }
+        public PermissionStatus Status { get; set; }
 
         public Folder Folder { get; set; } = null!;
         public ProjectParticipant? ProjectParticipant { get; set; }

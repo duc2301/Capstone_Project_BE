@@ -32,7 +32,7 @@ namespace Application.Services
         public async Task<MarkupSetResponseDTO> CreateSetAsync(CreateMarkupSetDTO dto, Guid actorId, CancellationToken ct = default)
         {
             var fileItem = await GetFileItemAsync(dto.FileItemId);
-            await _permission.RequireAsync(actorId, fileItem.FolderId, FolderAction.Download);
+            //await _permission.RequireAsync(actorId, fileItem.FolderId, FolderAction.Download);
 
             var versionId = dto.FileVersionId ?? fileItem.CurrentVersionId
                 ?? throw new ApiExceptionResponse("File has no content version to markup.", 400);
@@ -65,7 +65,7 @@ namespace Application.Services
         public async Task<IEnumerable<MarkupSetResponseDTO>> GetSetsByFileAsync(Guid fileItemId, Guid actorId, CancellationToken ct = default)
         {
             var fileItem = await GetFileItemAsync(fileItemId);
-            await _permission.RequireAsync(actorId, fileItem.FolderId, FolderAction.Download);
+            //await _permission.RequireAsync(actorId, fileItem.FolderId, FolderAction.Download);
 
             var sets = (await _unitOfWork.Repository<MarkupSet>().FindAsync(s => s.FileItemId == fileItemId))
                 .OrderByDescending(s => s.CreatedAt)
@@ -94,8 +94,8 @@ namespace Application.Services
                 if (!fileItems.TryGetValue(set.FileItemId, out var fi)) continue;
                 if (!canViewFolder.TryGetValue(fi.FolderId, out var allowed))
                 {
-                    var perm = await _permission.EvaluateAsync(actorId, fi.FolderId);
-                    allowed = perm.CanDownload;
+                    //var perm = await _permission.EvaluateAsync(actorId, fi.FolderId);
+                    //allowed = perm.CanDownload;
                     canViewFolder[fi.FolderId] = allowed;
                 }
                 if (allowed) visible.Add(set);
@@ -108,7 +108,7 @@ namespace Application.Services
         {
             var set = await GetSetAsync(setId);
             var fileItem = await GetFileItemAsync(set.FileItemId);
-            await _permission.RequireAsync(actorId, fileItem.FolderId, FolderAction.Download);
+            //await _permission.RequireAsync(actorId, fileItem.FolderId, FolderAction.Download);
 
             var notes = (await _unitOfWork.Repository<FileNote>().FindAsync(n => n.MarkupSetId == set.Id))
                 .OrderBy(n => n.CreatedAt)
@@ -132,7 +132,7 @@ namespace Application.Services
         {
             var set = await GetSetAsync(setId);
             var fileItem = await GetFileItemAsync(set.FileItemId);
-            await _permission.RequireAsync(actorId, fileItem.FolderId, FolderAction.Download);
+            //await _permission.RequireAsync(actorId, fileItem.FolderId, FolderAction.Download);
 
             set.Status = status;
             set.UpdatedAt = DateTime.UtcNow;
@@ -147,7 +147,7 @@ namespace Application.Services
         {
             var set = await GetSetAsync(setId);
             var fileItem = await GetFileItemAsync(set.FileItemId);
-            await _permission.RequireAsync(actorId, fileItem.FolderId, FolderAction.Download);
+            //await _permission.RequireAsync(actorId, fileItem.FolderId, FolderAction.Download);
 
             set.IssueId = issueId;
             set.UpdatedAt = DateTime.UtcNow;
@@ -161,7 +161,7 @@ namespace Application.Services
         {
             var set = await GetSetAsync(setId);
             var fileItem = await GetFileItemAsync(set.FileItemId);
-            await _permission.RequireAsync(actorId, fileItem.FolderId, FolderAction.Download);
+            //await _permission.RequireAsync(actorId, fileItem.FolderId, FolderAction.Download);
 
             var now = DateTime.UtcNow;
             var note = new FileNote
@@ -247,7 +247,7 @@ namespace Application.Services
         private async Task RequireCanMutateNoteAsync(Guid actorId, FileNote note, Guid folderId)
         {
             if (note.AuthorAccountId == actorId) return;
-            await _permission.RequireAsync(actorId, folderId, FolderAction.Edit);
+            //await _permission.RequireAsync(actorId, folderId, FolderAction.Edit);
         }
 
         private async Task NotifySetFollowersAsync(MarkupSet set, Guid actorId, string? actorName, string fileName)

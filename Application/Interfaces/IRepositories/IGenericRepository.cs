@@ -11,5 +11,6 @@ namespace Application.Interfaces.IRepositories
         void Update(T entity);
         void Delete(T entity);
         void DeleteById(Guid id);
+        Task CreateRangeAsync(IEnumerable<T> entities);
     }
 }

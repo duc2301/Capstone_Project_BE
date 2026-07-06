@@ -488,15 +488,15 @@ namespace Application.Services
                 current = parent;
             }
 
-            var folderPermissions = await _unitOfWork.Repository<FolderPermission>().FindAsync(
-                p => folderIds.Contains(p.FolderId)
-                     && p.ProjectParticipantId.HasValue
-                     && (!requireApprovePermission || p.CanApprove));
-            foreach (var permission in folderPermissions)
-            {
-                if (activeParticipants.TryGetValue(permission.ProjectParticipantId!.Value, out var groupId))
-                    teamGroupIds.Add(groupId);
-            }
+            //var folderPermissions = await _unitOfWork.Repository<FolderPermissionServiceOld>().FindAsync(
+            //    p => folderIds.Contains(p.FolderId)
+            //         && p.ProjectParticipantId.HasValue
+            //         && (!requireApprovePermission || p.CanApprove));
+            //foreach (var permission in folderPermissions)
+            //{
+            //    if (activeParticipants.TryGetValue(permission.ProjectParticipantId!.Value, out var groupId))
+            //        teamGroupIds.Add(groupId);
+            //}
 
             return teamGroupIds.Count > 0
                 ? teamGroupIds

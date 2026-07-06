@@ -78,6 +78,12 @@ namespace Infrastructure.DbContexts
         // --- Module L: Giải phóng mặt bằng / Công trường số ---
         public virtual DbSet<ProjectLocation> ProjectLocations { get; set; }
 
+        // --- Naming Convention Module ---
+        public virtual DbSet<NamingConvention> NamingConventions { get; set; }
+        public virtual DbSet<NamingConventionField> NamingConventionFields { get; set; }
+        public virtual DbSet<NamingConventionFieldValue> NamingConventionFieldValues { get; set; }
+        public virtual DbSet<NamingConventionLockedValue> NamingConventionLockedValues { get; set; }
+        public virtual DbSet<FileNamingMetadata> FileNamingMetadata { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -125,6 +131,18 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(fp => fp.ProjectParticipantId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            modelBuilder.Entity<FolderPermission>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+
+                entity.HasIndex(x => new
+                {
+                    x.FolderId,
+                    x.ProjectParticipantId
+                })
+                .IsUnique();
+            });
+
             // ACL thư mục: xóa File -> xóa các dòng phân quyền của nó.
             // Group được tham chiếu Restrict để tránh nhiều đường cascade.
             modelBuilder.Entity<FilePermission>()
@@ -138,6 +156,20 @@ namespace Infrastructure.DbContexts
                 .WithMany()
                 .HasForeignKey(fp => fp.ProjectParticipantId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<FilePermission>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+
+                entity.HasIndex(x => new
+                {
+                    x.FileItemId,
+                    x.ProjectParticipantId
+                })
+                .IsUnique();
+            });
+
+            
 
             modelBuilder.Entity<BillItem>()
                 .HasOne(b => b.ParentBillItem)
@@ -204,6 +236,93 @@ namespace Infrastructure.DbContexts
                 .WithMany()
                 .HasForeignKey(t => t.SignedBy)
                 .OnDelete(DeleteBehavior.Restrict);
+
+
+            // NamingConvention → Folder (1:1)
+            modelBuilder.Entity<NamingConvention>()
+                .HasOne(nc => nc.Folder)
+                .WithOne(f => f.NamingConvention)           // Assume Folder has NamingConvention navigation
+                .HasForeignKey<NamingConvention>(nc => nc.FolderId)
+                .OnDelete(DeleteBehavior.Cascade);         // Deleting folder deletes its convention
+
+            // NamingConvention → NamingConventionField (1:N)
+            modelBuilder.Entity<NamingConventionField>()
+                .HasOne(nf => nf.NamingConvention)
+                .WithMany(nc => nc.Fields)                  // Add ICollection<NamingConventionField> Fields to NamingConvention if missing
+                .HasForeignKey(nf => nf.NamingConventionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // NamingConventionField → NamingConventionFieldValue (1:N)
+            modelBuilder.Entity<NamingConventionFieldValue>()
+                .HasOne(nfv => nfv.Field)
+                .WithMany(nf => nf.AllowedValues)
+                .HasForeignKey(nfv => nfv.NamingConventionFieldId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // NamingConventionField → NamingConventionLockedValue (1:0..1)
+            modelBuilder.Entity<NamingConventionField>()
+                .HasOne(nf => nf.LockedValue)
+                .WithOne(lv => lv.Field)
+                .HasForeignKey<NamingConventionLockedValue>(lv => lv.NamingConventionFieldId)
+                .OnDelete(DeleteBehavior.Restrict);         // Protect locked value
+
+            // NamingConventionLockedValue → NamingConventionFieldValue (1:1)
+            modelBuilder.Entity<NamingConventionLockedValue>()
+                .HasOne(lv => lv.Value)
+                .WithOne(nfv => nfv.LockedValue)
+                .HasForeignKey<NamingConventionLockedValue>(lv => lv.NamingConventionFieldValueId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // FileItem → FileNamingMetadata (1:N)
+            modelBuilder.Entity<FileNamingMetadata>()
+                .HasOne(m => m.FileItem)
+                .WithMany(f => f.NamingMetadata)            // Add this collection to FileItem
+                .HasForeignKey(m => m.FileItemId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // FileNamingMetadata → NamingConventionField (N:1)
+            modelBuilder.Entity<FileNamingMetadata>()
+                .HasOne(m => m.Field)
+                .WithMany()
+                .HasForeignKey(m => m.NamingConventionFieldId)
+                .OnDelete(DeleteBehavior.Restrict);         // Don't delete field if metadata exists
+
+            // FileNamingMetadata → NamingConventionFieldValue (N:0..1)
+            modelBuilder.Entity<FileNamingMetadata>()
+                .HasOne(m => m.SelectedValue)
+                .WithMany()
+                .HasForeignKey(m => m.SelectedValueId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // INDEXES & CONSTRAINTS
+
+            // Unique constraints
+            modelBuilder.Entity<NamingConventionField>()
+                .HasIndex(nf => new { nf.NamingConventionId, nf.Code })
+                .IsUnique();
+
+            modelBuilder.Entity<NamingConventionFieldValue>()
+                .HasIndex(nfv => new { nfv.NamingConventionFieldId, nfv.Code })
+                .IsUnique();
+
+            modelBuilder.Entity<FileNamingMetadata>()
+                .HasIndex(m => new { m.FileItemId, m.NamingConventionFieldId })
+                .IsUnique();   // One metadata per field per file
+
+            modelBuilder.Entity<FileNamingMetadata>()
+                .HasIndex(m => new { m.FileItemId, m.SelectedValueId })
+                .IsUnique();
+
+            //// Performance indexes
+            //modelBuilder.Entity<NamingConventionField>()
+            //    .HasIndex(nf => new { nf.NamingConventionId, nf.OrderIndex });
+
+            //modelBuilder.Entity<NamingConventionFieldValue>()
+            //    .HasIndex(nfv => new { nfv.NamingConventionFieldId, nfv.OrderIndex });
+
+            //modelBuilder.Entity<NamingConventionLockedValue>()
+            //    .HasIndex(lv => lv.NamingConventionFieldId)
+            //    .IsUnique();   // One lock per field
 
             // --- RAG: Document / DocumentChunk (pgvector) ---
             modelBuilder.HasPostgresExtension("vector");

@@ -63,6 +63,10 @@ namespace Infrastructure.Configurations
             services.AddScoped<IDiscussionService, DiscussionService>();
             services.AddScoped<IIssueService, IssueService>();
             services.AddScoped<IContractService, ContractService>();
+            services.AddScoped<IFilePermissionService, FilePermissionService>();
+            services.AddScoped<IFolderPermissionService, FolderPermissionService>();
+            services.AddScoped<IFolderTreeService, FolderTreeService>();
+            services.AddScoped<IFolderTreeRepository, FolderTreeRepository>();
 
             services.AddScoped<IJwtService, JwtService>();
             services.AddScoped<IAuthService, AuthService>();
