@@ -1,4 +1,3 @@
-﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -6,14 +5,15 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class AddCertificateSerial : Migration
+    public partial class SyncModelSnapshot : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // No-op.
-            // CertificateSerial already exists in ApprovalRequestSigners from 20260702121619_AddApprovalRequestSigners.
-            // The previous body accidentally duplicated older permission/naming migrations and broke database update.
+            // No-op. All of these changes were already applied by
+            // 20260618063524_AddStatusForPermissionTablesAndDeleteInheritField and
+            // 20260625092117_AddFileNamingConvetionTable. This migration only exists to
+            // resync the model snapshot after it had drifted from the actual applied schema.
         }
 
         /// <inheritdoc />

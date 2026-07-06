@@ -11,10 +11,10 @@ namespace Application.DTOs.RequestDTOs.Approval
         /// <summary>True neu approval request nay can ky so VNPT SmartCA truoc khi approve.</summary>
         public bool RequiresSignature { get; set; }
 
-        /// <summary>Danh sach account can ky. Dung khi leader chi dinh nguoi ky cu the.</summary>
+        /// <summary>Danh sach account can ky. Dung cho buoc Shared -> Published.</summary>
         public List<Guid> SignerAccountIds { get; set; } = new();
 
-        /// <summary>Danh sach group can ky. Neu empty va RequiresSignature=true, BE fallback ve team phu trach file.</summary>
+        /// <summary>Danh sach group can ky. Dung cho buoc Shared -> Published.</summary>
         public List<Guid> SignerGroupIds { get; set; } = new();
     }
 }
