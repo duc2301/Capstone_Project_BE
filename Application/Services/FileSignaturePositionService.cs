@@ -11,19 +11,25 @@ using iText.Kernel.Pdf;
 namespace Application.Services
 {
     /// <summary>
-    /// Luu vi tri dat chu ky truc quan tren PDF/Word.
+    /// Luu vi tri dat chu ky truc quan tren PDF/Word/Excel.
     /// </summary>
     public class FileSignaturePositionService : IFileSignaturePositionService
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IFileStorageService _storage;
         private readonly IApprovalService _approvalService;
+        private readonly IOfficeToPdfConverter _officeConverter;
 
-        public FileSignaturePositionService(IUnitOfWork unitOfWork, IFileStorageService storage, IApprovalService approvalService)
+        public FileSignaturePositionService(
+            IUnitOfWork unitOfWork,
+            IFileStorageService storage,
+            IApprovalService approvalService,
+            IOfficeToPdfConverter officeConverter)
         {
             _unitOfWork = unitOfWork;
             _storage = storage;
             _approvalService = approvalService;
+            _officeConverter = officeConverter;
         }
 
         public async Task<FileSignaturePositionResponseDTO> SaveAsync(Guid fileItemId, SaveSignaturePositionDTO dto, Guid actor)
@@ -36,12 +42,13 @@ namespace Application.Services
             var version = await GetCurrentVersionAsync(fileItem);
             var isPdf = fileItem.FileType == FileType.Pdf;
             var isWord = IsWordFormat(version.Format);
-            if (!isPdf && !isWord)
-                throw new ApiExceptionResponse("Only PDF and Word files support visual signature.", 400);
+            var isExcel = IsExcelFormat(version.Format);
+            if (!isPdf && !isWord && !isExcel)
+                throw new ApiExceptionResponse("Only PDF, Word and Excel files support visual signature.", 400);
 
             var (pageCount, _, pageWidth, pageHeight) = isPdf
                 ? await ReadPdfPageInfoAsync(version.StoragePath, dto.PageNumber)
-                : ReadWordPageInfo(dto.PageNumber);
+                : await ReadOfficePreviewPageInfoAsync(version, dto.PageNumber);
 
             if (dto.PageNumber < 1 || dto.PageNumber > pageCount)
                 throw new ApiExceptionResponse($"Page number must be between 1 and {pageCount}.", 400);
@@ -98,12 +105,13 @@ namespace Application.Services
             var version = await GetCurrentVersionAsync(fileItem);
             var isPdf = fileItem.FileType == FileType.Pdf;
             var isWord = IsWordFormat(version.Format);
-            if (!isPdf && !isWord)
-                throw new ApiExceptionResponse("Only PDF and Word files support visual signature.", 400);
+            var isExcel = IsExcelFormat(version.Format);
+            if (!isPdf && !isWord && !isExcel)
+                throw new ApiExceptionResponse("Only PDF, Word and Excel files support visual signature.", 400);
 
             var (pageCount, resolvedPageNumber, pageWidth, pageHeight) = isPdf
                 ? await ReadPdfPageInfoAsync(version.StoragePath, pageNumber)
-                : ReadWordPageInfo(pageNumber);
+                : await ReadOfficePreviewPageInfoAsync(version, pageNumber);
 
             return new PdfPageInfoResponseDTO
             {
@@ -140,16 +148,50 @@ namespace Application.Services
             return (pageCount, targetPage, size.GetWidth(), size.GetHeight());
         }
 
-        private static (int PageCount, int PageNumber, float PageWidth, float PageHeight) ReadWordPageInfo(int pageNumber)
+        // Word/Excel deu duoc FE xem truoc qua ban PDF da convert (BuildOfficeAsync/FileViewService,
+        // cung 1 IOfficeToPdfConverter) -> phai lay kich thuoc/so trang tu DUNG ban PDF do (uu tien cache
+        // PreviewStoragePath), khong dung placeholder co dinh (vd A4 595x842) nua, vi file co the khac
+        // khong A4/portrait -> placeholder sai se khien vi tri dat chu ky tren FE lech so voi luc stamp.
+        private async Task<(int PageCount, int PageNumber, float PageWidth, float PageHeight)> ReadOfficePreviewPageInfoAsync(FileVersion version, int pageNumber)
         {
-            var targetPage = Math.Max(1, pageNumber);
-            return (targetPage, targetPage, 595f, 842f);
+            Stream pdfStream;
+            if (!string.IsNullOrWhiteSpace(version.PreviewStoragePath))
+            {
+                pdfStream = await _storage.OpenReadAsync(version.PreviewStoragePath);
+            }
+            else
+            {
+                var ext = "." + (version.Format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
+                await using var source = await _storage.OpenReadAsync(version.StoragePath);
+                pdfStream = await _officeConverter.ConvertToPdfAsync(source, ext);
+            }
+
+            await using (pdfStream)
+            {
+                using var buffer = new MemoryStream();
+                await pdfStream.CopyToAsync(buffer);
+                buffer.Position = 0;
+
+                using var reader = new PdfReader(buffer);
+                using var document = new PdfDocument(reader);
+
+                var pageCount = document.GetNumberOfPages();
+                var targetPage = pageNumber >= 1 && pageNumber <= pageCount ? pageNumber : 1;
+                var size = document.GetPage(targetPage).GetPageSize();
+                return (pageCount, targetPage, size.GetWidth(), size.GetHeight());
+            }
         }
 
         private static bool IsWordFormat(string? format)
         {
             var normalized = (format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
             return normalized is "doc" or "docx";
+        }
+
+        private static bool IsExcelFormat(string? format)
+        {
+            var normalized = (format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
+            return normalized is "xls" or "xlsx";
         }
 
         private static FileSignaturePositionResponseDTO Map(FileSignaturePosition position) => new()
