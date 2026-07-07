@@ -76,6 +76,14 @@ namespace Capstone_Project.Controllers
         public async Task<IActionResult> GetViewInfo(Guid id, CancellationToken ct)
             => Ok(ApiResponse.Success("File view info", await _view.GetViewInfoAsync(id, User.GetAccountId(), ct)));
 
+        // Bytes PDF hiệu dụng (PDF gốc / Office đã convert) — FE render bằng pdf.js để markup 2D theo trang. Same-origin.
+        [HttpGet("{id:guid}/view-pdf")]
+        public async Task<IActionResult> GetViewPdf(Guid id, CancellationToken ct)
+        {
+            var pdf = await _view.OpenViewPdfAsync(id, User.GetAccountId(), ct);
+            return File(pdf.Content, "application/pdf", pdf.FileName);
+        }
+
         // Dịch lại model (IFC/CAD) lên APS — dùng khi trạng thái dịch là Failed. Chạy ở hàng đợi nền.
         [HttpPost("{id:guid}/retranslate")]
         public async Task<IActionResult> Retranslate(Guid id, CancellationToken ct)
