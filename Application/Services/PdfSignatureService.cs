@@ -86,8 +86,6 @@ namespace Application.Services
                 && (signers.Count == 0 || signers.Any(s => s.Status != ApprovalRequestSignerStatus.Signed)))
                 return ApiResponse.Fail("All required digital signers must sign before generating signed PDF.");
 
-            // File co the co NHIEU nguoi ky (vd approval Shared->Published gan nhieu signer) -> khung dau
-            // phai liet ke DAY DU tat ca nguoi da ky, khong chi 1 nguoi ky sau cung (transaction moi nhat).
             var stampSigners = await BuildStampSignersAsync(approval.Id);
             if (stampSigners.Count == 0)
             {
@@ -127,13 +125,6 @@ namespace Application.Services
             {
                 var signedBy = transaction.SignedBy ?? actor;
                 var signedAt = transaction.SignedAt ?? DateTime.UtcNow;
-
-                // Word/Excel: vi tri chu ky duoc FE ghi lai tren BAN PDF DA CONVERT (BuildOfficeAsync/
-                // FileViewService dung de xem truoc). DocIO khong co API "gan hinh vao dung trang N" cho
-                // file .docx co san (luon phai neo vao 1 doan van cu the, khong biet doan nao roi trang nao),
-                // con XlsIO thi ep cot vua trang khi convert -> toa do worksheet goc khac han preview.
-                // Vi vay Word/Excel deu duoc stamp thang len chinh ban PDF da convert (dung PageNumber that,
-                // toa do khop 100% voi luc dat vi tri), thay vi co gang ghi vao file .docx/.xlsx goc.
                 var signedFormat = "pdf";
                 var signedExtension = $".{signedFormat}";
 
@@ -175,10 +166,6 @@ namespace Application.Services
                 fileItem.CurrentVersionId = signedVersion.Id;
                 fileItem.IsSigned = true;
                 fileItem.UpdatedAt = now;
-
-                // Ban Word/Excel da ky la mot file PDF that (khong con la .docx/.xlsx) -> chuyen FileType
-                // de FileViewService/tai ve xu ly dung nhu 1 file PDF (xem inline truc tiep, khong qua
-                // buoc convert Office->PDF nua vi da la PDF san).
                 if (!isPdf)
                     fileItem.FileType = FileType.Pdf;
 
@@ -296,9 +283,6 @@ namespace Application.Services
             return StampPdfBytes(inputStream, position, signers);
         }
 
-        // Word/Excel: vi tri chu ky duoc FE ghi lai tren ban PDF da convert (xem BuildOfficeAsync/FileViewService)
-        // -> lay dung ban PDF do (uu tien cache PreviewStoragePath, khong co thi convert lai voi cung 1 converter)
-        // roi stamp y het duong dan PDF thuong, dam bao toa do/trang khop 100% voi cho nguoi dung da chon.
         private async Task<byte[]> StampOfficeAsConvertedPdfAsync(
             FileVersion currentVersion,
             FileSignaturePosition position,
@@ -338,10 +322,6 @@ namespace Application.Services
             using (var pdfDocument = new PdfDocument(reader, writer))
             {
                 var page = pdfDocument.GetPage(position.PageNumber);
-
-                // FE luu Position.Y theo kieu man hinh/CSS (goc top-left, Y tang xuong duoi).
-                // iText dung he toa do PDF chuan (goc bottom-left, Y tang len tren) -> phai quy doi truoc khi ve,
-                // neu khong chu ky se bi dong dau lat nguoc theo chieu doc so voi vi tri FE da chon.
                 var pageHeight = page.GetPageSize().GetHeight();
                 var pdfY = pageHeight - position.Y - position.Height;
 
@@ -376,10 +356,6 @@ namespace Application.Services
             return string.IsNullOrWhiteSpace(normalized) ? "pdf" : normalized;
         }
 
-        // Cache RAW BYTES (an toan de dung chung), KHONG cache PdfFont: mot khi PdfFont duoc add vao 1
-        // PdfDocument, doi tuong font ben trong bi gan indirect reference rieng cho doc do -> tai su dung
-        // lai chinh PdfFont instance o mot PdfDocument KHAC (vd lan ky tiep theo, file khac) se nem loi
-        // "Pdf indirect object belongs to other PDF document". Vi vay phai tao PdfFont MOI cho moi lan stamp.
         private static readonly Lazy<byte[]> _regularFontBytes = new(() => LoadEmbeddedFontBytes("NotoSans-Regular.ttf"));
         private static readonly Lazy<byte[]> _boldFontBytes = new(() => LoadEmbeddedFontBytes("NotoSans-Bold.ttf"));
 
@@ -398,11 +374,6 @@ namespace Application.Services
             return buffer.ToArray();
         }
 
-        // Ve khung chu ky truc quan: bo goc, dai mau tieu de "Đã ký số", noi dung chi tiet ben duoi.
-        // pdfY = toa do Y theo he PDF (goc duoi-trai) da duoc quy doi tu Position.Y (FE luu kieu top-left).
-        // File co the co NHIEU nguoi ky -> liet ke tat ca (khong chi 1 nguoi) trong cung 1 khung dau.
-        // Khung dau trung tinh, dong nhat cho moi loai file (PDF/Word/Excel deu di qua ham nay) - nen
-        // trang, vien mong 1 mau, khong to mau sac so, giong con dau chu ky so thuc te thay vi banner mau.
         private static void DrawSignatureStamp(
             iText.Kernel.Pdf.Canvas.PdfCanvas pdfCanvas,
             FileSignaturePosition position,
@@ -442,10 +413,6 @@ namespace Application.Services
                 .SetMargin(0)
                 .SetMultipliedLeading(1f)
                 .SetTextAlignment(TextAlignment.CENTER);
-
-            // Nhieu nguoi ky se chiem nhieu dong hon -> bo dong Serial rieng cua tung nguoi (chi giu Ten +
-            // Gio ky) va giam co chu, de uu tien hien du TAT CA nguoi ky thay vi bi tran/cat mat vi khung
-            // dau (kich thuoc co dinh do nguoi dung tu ve) khong du cho het thong tin.
             var isMultiSigner = signers.Count > 1;
             var detailFontSize = isMultiSigner ? Math.Max(4.2f, 5.8f - (signers.Count - 1) * 0.6f) : 5.8f;
             var details = new Paragraph()
