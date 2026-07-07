@@ -206,7 +206,6 @@ namespace Application.Services
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
-            // Xem nội dung = mức quyền Download (đang tắt như các luồng khác — bật lại sau).
             //await _permission.RequireAsync(actor, fileItem.FolderId, FolderAction.Download);
 
             if (!fileItem.CurrentVersionId.HasValue)
