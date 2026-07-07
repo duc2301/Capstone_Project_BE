@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Application.DTOs.RequestDTOs.Auth;
 using Application.DTOs.ResponseDTOs.Auth;
 using Application.ExceptionMiddleware;
@@ -28,9 +29,18 @@ namespace Application.Services
 
         public async Task<AuthResponseDTO> Register(RegisterDTO request)
         {
-            if (await _unitOfWork.AccountRepository.EmailExistsAsync(request.Email))
+            // Kiểm tra email đã tồn tại
+            var existing = await _unitOfWork.AccountRepository.GetByEmailAsync(request.Email);
+            if (existing != null)
+            {
+                // Nếu tài khoản đang PendingVerification thì cho phép gửi lại OTP
+                if (existing.Status == AccountStatus.PendingVerification)
+                    throw new ApiExceptionResponse(
+                        "Email đã được đăng ký nhưng chưa xác thực. Vui lòng kiểm tra email hoặc yêu cầu gửi lại mã OTP.", 409);
                 throw new ApiExceptionResponse("Email already exists.", 409);
+            }
 
+            var otp = GenerateOtp();
             var account = new Account
             {
                 Id = Guid.NewGuid(),
@@ -38,16 +48,38 @@ namespace Application.Services
                 Email = request.Email,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
                 Role = AccountRole.User,
-                Status = AccountStatus.Active,
+                Status = AccountStatus.PendingVerification,
+                IsEmailVerified = false,
+                EmailOtp = otp,
+                EmailOtpExpiresAt = DateTime.UtcNow.AddMinutes(3),
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
 
             await _unitOfWork.AccountRepository.CreateAsync(account);
-            // Account vừa tạo chưa có GroupMember -> empty
-            var response = await IssueTokensAsync(account, Array.Empty<GroupMember>());
             await _unitOfWork.CommitAsync();
-            return response;
+
+            // Gửi OTP ngay lập tức (không qua digest)
+            await _emailService.SendEmailAsync(
+                account.Email,
+                "Xác thực email đăng ký - BIM CDE Portal",
+                $"Xin chào {account.UserName},\n\n" +
+                $"Mã xác thực (OTP) của bạn là: {otp}\n\n" +
+                $"Mã này có hiệu lực trong 3 phút.\n" +
+                $"Nếu bạn không yêu cầu đăng ký, hãy bỏ qua email này.");
+
+            // Trả về response tạm (không có token vì chưa xác thực)
+            return new AuthResponseDTO
+            {
+                AccountId = account.Id,
+                UserName = account.UserName,
+                Email = account.Email,
+                Role = account.Role?.ToString() ?? "User",
+                AccessToken = string.Empty,
+                AccessTokenExpiresAt = DateTime.UtcNow,
+                RefreshToken = string.Empty,
+                RefreshTokenExpiresAt = DateTime.UtcNow
+            };
         }
 
         public async Task<AuthResponseDTO> Login(LoginDTO request)
@@ -55,6 +87,10 @@ namespace Application.Services
             var account = await _unitOfWork.AccountRepository.GetByEmailAsync(request.Email);
             if (account == null || !BCrypt.Net.BCrypt.Verify(request.Password, account.PasswordHash))
                 throw new ApiExceptionResponse("Invalid email or password.", 401);
+
+            if (account.Status == AccountStatus.PendingVerification)
+                throw new ApiExceptionResponse(
+                    "Tài khoản chưa được xác thực email. Vui lòng kiểm tra hộp thư và nhập mã OTP.", 403);
 
             if (account.Status == AccountStatus.Suspended || account.Status == AccountStatus.Inactive)
                 throw new ApiExceptionResponse("Account is not active.", 403);
@@ -197,6 +233,67 @@ namespace Application.Services
             }
         }
 
+        public async Task<AuthResponseDTO> VerifyOtp(VerifyOtpDTO request)
+        {
+            var account = await _unitOfWork.AccountRepository.GetByEmailAsync(request.Email)
+                ?? throw new ApiExceptionResponse("Không tìm thấy tài khoản.", 404);
+
+            if (account.Status != AccountStatus.PendingVerification)
+                throw new ApiExceptionResponse("Tài khoản đã được xác thực hoặc không ở trạng thái chờ xác thực.", 400);
+
+            if (account.EmailOtp == null ||
+                account.EmailOtp != request.Otp ||
+                account.EmailOtpExpiresAt == null ||
+                account.EmailOtpExpiresAt < DateTime.UtcNow)
+            {
+                throw new ApiExceptionResponse("Mã OTP không hợp lệ hoặc đã hết hạn.", 400);
+            }
+
+            // Kích hoạt tài khoản
+            account.Status = AccountStatus.Active;
+            account.IsEmailVerified = true;
+            account.EmailOtp = null;
+            account.EmailOtpExpiresAt = null;
+            account.UpdatedAt = DateTime.UtcNow;
+
+            // Cấp token cho user (đăng nhập tự động sau xác thực thành công)
+            var memberships = await LoadGroupMembershipsAsync(account.Id);
+            var response = await IssueTokensAsync(account, memberships);
+            await _unitOfWork.CommitAsync();
+            return response;
+        }
+
+        public async Task ResendOtp(ResendOtpDTO request)
+        {
+            var account = await _unitOfWork.AccountRepository.GetByEmailAsync(request.Email)
+                ?? throw new ApiExceptionResponse("Không tìm thấy tài khoản.", 404);
+
+            if (account.Status != AccountStatus.PendingVerification)
+                throw new ApiExceptionResponse("Tài khoản đã được xác thực.", 400);
+
+            // Rate limit: không cho gửi lại nếu OTP hiện tại còn hơn 2 phút (mới tạo chưa quá 1 phút)
+            if (account.EmailOtpExpiresAt != null &&
+                account.EmailOtpExpiresAt > DateTime.UtcNow.AddMinutes(2))
+            {
+                throw new ApiExceptionResponse("Vui lòng đợi ít nhất 1 phút trước khi gửi lại mã OTP.", 429);
+            }
+
+            var otp = GenerateOtp();
+            account.EmailOtp = otp;
+            account.EmailOtpExpiresAt = DateTime.UtcNow.AddMinutes(3);
+            account.UpdatedAt = DateTime.UtcNow;
+
+            await _unitOfWork.CommitAsync();
+
+            await _emailService.SendEmailAsync(
+                account.Email,
+                "Gửi lại mã xác thực - BIM CDE Portal",
+                $"Xin chào {account.UserName},\n\n" +
+                $"Mã xác thực (OTP) mới của bạn là: {otp}\n\n" +
+                $"Mã này có hiệu lực trong 3 phút.\n" +
+                $"Nếu bạn không yêu cầu, hãy bỏ qua email này.");
+        }
+
         // Sinh access (kèm Group claims) + refresh token, lưu refresh token vào DB.
         private async Task<AuthResponseDTO> IssueTokensAsync(Account account, IEnumerable<GroupMember> memberships)
         {
@@ -231,6 +328,17 @@ namespace Application.Services
             var all = await _unitOfWork.Repository<GroupMember>()
                 .FindAsync(gm => gm.AccountId == accountId);
             return all.ToList();
+        }
+
+        /// <summary>
+        /// Sinh mã OTP gồm 6 chữ số ngẫu nhiên (cryptographically secure).
+        /// </summary>
+        private static string GenerateOtp()
+        {
+            var bytes = new byte[4];
+            RandomNumberGenerator.Fill(bytes);
+            var number = BitConverter.ToUInt32(bytes, 0) % 1_000_000;
+            return number.ToString("D6");
         }
     }
 }
