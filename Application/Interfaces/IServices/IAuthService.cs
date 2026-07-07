@@ -13,5 +13,9 @@ namespace Application.Interfaces.IServices
         Task Logout(RefreshTokenRequestDTO request);
         Task ForgotPassword(ForgotPasswordDTO request);
         Task ResetPassword(ResetPasswordDTO request);
+
+        // OTP xác thực email
+        Task<AuthResponseDTO> VerifyOtp(VerifyOtpDTO request);
+        Task ResendOtp(ResendOtpDTO request);
     }
 }

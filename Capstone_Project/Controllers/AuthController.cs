@@ -64,5 +64,19 @@ namespace Capstone_Project.Controllers
             await _authService.ResetPassword(request);
             return Ok(ApiResponse.Success("Đặt lại mật khẩu thành công."));
         }
+
+        [HttpPost("verify-otp")]
+        public async Task<IActionResult> VerifyOtp([FromBody] VerifyOtpDTO request)
+        {
+            var result = await _authService.VerifyOtp(request);
+            return Ok(ApiResponse.Success("Xác thực email thành công.", result));
+        }
+
+        [HttpPost("resend-otp")]
+        public async Task<IActionResult> ResendOtp([FromBody] ResendOtpDTO request)
+        {
+            await _authService.ResendOtp(request);
+            return Ok(ApiResponse.Success("Mã OTP mới đã được gửi đến email của bạn."));
+        }
     }
 }
