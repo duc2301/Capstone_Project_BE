@@ -957,26 +957,5 @@ namespace Application.Services
                 SignedAt = transaction.SignedAt,
                 Status = transaction.Status
             };
-
-        private sealed record SigningContext(
-            ApprovalRequest ApprovalRequest,
-            FileItem FileItem,
-            Folder Folder,
-            ApprovalRequestSigner Signer);
-
-        private sealed record SigningValidationResult(SigningContext? Context, string? Error)
-        {
-            public static SigningValidationResult Success(SigningContext context) => new(context, null);
-            public static SigningValidationResult Fail(string error) => new(null, error);
-        }
-
-        private sealed record ExternalSmartCaResponse(
-            string RawRequest,
-            string SafeRawRequest,
-            string RawResponse,
-            int StatusCode,
-            bool HttpSucceeded,
-            bool IsBusinessSuccess,
-            string Message);
     }
 }
