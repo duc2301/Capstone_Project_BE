@@ -186,8 +186,7 @@ namespace Application.Services
             var validation = await ValidateSigningContextAsync(approvalId, currentUserId, blockSignedFile: false);
             if (validation.Error != null)
                 return ApiResponse.Fail(validation.Error);
-
-            var transaction = await GetTransactionAsync(approvalId, transactionId);
+            var transaction = await GetTransactionAsync(approvalId, transactionId, currentUserId);
             if (transaction == null)
                 return ApiResponse.Fail("Signature transaction not found.");
 
@@ -232,9 +231,6 @@ namespace Application.Services
             }
 
             await _unitOfWork.CommitAsync();
-
-            // Sau khi VNPT bao da ky, sinh ban PDF da stamp chu ky truc quan.
-            // FileItem.IsSigned chi duoc danh dau true trong PdfSignatureService, sau khi PDF sinh thanh cong.
             var message = "Transaction status retrieved";
             if (justSigned)
             {
@@ -391,7 +387,7 @@ namespace Application.Services
 
         private async Task<string> CompleteSignedFileAndApproveAsync(SigningContext context, Guid currentUserId)
         {
-            if (context.FileItem.FileType == FileType.Pdf || await IsWordFileAsync(context.FileItem))
+            if (context.FileItem.FileType == FileType.Pdf || await IsSignableOfficeFileAsync(context.FileItem))
             {
                 var signedFileResult = await _pdfSignatureService.GenerateSignedPdfAsync(context.ApprovalRequest.Id, currentUserId);
                 if (!signedFileResult.IsSuccess)
@@ -408,14 +404,14 @@ namespace Application.Services
             return "Signed file generated successfully and approval completed.";
         }
 
-        private async Task<bool> IsWordFileAsync(FileItem fileItem)
+        private async Task<bool> IsSignableOfficeFileAsync(FileItem fileItem)
         {
             if (fileItem.FileType != FileType.Office || !fileItem.CurrentVersionId.HasValue)
                 return false;
 
             var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value);
             var format = (version?.Format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
-            return format is "doc" or "docx";
+            return format is "doc" or "docx" or "xls" or "xlsx";
         }
 
         /// <summary>
@@ -491,11 +487,14 @@ namespace Application.Services
         }
 
         /// <summary>
-        /// Lay transaction ky theo approval va transaction id.
-        /// </summary>
-        private async Task<ApprovalSignatureTransaction?> GetTransactionAsync(Guid approvalId, string transactionId)
+        /// Lay transaction ky theo approval va transaction id, CHI cua chinh currentUserId (nguoi da gui
+        /// yeu cau ky nay) -> tranh mot signer lay/doan trung transactionId cua signer khac roi bi
+        /// danh dau Signed "ho" du chua tung ky.
+        private async Task<ApprovalSignatureTransaction?> GetTransactionAsync(Guid approvalId, string transactionId, Guid currentUserId)
             => (await _unitOfWork.Repository<ApprovalSignatureTransaction>().FindAsync(
-                    t => t.ApprovalRequestId == approvalId && t.TransactionId == transactionId))
+                    t => t.ApprovalRequestId == approvalId
+                         && t.TransactionId == transactionId
+                         && t.SignedBy == currentUserId))
                 .OrderByDescending(t => t.CreatedAt)
                 .FirstOrDefault();
 
