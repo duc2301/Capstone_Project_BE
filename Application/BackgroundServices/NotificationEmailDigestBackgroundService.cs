@@ -1,13 +1,12 @@
+using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Domain.Entities;
-using Infrastructure.DbContexts;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Infrastructure.BackgroundServices
+namespace Application.BackgroundServices
 {
     /// <summary>
     /// Background Service chạy ngầm, mỗi n phút quét Notification:
@@ -63,20 +62,14 @@ namespace Infrastructure.BackgroundServices
         private async Task ProcessPendingNotificationsAsync(CancellationToken ct)
         {
             using var scope = _scopeFactory.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<CDESystemDbContext>();
+            var digestRepo = scope.ServiceProvider.GetRequiredService<INotificationDigestRepository>();
             var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
             var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
             var frontendBaseUrl = configuration["FrontendLocalBaseUrl"]?.TrimEnd('/') ?? "http://localhost:5173";
 
             var cutoff = DateTime.UtcNow.Subtract(_notificationDelay);
 
-            //lấy tất cả notification chưa đọc, chưa gửi email, đã qua delay
-            var pendingNotifications = await dbContext.Notifications
-                .Include(n => n.Account)
-                .Where(n => !n.IsRead && !n.IsEmailSent && n.SendAt <= cutoff)
-                .Where(n => n.Account != null && n.Account.IsEmailVerified) // Chỉ gửi cho user đã xác thực email
-                .OrderBy(n => n.SendAt)
-                .ToListAsync(ct);
+            var pendingNotifications = await digestRepo.GetPendingDigestNotificationsAsync(cutoff, ct);
 
             if (pendingNotifications.Count == 0)
                 return;
@@ -119,7 +112,7 @@ namespace Infrastructure.BackgroundServices
             }
 
             // Commit tất cả thay đổi IsEmailSent trong 1 lần
-            await dbContext.SaveChangesAsync(ct);
+            await digestRepo.SaveChangesAsync(ct);
         }
 
         /// <summary>

@@ -1,8 +1,10 @@
+using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Application.Mapping;
 using Application.Services;
 using Infrastructure.DbContexts;
+using Infrastructure.Repositories;
 using Infrastructure.UnitOfWorks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -65,8 +67,11 @@ namespace Infrastructure.Configurations
             // Notification dispatcher (event -> tạo Notification rows)
             services.AddScoped<INotificationService, NotificationService>();
 
-            // Background Service: Gửi email digest thông báo chưa đọc
-            services.AddHostedService<Infrastructure.BackgroundServices.NotificationEmailDigestBackgroundService>();
+            // Repository cho Background Service digest
+            services.AddScoped<INotificationDigestRepository, NotificationDigestRepository>();
+
+            // Background Service: Gửi email digest thông báo chưa đọc (business logic ở Application)
+            services.AddHostedService<Application.BackgroundServices.NotificationEmailDigestBackgroundService>();
 
             // Invitation flow: Manager mời account vô dự án -> accept tạo ProjectParticipant
             services.AddScoped<IInvitationService, InvitationService>();
