@@ -8,7 +8,6 @@ using Application.Options;
 using Application.Services;
 using Infrastructure.DbContexts;
 using Infrastructure.Repositories;
-using Infrastructure.SuaCaiNayDiHa;
 using Infrastructure.UnitOfWorks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -88,8 +87,11 @@ namespace Infrastructure.Configurations
             // Notification dispatcher (event -> tạo Notification rows)
             services.AddScoped<INotificationService, NotificationService>();
 
-            // Background Service: Gửi email digest thông báo chưa đọc
-            services.AddHostedService<NotificationEmailDigestBackgroundService>();
+            // Repository cho Background Service digest
+            services.AddScoped<INotificationDigestRepository, NotificationDigestRepository>();
+
+            // Background Service: Gửi email digest thông báo chưa đọc (business logic ở Application)
+            services.AddHostedService<Application.BackgroundServices.NotificationEmailDigestBackgroundService>();
             services.AddHostedService(sp => sp.GetRequiredService<IngestBackgroundService>());
             services.AddHostedService(sp => sp.GetRequiredService<NameMatchContentBackgroundService>());
 
