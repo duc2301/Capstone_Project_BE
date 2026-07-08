@@ -20,6 +20,9 @@ namespace Domain.Entities
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
 
+        public bool? Warnning { get; set; } = false;
+        public string? WarnningMessage { get; set; } = string.Empty;
+
         public Folder Folder { get; set; } = null!;
         public ICollection<FileVersion> Versions { get; set; } = new List<FileVersion>();
         public ICollection<FilePermission> Permissions { get; set; } = new List<FilePermission>();
