@@ -13,7 +13,7 @@ namespace Application.Interfaces.IServices
     public interface IApprovalService
     {
         // Gửi file để chờ Team Leader phê duyệt.
-        Task<ApprovalRequestResponseDTO> SubmitAsync(Guid fileItemId, Guid actorId);
+        Task<ApprovalRequestResponseDTO> SubmitAsync(Guid fileItemId, SubmitApprovalRequestDTO? dto, Guid actorId);
 
         // Tất cả yêu cầu phê duyệt mà người dùng được phép xem.
         Task<IEnumerable<ApprovalRequestResponseDTO>> GetAllAsync(Guid actorId);
@@ -29,5 +29,8 @@ namespace Application.Interfaces.IServices
 
         // Từ chối file đang chờ phê duyệt (lý do bắt buộc).
         Task<ApprovalRequestResponseDTO> RejectAsync(Guid id, RejectApprovalRequestDTO dto, Guid actorId);
+
+        // Bắt buộc actor là Team Leader active của team phụ trách file (ném 403 nếu không phải).
+        Task RequireTeamLeaderAsync(Guid fileItemId, Guid actorId);
     }
 }

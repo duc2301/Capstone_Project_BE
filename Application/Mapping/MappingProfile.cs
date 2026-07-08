@@ -1,47 +1,32 @@
 using Application.DTOs.RequestDTOs.Account;
-using Application.DTOs.RequestDTOs.ContractPackage;
 using Application.DTOs.RequestDTOs.Contract;
-using Application.DTOs.RequestDTOs.DigitalSite;
+using Application.DTOs.RequestDTOs.ContractPackage;
 using Application.DTOs.RequestDTOs.Discussion;
 using Application.DTOs.RequestDTOs.FileItem;
 using Application.DTOs.RequestDTOs.Folder;
 using Application.DTOs.RequestDTOs.Group;
 using Application.DTOs.RequestDTOs.Invitation;
 using Application.DTOs.RequestDTOs.Issue;
-using Application.DTOs.RequestDTOs.LandParcel;
-using Application.DTOs.RequestDTOs.ModelFile;
 using Application.DTOs.RequestDTOs.Notification;
 using Application.DTOs.RequestDTOs.Organization;
 using Application.DTOs.RequestDTOs.OrganizationType;
-using Application.DTOs.RequestDTOs.ProgressReport;
 using Application.DTOs.RequestDTOs.Project;
-using Application.DTOs.RequestDTOs.ProjectModel;
-using Application.DTOs.RequestDTOs.Schedule;
-using Application.DTOs.RequestDTOs.Submittal;
-using Application.DTOs.RequestDTOs.WorkTask;
 using Application.DTOs.ResponseDTOs.Account;
-using Application.DTOs.ResponseDTOs.ContractPackage;
 using Application.DTOs.ResponseDTOs.Contract;
-using Application.DTOs.ResponseDTOs.DigitalSite;
+using Application.DTOs.ResponseDTOs.ContractPackage;
 using Application.DTOs.ResponseDTOs.Discussion;
 using Application.DTOs.ResponseDTOs.FileItem;
 using Application.DTOs.ResponseDTOs.Folder;
 using Application.DTOs.ResponseDTOs.Group;
 using Application.DTOs.ResponseDTOs.Invitation;
 using Application.DTOs.ResponseDTOs.Issue;
-using Application.DTOs.ResponseDTOs.LandParcel;
-using Application.DTOs.ResponseDTOs.ModelFile;
 using Application.DTOs.ResponseDTOs.Notification;
 using Application.DTOs.ResponseDTOs.Organization;
 using Application.DTOs.ResponseDTOs.OrganizationType;
-using Application.DTOs.ResponseDTOs.ProgressReport;
 using Application.DTOs.ResponseDTOs.Project;
-using Application.DTOs.ResponseDTOs.ProjectModel;
-using Application.DTOs.ResponseDTOs.Schedule;
-using Application.DTOs.ResponseDTOs.Submittal;
-using Application.DTOs.ResponseDTOs.WorkTask;
 using AutoMapper;
 using Domain.Entities;
+using Application.DTOs.ResponseDTOs.Permission;
 
 namespace Application.Mapping
 {
@@ -73,8 +58,7 @@ namespace Application.Mapping
                 .ForMember(d => d.UserName, o => o.MapFrom(s => s.Account != null ? s.Account.UserName : ""))
                 .ForMember(d => d.Email, o => o.MapFrom(s => s.Account != null ? s.Account.Email : null));
             CreateMap<Project, ProjectResponseDTO>()
-                .ForMember(d => d.Location, o => o.Ignore())
-                .ForMember(d => d.Models, o => o.Ignore());
+                .ForMember(d => d.Location, o => o.Ignore());
             CreateMap<CreateProjectDTO, Project>();
             CreateMap<UpdateProjectDTO, Project>()
                 .ForAllMembers(o => o.Condition((src, dest, val) => val != null));
@@ -93,7 +77,6 @@ namespace Application.Mapping
             Crud<Folder, CreateFolderDTO, UpdateFolderDTO, FolderResponseDTO>();
             Crud<FileItem, CreateFileItemDTO, UpdateFileItemDTO, FileItemResponseDTO>();
             CreateMap<FileVersion, FileVersionResponseDTO>();
-            Crud<Submittal, CreateSubmittalDTO, UpdateSubmittalDTO, SubmittalResponseDTO>();
             Crud<Discussion, CreateDiscussionDTO, UpdateDiscussionDTO, DiscussionResponseDTO>();
             Crud<Issue, CreateIssueDTO, UpdateIssueDTO, IssueResponseDTO>();
 
@@ -105,13 +88,21 @@ namespace Application.Mapping
             CreateMap<ProjectParticipant, ParticipantResponseDTO>();
 
             // ACL thư mục: 1 dòng override -> response
-            CreateMap<FolderPermission, FolderPermissionResponseDTO>();
+            //CreateMap<FolderPermission, FolderPermissionResponseDTO>();
 
             // --- Module I/J/K/L/M ---
-            
+
             Crud<Contract, CreateContractDTO, UpdateContractDTO, ContractResponseDTO>();
-            Crud<ProjectModel, CreateProjectModelDTO, UpdateProjectModelDTO, ProjectModelResponseDTO>();
-            Crud<ModelFile, CreateModelFileDTO, UpdateModelFileDTO, ModelFileResponseDTO>();
+            
+
+            //FilePermission: 1 dòng override -> response
+            CreateMap<FilePermission, GroupFilePermissionResponseDTO>()
+                .ForMember(d => d.GroupParticipantName, o => o.MapFrom(s => s.ProjectParticipant != null ? s.ProjectParticipant.Group.Name : ""))
+                .ForMember(d => d.ProjectParticipantId, o => o.MapFrom(s => s.ProjectParticipantId));
+
+            CreateMap<FolderPermission, GroupFolderPermissionResponseDTO>()
+                .ForMember(d => d.GroupParticipantName, o => o.MapFrom(s => s.ProjectParticipant != null ? s.ProjectParticipant.Group.Name : ""))
+                .ForMember(d => d.ProjectParticipantId, o => o.MapFrom(s => s.ProjectParticipantId));
         }
     }
 }

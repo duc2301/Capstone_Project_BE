@@ -7,7 +7,7 @@ namespace Application.Interfaces.IServices
         Task<ViewerTokenResponseDTO> GetViewerTokenAsync(CancellationToken ct = default);
 
         Task<UploadModelResponseDTO> UploadAndTranslateAsync(
-            Stream content, string fileName, CancellationToken ct = default);
+            Stream content, string fileName, long? contentLength = null, CancellationToken ct = default);
 
         Task<TranslationStatusResponseDTO> GetStatusAsync(string urn, CancellationToken ct = default);
     }

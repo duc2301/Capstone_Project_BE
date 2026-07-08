@@ -13,8 +13,6 @@
 
 	<ItemGroup>
 		<Folder Include="Migrations\" />
-		<Folder Include="UnitOfWorks\" />
-		<Folder Include="Repositories\" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -31,6 +29,8 @@
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.9" />
 		<PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.2" />
+		<PackageReference Include="Pgvector" Version="0.3.2" />
+		<PackageReference Include="Pgvector.EntityFrameworkCore" Version="0.3.0" />
 	</ItemGroup>
 
 

@@ -10,6 +10,11 @@ namespace Application.DTOs.ResponseDTOs.Approval
         public Guid Id { get; set; }
         public Guid FileItemId { get; set; }
         public string FileItemName { get; set; } = null!;
+        public string? CurrentZone { get; set; }
+        public string? TargetZone { get; set; }
+        public bool RequiresSignature { get; set; }
+        public bool IsSigned { get; set; }
+        public IReadOnlyCollection<ApprovalRequestSignerResponseDTO> Signers { get; set; } = Array.Empty<ApprovalRequestSignerResponseDTO>();
         public Guid RequestedBy { get; set; }
         public string? RequestedByName { get; set; }
         public Guid? ApproverId { get; set; }

@@ -1,7 +1,7 @@
-using System.Linq.Expressions;
 using Application.Interfaces.IRepositories;
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
+using System.Linq.Expressions;
 
 namespace Infrastructure.Repositories
 {
@@ -51,6 +51,11 @@ namespace Infrastructure.Repositories
             _context.ChangeTracker.Clear();
             var tracker = _context.Attach(entity);
             tracker.State = EntityState.Modified;
+        }
+
+        public async Task CreateRangeAsync(IEnumerable<T> entities)
+        {
+            await _context.Set<T>().AddRangeAsync(entities);
         }
     }
 }

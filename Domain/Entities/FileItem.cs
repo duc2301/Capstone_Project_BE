@@ -12,13 +12,20 @@ namespace Domain.Entities
         public string Name { get; set; } = null!;
         public FileType FileType { get; set; }
         public FileItemStatus Status { get; set; } = FileItemStatus.Draft;
+        public bool RequiresSignature { get; set; }
+        public bool IsSigned { get; set; }
         public Guid? CurrentVersionId { get; set; }
+        public Guid? SignedVersionId { get; set; }
         public Guid? CreatedByAccountId { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
 
+        public bool? Warnning { get; set; } = false;
+        public string? WarnningMessage { get; set; } = string.Empty;
+
         public Folder Folder { get; set; } = null!;
         public ICollection<FileVersion> Versions { get; set; } = new List<FileVersion>();
         public ICollection<FilePermission> Permissions { get; set; } = new List<FilePermission>();
+        public ICollection<FileNamingMetadata> NamingMetadata { get; set; } = new List<FileNamingMetadata>();
     }
 }
