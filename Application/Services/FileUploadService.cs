@@ -140,7 +140,7 @@ namespace Application.Services
                 var archivedFolder = await ResolveArchivedFolderAsync(folder);
                 var archivedItem = new FileItem
                 {
-                    Id = Guid.NewGuid();
+                    Id = Guid.NewGuid(),
                     FolderId = archivedFolder.Id,
                     Name = $"{existing.Name} (v{oldVersion.VersionNumber})",
                     FileType = existing.FileType,
