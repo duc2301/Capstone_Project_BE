@@ -12,10 +12,9 @@ namespace Application.BackgroundServices
         private readonly IServiceScopeFactory _serviceScopeFactory;
         private readonly Channel<Guid> _queue = Channel.CreateUnbounded<Guid>();
 
-        public IngestBackgroundService(IServiceScopeFactory serviceScopeFactory, Channel<Guid> queue)
+        public IngestBackgroundService(IServiceScopeFactory serviceScopeFactory)
         {
             _serviceScopeFactory = serviceScopeFactory;
-            _queue = queue;
         }
 
         public void Enqueue(Guid fileItemId) => _queue.Writer.TryWrite(fileItemId);

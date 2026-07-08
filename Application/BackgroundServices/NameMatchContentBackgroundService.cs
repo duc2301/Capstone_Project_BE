@@ -14,9 +14,8 @@ namespace Application.BackgroundServices
         private readonly Channel<Guid> _queue = Channel.CreateUnbounded<Guid>();
         private readonly IServiceScopeFactory _serviceScopeFactory;
 
-        public NameMatchContentBackgroundService(Channel<Guid> queue, IServiceScopeFactory serviceScopeFactory)
+        public NameMatchContentBackgroundService(IServiceScopeFactory serviceScopeFactory)
         {
-            _queue = queue;
             _serviceScopeFactory = serviceScopeFactory;
         }
 
