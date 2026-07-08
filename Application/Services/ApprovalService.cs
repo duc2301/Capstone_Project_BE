@@ -1,6 +1,7 @@
 using Application.DTOs.RequestDTOs.Approval;
 using Application.DTOs.ResponseDTOs.Approval;
 using Application.ExceptionMiddleware;
+using Application.Interfaces.IBackgroundServices;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
@@ -20,15 +21,14 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IFileZoneResolverService _zoneResolver;
         private readonly ILogger<ApprovalService> _logger;
+        private readonly IIngestBackgroundService _documentIngestBackgroundService;
 
-        public ApprovalService(
-            IUnitOfWork unitOfWork,
-            IFileZoneResolverService zoneResolver,
-            ILogger<ApprovalService> logger)
+        public ApprovalService(IUnitOfWork unitOfWork, IFileZoneResolverService zoneResolver, ILogger<ApprovalService> logger, IIngestBackgroundService documentIngestBackgroundService)
         {
             _unitOfWork = unitOfWork;
             _zoneResolver = zoneResolver;
             _logger = logger;
+            _documentIngestBackgroundService = documentIngestBackgroundService;
         }
 
         #region API chính
@@ -161,6 +161,10 @@ namespace Application.Services
             await MoveApprovedFileToTargetZoneAsync(fileItem, folder, request.TargetZone, now);
 
             await _unitOfWork.CommitAsync();
+
+            if (request.TargetZone == CdeArea.Published)
+                _documentIngestBackgroundService.Enqueue(fileItem.Id);
+
             return await BuildResponseAsync(request, fileItem);
         }
 
