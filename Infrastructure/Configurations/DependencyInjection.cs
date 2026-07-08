@@ -1,3 +1,5 @@
+using Application.BackgroundServices;
+using Application.Interfaces.IBackgroundServices;
 using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
@@ -6,6 +8,7 @@ using Application.Options;
 using Application.Services;
 using Infrastructure.DbContexts;
 using Infrastructure.Repositories;
+using Infrastructure.SuaCaiNayDiHa;
 using Infrastructure.UnitOfWorks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -86,7 +89,8 @@ namespace Infrastructure.Configurations
             services.AddScoped<INotificationService, NotificationService>();
 
             // Background Service: Gửi email digest thông báo chưa đọc
-            services.AddHostedService<Infrastructure.BackgroundServices.NotificationEmailDigestBackgroundService>();
+            services.AddHostedService<NotificationEmailDigestBackgroundService>();
+            services.AddHostedService(sp => sp.GetRequiredService<IngestBackgroundService>());
 
             // Invitation flow: Manager mời account vô dự án -> accept tạo ProjectParticipant
             services.AddScoped<IInvitationService, InvitationService>();
@@ -101,6 +105,8 @@ namespace Infrastructure.Configurations
             services.AddSingleton<IModelTranslationQueue, ModelTranslationQueue>();
             services.AddSingleton<IFileTextExtractor, FileTextExtractorService>();
             services.AddSingleton<ITextChunker, TextChunkerService>();
+            services.AddSingleton<IngestBackgroundService>();
+            services.AddSingleton<IIngestBackgroundService>(sp => sp.GetRequiredService<IngestBackgroundService>());
 
             services.AddMemoryCache();
             services.AddHttpClient();

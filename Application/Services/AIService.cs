@@ -1,6 +1,9 @@
-﻿using Application.ExceptionMiddleware;
+﻿using Application.DTOs.ResponseDTOs.Notification;
+using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
+using Application.Interfaces.IUnitOfWork;
 using Application.Options;
+using Domain.Entities;
 using Microsoft.Extensions.Options;
 using System.Net.Http.Json;
 using System.Text;
@@ -8,6 +11,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using static Application.Interfaces.IServices.IAIService;
+using static iText.StyledXmlParser.Jsoup.Select.Evaluator;
 
 namespace Application.Services
 {
@@ -17,14 +21,18 @@ namespace Application.Services
         private readonly IFileItemService _fileService;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IOptions<OllamaOptions> _options;
-
-        public AIService(IFileContentReader fileReader, IFileItemService fileService, IHttpClientFactory httpClientFactory, IOptions<OllamaOptions> options)
+        private readonly IUnitOfWork _unitOfWork;
+        private readonly INotificationPusher _notificationPusher;
+        public AIService(IFileContentReader fileReader, IFileItemService fileService, IHttpClientFactory httpClientFactory, IOptions<OllamaOptions> options, IUnitOfWork unitOfWork, INotificationPusher notificationPusher)
         {
             _fileReader = fileReader;
             _fileService = fileService;
             _httpClientFactory = httpClientFactory;
             _options = options;
+            _unitOfWork = unitOfWork;
+            _notificationPusher = notificationPusher;
         }
+
 
         public async Task<FileNameCheckResult> CheckNameMatchesContentAsync(Guid fileItemId, CancellationToken ct = default)
         {
@@ -46,7 +54,7 @@ namespace Application.Services
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                client.Timeout = TimeSpan.FromMinutes(5);
+                //client.Timeout = TimeSpan.FromMinutes(5);
                 var url = $"{_options.Value.BaseUrl.TrimEnd('/')}/api/generate";
 
                 //const int MaxContentChars = 40000;
@@ -92,6 +100,21 @@ namespace Application.Services
                     return new FileNameCheckResult(true, 0, "AI trả về rỗng — bỏ qua.");
 
                 var matches = parsed.Match;
+
+                var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId);
+                fileItem.Warnning = !matches;
+                fileItem.WarnningMessage = parsed.Reason;
+                var noti = new NotificationResponseDTO
+                {
+                    AccountId = fileItem.CreatedByAccountId.Value,
+                    Message = $"File '{fileItem.Name}' {(matches ? "được đánh giá khớp với nội dung" : "có thể chưa khớp với nội dung")}.",
+                    SenderName = "AI Checker",
+                    SendAt = DateTime.UtcNow,
+                };
+                await _unitOfWork.SaveChangesAsync();
+                await _notificationPusher.PushAsync(fileItem.CreatedByAccountId.Value, noti);
+                //Audit log nào có thì tao thêm
+
                 return new FileNameCheckResult(matches, parsed?.Confidence ?? 0, parsed?.Reason);
             }
             catch (Exception ex)
