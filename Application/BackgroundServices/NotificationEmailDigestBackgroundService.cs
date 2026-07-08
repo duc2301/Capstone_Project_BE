@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Infrastructure.BackgroundServices
+namespace Application.BackgroundServices
 {
     /// <summary>
     /// Background Service chạy ngầm, mỗi n phút quét Notification:

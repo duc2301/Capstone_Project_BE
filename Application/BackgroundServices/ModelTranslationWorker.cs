@@ -1,3 +1,4 @@
+using Application.Interfaces.IBackgroundServices;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
@@ -6,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Application.Services
+namespace Application.BackgroundServices
 {
     // Hosted service chạy nền: tiêu thụ ModelTranslationQueue, đẩy file IFC/CAD lên APS rồi dịch.
     // Vì chạy ở server (không gắn request) nên user reload/đóng tab không làm gián đoạn — đây là điểm mấu chốt.
