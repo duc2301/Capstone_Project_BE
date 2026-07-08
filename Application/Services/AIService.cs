@@ -54,7 +54,7 @@ namespace Application.Services
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                client.Timeout = TimeSpan.FromMinutes(5);
+                //client.Timeout = TimeSpan.FromMinutes(5);
                 var url = $"{_options.Value.BaseUrl.TrimEnd('/')}/api/generate";
 
                 //const int MaxContentChars = 40000;
