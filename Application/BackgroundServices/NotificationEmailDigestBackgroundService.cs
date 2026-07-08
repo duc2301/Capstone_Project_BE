@@ -6,11 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-<<<<<<<< HEAD:Application/BackgroundServices/NotificationEmailDigestBackgroundService.cs
 namespace Application.BackgroundServices
-========
-namespace Infrastructure.SuaCaiNayDiHa
->>>>>>>> origin/main:Infrastructure/SuaCaiNayDiHa/NotificationEmailDigestBackgroundService.cs
 {
     /// <summary>
     /// Background Service chạy ngầm, mỗi n phút quét Notification:
