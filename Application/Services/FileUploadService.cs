@@ -107,6 +107,7 @@ namespace Application.Services
 
                 if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
                     _translationQueue.Enqueue(v1.Id);
+                _nameMatchContentBackgroundService.Enqueue(fileItem.Id);
 
                 return new FileUploadResultDTO
                 {
