@@ -91,6 +91,7 @@ namespace Infrastructure.Configurations
             // Background Service: Gửi email digest thông báo chưa đọc
             services.AddHostedService<NotificationEmailDigestBackgroundService>();
             services.AddHostedService(sp => sp.GetRequiredService<IngestBackgroundService>());
+            services.AddHostedService(sp => sp.GetRequiredService<NameMatchContentBackgroundService>());
 
             // Invitation flow: Manager mời account vô dự án -> accept tạo ProjectParticipant
             services.AddScoped<IInvitationService, InvitationService>();
@@ -105,8 +106,11 @@ namespace Infrastructure.Configurations
             services.AddSingleton<IModelTranslationQueue, ModelTranslationQueue>();
             services.AddSingleton<IFileTextExtractor, FileTextExtractorService>();
             services.AddSingleton<ITextChunker, TextChunkerService>();
+
             services.AddSingleton<IngestBackgroundService>();
             services.AddSingleton<IIngestBackgroundService>(sp => sp.GetRequiredService<IngestBackgroundService>());
+            services.AddSingleton<NameMatchContentBackgroundService>();
+            services.AddSingleton<INameMatchContentBackgroundService>(sp => sp.GetRequiredService<NameMatchContentBackgroundService>());
 
             services.AddMemoryCache();
             services.AddHttpClient();
