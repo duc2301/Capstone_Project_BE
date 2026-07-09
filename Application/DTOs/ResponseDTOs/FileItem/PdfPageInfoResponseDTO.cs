@@ -8,5 +8,6 @@ namespace Application.DTOs.ResponseDTOs.FileItem
         public int PageCount { get; set; }
         public float Width { get; set; }
         public float Height { get; set; }
+        public string? PreviewUrl { get; set; }
     }
 }

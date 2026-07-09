@@ -27,6 +27,7 @@ namespace Application.Services
         private readonly IFileStorageService _storage;
         private readonly IFolderPermissionService _permission;
         private readonly IOfficeToPdfConverter _officeConverter;
+        private readonly ICadToPdfConverter _cadConverter;
         private readonly ILogger<PdfSignatureService> _logger;
 
         public PdfSignatureService(
@@ -34,12 +35,14 @@ namespace Application.Services
             IFileStorageService storage,
             IFolderPermissionService permission,
             IOfficeToPdfConverter officeConverter,
+            ICadToPdfConverter cadConverter,
             ILogger<PdfSignatureService> logger)
         {
             _unitOfWork = unitOfWork;
             _storage = storage;
             _permission = permission;
             _officeConverter = officeConverter;
+            _cadConverter = cadConverter;
             _logger = logger;
         }
 
@@ -111,8 +114,9 @@ namespace Application.Services
             var isPdf = fileItem.FileType == FileType.Pdf;
             var isWord = IsWordFormat(currentVersion.Format);
             var isExcel = IsExcelFormat(currentVersion.Format);
-            if (!isPdf && !isWord && !isExcel)
-                return ApiResponse.Fail("Only PDF, Word and Excel files support visual signature.");
+            var isCad2D = fileItem.FileType == FileType.Cad && IsCad2DFormat(currentVersion.Format);
+            if (!isPdf && !isWord && !isExcel && !isCad2D)
+                return ApiResponse.Fail("Only PDF, Word, Excel and 2D CAD (DWG/DWGX) files support visual signature.");
 
             var position = (await _unitOfWork.Repository<FileSignaturePosition>().FindAsync(
                     p => p.FileItemId == fileItem.Id))
@@ -293,6 +297,15 @@ namespace Application.Services
             {
                 pdfStream = await OpenSeekableReadStreamAsync(currentVersion.PreviewStoragePath);
             }
+            else if (IsCad2DFormat(currentVersion.Format))
+            {
+                var ext = "." + currentVersion.Format.Trim().TrimStart('.').ToLowerInvariant();
+                await using var source = await _storage.OpenReadAsync(currentVersion.StoragePath);
+                await using var converted = await _cadConverter.ConvertToPdfAsync(source, ext);
+                pdfStream = new MemoryStream();
+                await converted.CopyToAsync(pdfStream);
+                pdfStream.Position = 0;
+            }
             else
             {
                 var ext = "." + currentVersion.Format.Trim().TrimStart('.').ToLowerInvariant();
@@ -346,6 +359,10 @@ namespace Application.Services
 
         private static bool IsExcelFormat(string? format)
             => NormalizeSignedFormat(format) is "xls" or "xlsx";
+
+        // Chi dwg/dwgx - ConvertAPI (dich vu dang dung de convert CAD 2D -> PDF) chi ho tro 2 dinh dang nay.
+        private static bool IsCad2DFormat(string? format)
+            => NormalizeSignedFormat(format) is "dwg" or "dwgx";
 
         private static bool IsExplicitSignerApproval(ApprovalRequest approval)
             => approval.FromZone == CdeArea.Shared && approval.TargetZone == CdeArea.Published;
@@ -429,8 +446,8 @@ namespace Application.Services
                 var prefix = i == 0 ? "" : "\n";
                 details.Add(new Text($"{prefix}{signer.Name}").SetFont(boldFont));
                 details.Add(new Text($"\n{signer.SignedAt:dd/MM/yyyy HH:mm:ss}").SetFontColor(mutedColor));
-                if (!isMultiSigner && !string.IsNullOrWhiteSpace(signer.CertificateSerial))
-                    details.Add(new Text($"\nSerial: {signer.CertificateSerial}").SetFontColor(mutedColor).SetFontSize(5.2f));
+                if (!string.IsNullOrWhiteSpace(signer.CertificateSerial))
+                    details.Add(new Text($"\nSerial: {signer.CertificateSerial}").SetFontColor(mutedColor).SetFontSize(Math.Max(4f, detailFontSize - 0.6f)));
             }
 
             using (var headerCanvas = new Canvas(pdfCanvas, headerRect))
