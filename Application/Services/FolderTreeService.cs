@@ -61,6 +61,19 @@ namespace Application.Services
                 else
                     roots.Add(node); // ← orphan promotion happens here
             }
+            
+            var parentById = visible.ToDictionary(f => f.Id, f => f.ParentFolderId);
+            var warningFolderIds = await _folderTreeRepository.GetWarningFolderIdsAsync(projectId);
+            foreach (var folderId in warningFolderIds)
+            {
+                var cur = folderId;
+                while (nodes.TryGetValue(cur, out var node) && !node.HasWarning)
+                {
+                    node.HasWarning = true;
+                    if (!parentById.TryGetValue(cur, out var parentId) || !parentId.HasValue) break;
+                    cur = parentId.Value;
+                }
+            }
 
             SortRecursive(roots);
             return roots;

@@ -36,18 +36,21 @@ namespace Application.BackgroundServices
 
                     var result = await ai.CheckNameMatchesContentAsync(fileItemId, stoppingToken);
 
+                    var file = await uow.Repository<FileItem>().GetByIdAsync(fileItemId);
+                    if (file is null) continue;
+                    
+                    file.Warnning = !result.Matches;
+                    file.WarnningMessage = result.Matches ? null : result.Reason;
+                    await uow.CommitAsync();
+
                     // Chỉ báo khi nghi lệch tên (advisory) — không spam khi khớp.
-                    if (!result.Matches)
-                    {
-                        var file = await uow.Repository<FileItem>().GetByIdAsync(fileItemId);
-                        if (file?.CreatedByAccountId is Guid uploader)
-                            await notifier.NotifyAsync(
-                                uploader,
-                                $"Tên file \"{file.Name}\" có thể không khớp nội dung: {result.Reason}",
-                                senderName: "AI kiểm tra",
-                                linkType: "FileItem",
-                                linkId: fileItemId.ToString());
-                    }
+                    if (!result.Matches && file.CreatedByAccountId is Guid uploader)
+                        await notifier.NotifyAsync(
+                            uploader,
+                            $"Tên file \"{file.Name}\" có thể không khớp nội dung: {result.Reason}",
+                            senderName: "AI Checker",
+                            linkType: "FileItem",
+                            linkId: fileItemId.ToString());
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {

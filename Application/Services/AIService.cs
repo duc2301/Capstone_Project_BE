@@ -11,7 +11,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using static Application.Interfaces.IServices.IAIService;
-using static iText.StyledXmlParser.Jsoup.Select.Evaluator;
 
 namespace Application.Services
 {
@@ -21,16 +20,12 @@ namespace Application.Services
         private readonly IFileItemService _fileService;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IOptions<OllamaOptions> _options;
-        private readonly IUnitOfWork _unitOfWork;
-        private readonly INotificationPusher _notificationPusher;
-        public AIService(IFileContentReader fileReader, IFileItemService fileService, IHttpClientFactory httpClientFactory, IOptions<OllamaOptions> options, IUnitOfWork unitOfWork, INotificationPusher notificationPusher)
+        public AIService(IFileContentReader fileReader, IFileItemService fileService, IHttpClientFactory httpClientFactory, IOptions<OllamaOptions> options)
         {
             _fileReader = fileReader;
             _fileService = fileService;
             _httpClientFactory = httpClientFactory;
             _options = options;
-            _unitOfWork = unitOfWork;
-            _notificationPusher = notificationPusher;
         }
 
 
@@ -99,23 +94,9 @@ namespace Application.Services
                 if (parsed is null)
                     return new FileNameCheckResult(true, 0, "AI trả về rỗng — bỏ qua.");
 
-                var matches = parsed.Match;
-
-                var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId);
-                fileItem.Warnning = !matches;
-                fileItem.WarnningMessage = parsed.Reason;
-                var noti = new NotificationResponseDTO
-                {
-                    AccountId = fileItem.CreatedByAccountId.Value,
-                    Message = $"File '{fileItem.Name}' {(matches ? "được đánh giá khớp với nội dung" : "có thể chưa khớp với nội dung")}.",
-                    SenderName = "AI Checker",
-                    SendAt = DateTime.UtcNow,
-                };
-                await _unitOfWork.SaveChangesAsync();
-                await _notificationPusher.PushAsync(fileItem.CreatedByAccountId.Value, noti);
-                //Audit log nào có thì tao thêm
-
-                return new FileNameCheckResult(matches, parsed?.Confidence ?? 0, parsed?.Reason);
+                // AIService chỉ CHECK và trả kết quả. Việc lưu cờ Warnning + tạo/gửi notification
+                // do NameMatchContentBackgroundService (worker) đảm nhiệm -> tránh trùng lặp & tránh tạo notification hỏng.
+                return new FileNameCheckResult(parsed.Match, parsed.Confidence, parsed.Reason);
             }
             catch (Exception ex)
             {
@@ -126,17 +107,17 @@ namespace Application.Services
 
 
         private static string CheckNameMatchesContentPromt(string fileName, string content) =>
-            "Bạn kiểm tra SƠ BỘ xem file có bị đặt tên sai hoàn toàn so với nội dung không (để phát hiện file rác/nhầm).\n" +
+            "Bạn kiểm tra xem TÊN FILE có mô tả đúng tài liệu bên trong không (phát hiện file đặt tên sai/nhầm).\n" +
             $"Tên file: {fileName}\n" +
-            "Trích nội dung (có thể lỗi khoảng cách/định dạng do trích xuất PDF — HÃY BỎ QUA các lỗi đó):\n" +
+            "Trích nội dung (có thể lỗi khoảng cách/định dạng do trích xuất PDF — bỏ qua các lỗi đó):\n" +
             $"{content}\n\n" +
-            "Nguyên tắc:\n" +
-            "- CHỈ xét CHỦ ĐỀ/LĨNH VỰC có liên quan không. TUYỆT ĐỐI KHÔNG đánh giá chất lượng, độ đầy đủ, hay tính 'chuẩn mực' của tài liệu.\n" +
-            "- match=true nếu nội dung liên quan tới tên dù chỉ đại khái/gián tiếp (cùng lĩnh vực, cùng dự án, là căn cứ/thành phần của nhau).\n" +
-            "- match=false CHỈ khi nội dung RÕ RÀNG không liên quan gì (ảnh, file rác, hoặc chủ đề khác hẳn lĩnh vực — vd tên về xây dựng nhưng nội dung là công thức nấu ăn).\n" +
-            "- Phân vân → match=true. Bỏ qua lỗi chính tả, in hoa, xuống dòng, khoảng cách chữ.\n" +
-            "confidence = độ chắc chắn (0..1). reason = nội dung ngắn. " +
-            "Có thể trả về thêm một vài cảnh báo về nội dung trong file không liên quan khả nghi cần xem xét lại mặc dù file đa phần là khớp.(Chỉ trả lời thêm khi có dấu hiệu)";
+            "Cách đánh giá (làm đúng thứ tự):\n" +
+            "1) Nội dung là LOẠI tài liệu gì (hợp đồng, bản vẽ/thuyết minh thiết kế, quy định/thông tư, đề nghị tuyển dụng, báo cáo, biên bản…) và về CHỦ ĐỀ gì?\n" +
+            "2) Tên file tuyên bố đây là loại tài liệu gì, chủ đề gì?\n" +
+            "3) match=true nếu tên mô tả đúng hoặc gần đúng LOẠI + CHỦ ĐỀ của nội dung — chấp nhận viết tắt, tên thiếu chi tiết, hoặc tên chỉ nêu một phần/căn cứ trực tiếp của nội dung.\n" +
+            "4) match=false nếu tên tuyên bố LOẠI TÀI LIỆU KHÁC hoặc CHỦ ĐỀ KHÁC với nội dung (vd: tên là hồ sơ thiết kế nhưng nội dung là đề nghị tuyển dụng; tên là quy định PCCC nhưng nội dung là hợp đồng). 'Cùng công ty' hay 'cùng dự án' KHÔNG đủ để coi là khớp.\n" +
+            "KHÔNG đánh giá chất lượng/độ đầy đủ của tài liệu. KHÔNG bắt lỗi chính tả, in hoa, xuống dòng.\n" +
+            "reason: 1-2 câu tiếng Việt nêu nội dung là loại tài liệu gì và vì sao khớp/không khớp. confidence = độ chắc chắn về kết luận (0..1).";
 
 
         private static readonly JsonSerializerOptions JsonOpts = new() 

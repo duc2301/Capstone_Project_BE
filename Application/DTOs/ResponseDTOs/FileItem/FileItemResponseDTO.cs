@@ -12,5 +12,8 @@ namespace Application.DTOs.ResponseDTOs.FileItem
         public Guid? CurrentVersionId { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
+        
+        public bool? Warnning { get; set; }
+        public string? WarnningMessage { get; set; }
     }
 }

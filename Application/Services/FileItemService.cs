@@ -155,6 +155,8 @@ namespace Application.Services
                     AuthorName = f.CreatedByAccountId.HasValue && accounts.TryGetValue(f.CreatedByAccountId.Value, out var a) ? a.UserName : null,
                     CreatedAt = f.CreatedAt,
                     UpdatedAt = f.UpdatedAt,
+                    Warnning = f.Warnning,
+                    WarnningMessage = f.WarnningMessage,
                 };
             }).ToList();
         }
