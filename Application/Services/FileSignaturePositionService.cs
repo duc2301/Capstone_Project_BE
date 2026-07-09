@@ -19,17 +19,20 @@ namespace Application.Services
         private readonly IFileStorageService _storage;
         private readonly IApprovalService _approvalService;
         private readonly IOfficeToPdfConverter _officeConverter;
+        private readonly ICadToPdfConverter _cadConverter;
 
         public FileSignaturePositionService(
             IUnitOfWork unitOfWork,
             IFileStorageService storage,
             IApprovalService approvalService,
-            IOfficeToPdfConverter officeConverter)
+            IOfficeToPdfConverter officeConverter,
+            ICadToPdfConverter cadConverter)
         {
             _unitOfWork = unitOfWork;
             _storage = storage;
             _approvalService = approvalService;
             _officeConverter = officeConverter;
+            _cadConverter = cadConverter;
         }
 
         public async Task<FileSignaturePositionResponseDTO> SaveAsync(Guid fileItemId, SaveSignaturePositionDTO dto, Guid actor)
@@ -43,12 +46,13 @@ namespace Application.Services
             var isPdf = fileItem.FileType == FileType.Pdf;
             var isWord = IsWordFormat(version.Format);
             var isExcel = IsExcelFormat(version.Format);
-            if (!isPdf && !isWord && !isExcel)
-                throw new ApiExceptionResponse("Only PDF, Word and Excel files support visual signature.", 400);
+            var isCad2D = fileItem.FileType == FileType.Cad && IsCad2DFormat(version.Format);
+            if (!isPdf && !isWord && !isExcel && !isCad2D)
+                throw new ApiExceptionResponse("Only PDF, Word, Excel and 2D CAD (DWG/DWGX) files support visual signature.", 400);
 
             var (pageCount, _, pageWidth, pageHeight) = isPdf
                 ? await ReadPdfPageInfoAsync(version.StoragePath, dto.PageNumber)
-                : await ReadOfficePreviewPageInfoAsync(version, dto.PageNumber);
+                : await ReadOfficePreviewPageInfoAsync(fileItem, version, dto.PageNumber);
 
             if (dto.PageNumber < 1 || dto.PageNumber > pageCount)
                 throw new ApiExceptionResponse($"Page number must be between 1 and {pageCount}.", 400);
@@ -106,12 +110,19 @@ namespace Application.Services
             var isPdf = fileItem.FileType == FileType.Pdf;
             var isWord = IsWordFormat(version.Format);
             var isExcel = IsExcelFormat(version.Format);
-            if (!isPdf && !isWord && !isExcel)
-                throw new ApiExceptionResponse("Only PDF, Word and Excel files support visual signature.", 400);
+            var isCad2D = fileItem.FileType == FileType.Cad && IsCad2DFormat(version.Format);
+            if (!isPdf && !isWord && !isExcel && !isCad2D)
+                throw new ApiExceptionResponse("Only PDF, Word, Excel and 2D CAD (DWG/DWGX) files support visual signature.", 400);
 
             var (pageCount, resolvedPageNumber, pageWidth, pageHeight) = isPdf
                 ? await ReadPdfPageInfoAsync(version.StoragePath, pageNumber)
-                : await ReadOfficePreviewPageInfoAsync(version, pageNumber);
+                : await ReadOfficePreviewPageInfoAsync(fileItem, version, pageNumber);
+
+            var previewUrl = !string.IsNullOrWhiteSpace(version.PreviewStoragePath)
+                ? await _storage.GetPresignedUrlAsync(version.PreviewStoragePath, 60)
+                : isPdf
+                    ? await _storage.GetPresignedUrlAsync(version.StoragePath, 60)
+                    : null;
 
             return new PdfPageInfoResponseDTO
             {
@@ -119,7 +130,8 @@ namespace Application.Services
                 PageNumber = resolvedPageNumber,
                 PageCount = pageCount,
                 Width = pageWidth,
-                Height = pageHeight
+                Height = pageHeight,
+                PreviewUrl = previewUrl
             };
         }
 
@@ -148,15 +160,30 @@ namespace Application.Services
             return (pageCount, targetPage, size.GetWidth(), size.GetHeight());
         }
 
-        // Word/Excel deu duoc FE xem truoc qua ban PDF da convert (BuildOfficeAsync/FileViewService,
-        // cung 1 IOfficeToPdfConverter) -> phai lay kich thuoc/so trang tu DUNG ban PDF do (uu tien cache
-        // PreviewStoragePath), khong dung placeholder co dinh (vd A4 595x842) nua, vi file co the khac
-        // khong A4/portrait -> placeholder sai se khien vi tri dat chu ky tren FE lech so voi luc stamp.
-        private async Task<(int PageCount, int PageNumber, float PageWidth, float PageHeight)> ReadOfficePreviewPageInfoAsync(FileVersion version, int pageNumber)
+        private async Task<(int PageCount, int PageNumber, float PageWidth, float PageHeight)> ReadOfficePreviewPageInfoAsync(FileItem fileItem, FileVersion version, int pageNumber)
         {
             Stream pdfStream;
             if (!string.IsNullOrWhiteSpace(version.PreviewStoragePath))
             {
+                pdfStream = await _storage.OpenReadAsync(version.PreviewStoragePath);
+            }
+            else if (IsCad2DFormat(version.Format))
+            {
+                // Ban ve CAD 2D (dwg/dwgx) convert dong bo qua ConvertAPI (thay APS Model Derivative - da
+                // xac nhan thuc te KHONG xuat duoc PDF tu DWG voi tai khoan hien co).
+                // Cache lai PreviewStoragePath (giong Office) de: (1) FE co preview de dat vi tri ky,
+                // (2) luc stamp thuc su dung LAI dung ban PDF nay thay vi goi ConvertAPI lan nua (co the
+                // ra ket qua khac nhau giua 2 lan goi, gay lech vi tri chu ky).
+                var ext = "." + (version.Format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
+                await using var source = await _storage.OpenReadAsync(version.StoragePath);
+                await using var converted = await _cadConverter.ConvertToPdfAsync(source, ext);
+
+                var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
+                    ?? throw new ApiExceptionResponse("Folder not found.", 404);
+                var stored = await _storage.SaveAsync(converted, folder.ProjectId, folder.Id, ".pdf");
+                version.PreviewStoragePath = stored.RelativePath;
+                await _unitOfWork.CommitAsync();
+
                 pdfStream = await _storage.OpenReadAsync(version.PreviewStoragePath);
             }
             else
@@ -192,6 +219,13 @@ namespace Application.Services
         {
             var normalized = (format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
             return normalized is "xls" or "xlsx";
+        }
+
+        // Chi dwg/dwgx - ConvertAPI (dich vu dang dung de convert CAD 2D -> PDF) chi ho tro 2 dinh dang nay.
+        private static bool IsCad2DFormat(string? format)
+        {
+            var normalized = (format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
+            return normalized is "dwg" or "dwgx";
         }
 
         private static FileSignaturePositionResponseDTO Map(FileSignaturePosition position) => new()
