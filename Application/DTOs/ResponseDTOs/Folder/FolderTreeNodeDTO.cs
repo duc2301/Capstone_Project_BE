@@ -10,7 +10,8 @@ namespace Application.DTOs.ResponseDTOs.Folder
         public Guid ProjectId { get; set; }
         public Guid? ParentFolderId { get; set; }
         public string Name { get; set; } = null!;
-        public CdeArea Area { get; set; }
+        public CdeArea Area { get; set; }       
+        public bool HasWarning { get; set; }
 
         public List<FolderTreeNodeDTO> Children { get; set; } = new();
     }
