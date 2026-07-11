@@ -16,17 +16,20 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IFolderPermissionService _permission;
         private readonly IFileZoneResolverService _zoneResolver;
+        private readonly IIssueService _issueService;
         private readonly IMapper _mapper;
 
         public FileItemService(
             IUnitOfWork unitOfWork,
             IFolderPermissionService permission,
             IFileZoneResolverService zoneResolver,
+            IIssueService issueService,
             IMapper mapper)
         {
             _unitOfWork = unitOfWork;
             _permission = permission;
             _zoneResolver = zoneResolver;
+            _issueService = issueService;
             _mapper = mapper;
         }
 
@@ -37,7 +40,11 @@ namespace Application.Services
         public async Task<FileItemResponseDTO?> GetByIdAsync(Guid id)
         {
             var entity = await _unitOfWork.Repository<FileItem>().GetByIdAsync(id);
-            return entity == null ? null : _mapper.Map<FileItemResponseDTO>(entity);
+            if (entity == null) return null;
+
+            var dto = _mapper.Map<FileItemResponseDTO>(entity);
+            dto.HasOpenIssue = (await _issueService.GetOpenIssueFileIdsAsync(new[] { id })).Any();
+            return dto;
         }
 
         public async Task<FileItemResponseDTO> CreateAsync(CreateFileItemDTO dto)
@@ -133,6 +140,7 @@ namespace Application.Services
                              || r.Status == ZoneReturnRequestStatus.Rejected)))
                 .GroupBy(r => r.FileItemId)
                 .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.DecidedAt ?? r.CreatedAt).ToList());
+            var openIssueFileIds = (await _issueService.GetOpenIssueFileIdsAsync(fileIds)).ToHashSet();
 
             return files.Select(f =>
             {
@@ -157,6 +165,7 @@ namespace Application.Services
                     UpdatedAt = f.UpdatedAt,
                     Warnning = f.Warnning,
                     WarnningMessage = f.WarnningMessage,
+                    HasOpenIssue = openIssueFileIds.Contains(f.Id),
                 };
             }).ToList();
         }
