@@ -1,19 +1,32 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+﻿using System;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class UpdateContractPackage : Migration
+    public partial class UpdateContractPackageAfterMerge : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddColumn<DateTime>(
+                name: "ContractSignDate",
+                table: "PackageAssignments",
+                type: "timestamp with time zone",
+                nullable: true);
+
             migrationBuilder.AddColumn<string>(
                 name: "Currency",
                 table: "ContractPackages",
                 type: "text",
+                nullable: true);
+
+            migrationBuilder.AddColumn<Guid>(
+                name: "DocumentFolderId",
+                table: "ContractPackages",
+                type: "uuid",
                 nullable: true);
 
             migrationBuilder.AddColumn<string>(
@@ -45,7 +58,15 @@ namespace Infrastructure.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropColumn(
+                name: "ContractSignDate",
+                table: "PackageAssignments");
+
+            migrationBuilder.DropColumn(
                 name: "Currency",
+                table: "ContractPackages");
+
+            migrationBuilder.DropColumn(
+                name: "DocumentFolderId",
                 table: "ContractPackages");
 
             migrationBuilder.DropColumn(

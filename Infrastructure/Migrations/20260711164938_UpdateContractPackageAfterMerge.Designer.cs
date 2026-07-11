@@ -13,8 +13,8 @@ using Pgvector;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    [Migration("20260709075320_UpdateContractPackage")]
-    partial class UpdateContractPackage
+    [Migration("20260711164938_UpdateContractPackageAfterMerge")]
+    partial class UpdateContractPackageAfterMerge
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -400,6 +400,9 @@ namespace Infrastructure.Migrations
 
                     b.Property<string>("Description")
                         .HasColumnType("text");
+
+                    b.Property<Guid?>("DocumentFolderId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime?>("EndDate")
                         .HasColumnType("timestamp with time zone");
@@ -1028,6 +1031,8 @@ namespace Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("NamingConventionId");
+
                     b.HasIndex("ParentFolderId");
 
                     b.HasIndex("ProjectId");
@@ -1388,19 +1393,22 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<Guid>("FolderId")
-                        .HasColumnType("uuid");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("FolderId")
-                        .IsUnique();
+                    b.HasIndex("ProjectId");
 
                     b.ToTable("NamingConventions");
                 });
@@ -1718,6 +1726,9 @@ namespace Infrastructure.Migrations
                     b.Property<Guid>("ContractPackageId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("ContractSignDate")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime?>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1928,6 +1939,9 @@ namespace Infrastructure.Migrations
 
                     b.Property<int>("FromZone")
                         .HasColumnType("integer");
+
+                    b.Property<Guid?>("IssueId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Reason")
                         .IsRequired()
@@ -2256,6 +2270,11 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Domain.Entities.Folder", b =>
                 {
+                    b.HasOne("Domain.Entities.NamingConvention", "NamingConvention")
+                        .WithMany("Folders")
+                        .HasForeignKey("NamingConventionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Domain.Entities.Folder", "ParentFolder")
                         .WithMany("ChildFolders")
                         .HasForeignKey("ParentFolderId")
@@ -2266,6 +2285,8 @@ namespace Infrastructure.Migrations
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("NamingConvention");
 
                     b.Navigation("ParentFolder");
 
@@ -2424,13 +2445,13 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Domain.Entities.NamingConvention", b =>
                 {
-                    b.HasOne("Domain.Entities.Folder", "Folder")
-                        .WithOne("NamingConvention")
-                        .HasForeignKey("Domain.Entities.NamingConvention", "FolderId")
+                    b.HasOne("Domain.Entities.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Folder");
+                    b.Navigation("Project");
                 });
 
             modelBuilder.Entity("Domain.Entities.NamingConventionField", b =>
@@ -2639,8 +2660,6 @@ namespace Infrastructure.Migrations
 
                     b.Navigation("FileItems");
 
-                    b.Navigation("NamingConvention");
-
                     b.Navigation("Permissions");
                 });
 
@@ -2664,6 +2683,8 @@ namespace Infrastructure.Migrations
             modelBuilder.Entity("Domain.Entities.NamingConvention", b =>
                 {
                     b.Navigation("Fields");
+
+                    b.Navigation("Folders");
                 });
 
             modelBuilder.Entity("Domain.Entities.NamingConventionField", b =>
