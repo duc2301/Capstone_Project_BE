@@ -24,7 +24,8 @@ namespace Application.DTOs.RequestDTOs.Issue
         [Required]
         public IssuePriority Priority { get; set; }
 
-        public Guid? RaisedByAccountId { get; set; }
+        // RaisedByAccountId KHONG duoc client set - lay tu actor da xac thuc (User.GetAccountId()) o service,
+        // tranh truong hop client tu xung la nguoi khac tao issue.
         public Guid? AssignedToAccountId { get; set; }
         public Guid? AssignedToOrganizationId { get; set; }
         public DateTime? DueDate { get; set; }
