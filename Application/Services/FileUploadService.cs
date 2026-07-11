@@ -27,16 +27,14 @@ namespace Application.Services
         //private readonly IFolderPermissionServiceOld _permission;
         private readonly IFileStorageService _storage;
         private readonly IModelTranslationQueue _translationQueue;
-        private readonly INamingConventionService _namingConvention;
         private readonly IMapper _mapper;
         private readonly INameMatchContentBackgroundService _nameMatchContentBackgroundService;
 
-        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, IMapper mapper, INameMatchContentBackgroundService nameMatchContentBackgroundService, INamingConventionService namingConvention)
+        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, IMapper mapper, INameMatchContentBackgroundService nameMatchContentBackgroundService)
         {
             _unitOfWork = unitOfWork;
             _storage = storage;
             _translationQueue = translationQueue;
-            _namingConvention = namingConvention;
             _mapper = mapper;
             _nameMatchContentBackgroundService = nameMatchContentBackgroundService;
         }
@@ -55,14 +53,9 @@ namespace Application.Services
                 throw new ApiExceptionResponse(
                     "Không thể tải file trực tiếp lên thư mục gốc. Tạo thư mục con để upload thay thế.", 400);
 
-            // Folder có naming convention -> tên file do NamingConventionService sinh (user không tự đặt).
-            var naming = await _namingConvention.GenerateFileNameAsync(
-                folder.Id, dto.NamingSelections, originalFileName, ct);
-            var name = naming.HasNamingConvention
-                ? naming.FileNameWithoutExtension
-                : string.IsNullOrWhiteSpace(dto.Name)
-                    ? Path.GetFileNameWithoutExtension(originalFileName)
-                    : dto.Name.Trim();
+            var name = string.IsNullOrWhiteSpace(dto.Name)
+                ? Path.GetFileNameWithoutExtension(originalFileName)
+                : dto.Name.Trim();
             var ext = Path.GetExtension(originalFileName);
 
             // ③ Kiểm tra tên file (rule mặc định: không rỗng, không ký tự cấm, có đuôi).
@@ -110,9 +103,6 @@ namespace Application.Services
 
                 await _unitOfWork.Repository<FileItem>().CreateAsync(fileItem);
                 await _unitOfWork.Repository<FileVersion>().CreateAsync(v1);
-                // Lưu vết field/value đã dùng để sinh tên (audit) — commit chung bên dưới.
-                if (naming.HasNamingConvention)
-                    await _namingConvention.StageFileNamingMetadataAsync(fileItem.Id, naming);
                 await _unitOfWork.CommitAsync();
 
                 if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
