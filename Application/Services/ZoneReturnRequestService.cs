@@ -49,6 +49,7 @@ namespace Application.Services
             {
                 Id = Guid.NewGuid(),
                 FileItemId = fileItem.Id,
+                IssueId = dto.IssueId,
                 FromZone = currentFolder.Area,
                 TargetZone = CdeArea.Wip,
                 RequestedBy = actorId,

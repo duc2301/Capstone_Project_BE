@@ -1,4 +1,4 @@
-namespace Application.Interfaces.IServices
+namespace Application.Interfaces.IBackgroundServices
 {
     // Hàng đợi (in-memory) các FileVersion cần dịch lên APS, do ModelTranslationWorker tiêu thụ ở nền.
     // Đăng ký SINGLETON: cả producer (upload/view) lẫn consumer (worker) dùng chung một instance.

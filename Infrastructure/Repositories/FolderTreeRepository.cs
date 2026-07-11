@@ -96,6 +96,16 @@ namespace Infrastructure.Repositories
                 .ToListAsync();
         }
 
+        public async Task<HashSet<Guid>> GetWarningFolderIdsAsync(Guid projectId)
+        {
+            var ids = await _context.FileItems
+                .Where(fi => fi.Warnning == true && fi.Folder.ProjectId == projectId)
+                .Select(fi => fi.FolderId)
+                .Distinct()
+                .ToListAsync();
+            return ids.ToHashSet();
+        }
+
         public async Task<List<Folder>> GetChildFoldersAsync(Guid parentFolderId)
         {
             return await _context.Folders

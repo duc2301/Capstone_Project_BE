@@ -13,7 +13,7 @@ using Pgvector;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    [Migration("20260710093644_InitialCreate")]
+    [Migration("20260711144613_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -39,6 +39,15 @@ namespace Infrastructure.Migrations
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<string>("EmailOtp")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("EmailOtpExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsEmailVerified")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
@@ -657,6 +666,9 @@ namespace Infrastructure.Migrations
                     b.Property<Guid?>("CurrentVersionId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("FileRelationId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("FileType")
                         .HasColumnType("integer");
 
@@ -682,7 +694,15 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool?>("Warnning")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("WarnningMessage")
+                        .HasColumnType("text");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("FileRelationId");
 
                     b.HasIndex("FolderId");
 
@@ -831,6 +851,20 @@ namespace Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("FilePermissions");
+                });
+
+            modelBuilder.Entity("Domain.Entities.FileRelation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("FileItemId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("FileRelations");
                 });
 
             modelBuilder.Entity("Domain.Entities.FileSignaturePosition", b =>
@@ -1506,6 +1540,9 @@ namespace Infrastructure.Migrations
                     b.Property<Guid>("AccountId")
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("IsEmailSent")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("IsRead")
                         .HasColumnType("boolean");
 
@@ -1882,6 +1919,9 @@ namespace Infrastructure.Migrations
                     b.Property<int>("FromZone")
                         .HasColumnType("integer");
 
+                    b.Property<Guid?>("IssueId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Reason")
                         .IsRequired()
                         .HasColumnType("text");
@@ -2109,6 +2149,10 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Domain.Entities.FileItem", b =>
                 {
+                    b.HasOne("Domain.Entities.FileRelation", null)
+                        .WithMany("fileItems")
+                        .HasForeignKey("FileRelationId");
+
                     b.HasOne("Domain.Entities.Folder", "Folder")
                         .WithMany("FileItems")
                         .HasForeignKey("FolderId")
@@ -2582,6 +2626,11 @@ namespace Infrastructure.Migrations
                     b.Navigation("Permissions");
 
                     b.Navigation("Versions");
+                });
+
+            modelBuilder.Entity("Domain.Entities.FileRelation", b =>
+                {
+                    b.Navigation("fileItems");
                 });
 
             modelBuilder.Entity("Domain.Entities.Folder", b =>

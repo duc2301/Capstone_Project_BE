@@ -1,6 +1,7 @@
 using Application.DTOs.RequestDTOs.FileItem;
 using Application.DTOs.ResponseDTOs.FileItem;
 using Application.ExceptionMiddleware;
+using Application.Interfaces.IBackgroundServices;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
@@ -28,21 +29,16 @@ namespace Application.Services
         private readonly IModelTranslationQueue _translationQueue;
         private readonly INamingConventionService _namingConvention;
         private readonly IMapper _mapper;
+        private readonly INameMatchContentBackgroundService _nameMatchContentBackgroundService;
 
-        public FileUploadService(
-            IUnitOfWork unitOfWork,
-            //IFolderPermissionServiceOld permission,
-            IFileStorageService storage,
-            IModelTranslationQueue translationQueue,
-            INamingConventionService namingConvention,
-            IMapper mapper)
+        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, IMapper mapper, INameMatchContentBackgroundService nameMatchContentBackgroundService, INamingConventionService namingConvention)
         {
             _unitOfWork = unitOfWork;
-            //_permission = permission;
             _storage = storage;
             _translationQueue = translationQueue;
             _namingConvention = namingConvention;
             _mapper = mapper;
+            _nameMatchContentBackgroundService = nameMatchContentBackgroundService;
         }
 
         public async Task<FileUploadResultDTO> UploadAsync(
@@ -121,6 +117,7 @@ namespace Application.Services
 
                 if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
                     _translationQueue.Enqueue(v1.Id);
+                _nameMatchContentBackgroundService.Enqueue(fileItem.Id);
 
                 return new FileUploadResultDTO
                 {
@@ -171,7 +168,11 @@ namespace Application.Services
                 archivedFileItemId = archivedItem.Id;
             }
 
+
             await _unitOfWork.CommitAsync();
+
+            if (dto.FileType is FileType.Pdf or FileType.Office)
+                _nameMatchContentBackgroundService.Enqueue(existing.Id);
 
             if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
                 _translationQueue.Enqueue(newVersion.Id);

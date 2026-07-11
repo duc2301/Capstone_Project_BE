@@ -1,7 +1,7 @@
 using System.Threading.Channels;
-using Application.Interfaces.IServices;
+using Application.Interfaces.IBackgroundServices;
 
-namespace Application.Services
+namespace Application.BackgroundServices
 {
     // Hàng đợi nền dựa trên System.Threading.Channels (không cần thư viện ngoài như Hangfire).
     // Unbounded + 1 reader duy nhất (worker xử lý tuần tự để khống chế RAM/băng thông khi đẩy file lớn lên APS).

@@ -29,6 +29,9 @@ namespace Infrastructure.Migrations
                     Status = table.Column<int>(type: "integer", nullable: true),
                     ResetPasswordToken = table.Column<string>(type: "text", nullable: true),
                     ResetPasswordTokenExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsEmailVerified = table.Column<bool>(type: "boolean", nullable: false),
+                    EmailOtp = table.Column<string>(type: "text", nullable: true),
+                    EmailOtpExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
                 },
@@ -77,6 +80,18 @@ namespace Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Documents", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "FileRelations",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    FileItemId = table.Column<Guid>(type: "uuid", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_FileRelations", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -158,6 +173,7 @@ namespace Infrastructure.Migrations
                     SendAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     SenderName = table.Column<string>(type: "text", nullable: true),
                     IsRead = table.Column<bool>(type: "boolean", nullable: false),
+                    IsEmailSent = table.Column<bool>(type: "boolean", nullable: false),
                     AccountId = table.Column<Guid>(type: "uuid", nullable: false),
                     LinkType = table.Column<string>(type: "text", nullable: true),
                     LinkId = table.Column<string>(type: "text", nullable: true)
@@ -809,11 +825,19 @@ namespace Infrastructure.Migrations
                     SignedVersionId = table.Column<Guid>(type: "uuid", nullable: true),
                     CreatedByAccountId = table.Column<Guid>(type: "uuid", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    Warnning = table.Column<bool>(type: "boolean", nullable: true),
+                    WarnningMessage = table.Column<string>(type: "text", nullable: true),
+                    FileRelationId = table.Column<Guid>(type: "uuid", nullable: true)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_FileItems", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_FileItems_FileRelations_FileRelationId",
+                        column: x => x.FileRelationId,
+                        principalTable: "FileRelations",
+                        principalColumn: "Id");
                     table.ForeignKey(
                         name: "FK_FileItems_Folders_FolderId",
                         column: x => x.FolderId,
@@ -1044,6 +1068,7 @@ namespace Infrastructure.Migrations
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     FileItemId = table.Column<Guid>(type: "uuid", nullable: false),
+                    IssueId = table.Column<Guid>(type: "uuid", nullable: true),
                     FromZone = table.Column<int>(type: "integer", nullable: false),
                     TargetZone = table.Column<int>(type: "integer", nullable: false),
                     RequestedBy = table.Column<Guid>(type: "uuid", nullable: false),
@@ -1443,6 +1468,11 @@ namespace Infrastructure.Migrations
                 column: "SourceFileVersionId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_FileItems_FileRelationId",
+                table: "FileItems",
+                column: "FileRelationId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_FileItems_FolderId",
                 table: "FileItems",
                 column: "FolderId");
@@ -1814,6 +1844,9 @@ namespace Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "Organizations");
+
+            migrationBuilder.DropTable(
+                name: "FileRelations");
 
             migrationBuilder.DropTable(
                 name: "Folders");

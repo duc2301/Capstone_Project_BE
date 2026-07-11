@@ -1,6 +1,7 @@
 using Application.DTOs.RequestDTOs.Approval;
 using Application.DTOs.ResponseDTOs.Approval;
 using Application.ExceptionMiddleware;
+using Application.Interfaces.IBackgroundServices;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
@@ -20,15 +21,14 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IFileZoneResolverService _zoneResolver;
         private readonly ILogger<ApprovalService> _logger;
+        private readonly IIngestBackgroundService _documentIngestBackgroundService;
 
-        public ApprovalService(
-            IUnitOfWork unitOfWork,
-            IFileZoneResolverService zoneResolver,
-            ILogger<ApprovalService> logger)
+        public ApprovalService(IUnitOfWork unitOfWork, IFileZoneResolverService zoneResolver, ILogger<ApprovalService> logger, IIngestBackgroundService documentIngestBackgroundService)
         {
             _unitOfWork = unitOfWork;
             _zoneResolver = zoneResolver;
             _logger = logger;
+            _documentIngestBackgroundService = documentIngestBackgroundService;
         }
 
         #region API chính
@@ -161,6 +161,10 @@ namespace Application.Services
             await MoveApprovedFileToTargetZoneAsync(fileItem, folder, request.TargetZone, now);
 
             await _unitOfWork.CommitAsync();
+
+            if (request.TargetZone == CdeArea.Published)
+                _documentIngestBackgroundService.Enqueue(fileItem.Id);
+
             return await BuildResponseAsync(request, fileItem);
         }
 
@@ -297,16 +301,22 @@ namespace Application.Services
             if (!request.RequiresSignature)
                 return Array.Empty<ApprovalRequestSigner>();
 
-            var accountIds = (dto?.SignerAccountIds ?? new List<Guid>())
-                .Where(id => id != Guid.Empty)
-                .Distinct()
-                .ToList();
-            var groupIds = (dto?.SignerGroupIds ?? new List<Guid>())
-                .Where(id => id != Guid.Empty)
-                .Distinct()
-                .ToList();
+            var mustAssignExplicitSigners = request.FromZone == CdeArea.Shared
+                                            && request.TargetZone == CdeArea.Published;
+            var accountIds = mustAssignExplicitSigners
+                ? (dto?.SignerAccountIds ?? new List<Guid>())
+                    .Where(id => id != Guid.Empty)
+                    .Distinct()
+                    .ToList()
+                : new List<Guid>();
+            var groupIds = mustAssignExplicitSigners
+                ? (dto?.SignerGroupIds ?? new List<Guid>())
+                    .Where(id => id != Guid.Empty)
+                    .Distinct()
+                    .ToList()
+                : defaultTeamGroupIds.ToList();
 
-            if (accountIds.Count == 0 && groupIds.Count == 0)
+            if (!mustAssignExplicitSigners && accountIds.Count == 0 && groupIds.Count == 0)
                 groupIds = defaultTeamGroupIds.ToList();
 
             if (accountIds.Count == 0 && groupIds.Count == 0)
@@ -402,13 +412,28 @@ namespace Application.Services
             if (!request.RequiresSignature)
                 return;
 
-            var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
-                    s => s.ApprovalRequestId == request.Id))
-                .ToList();
+            if (IsExplicitSignerApproval(request))
+            {
+                var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
+                        s => s.ApprovalRequestId == request.Id))
+                    .ToList();
 
-            if (signers.Count == 0 || signers.Any(s => s.Status != ApprovalRequestSignerStatus.Signed))
-                throw new ApiExceptionResponse("All required digital signers must sign before approval.", 409);
+                if (signers.Count == 0 || signers.Any(s => s.Status != ApprovalRequestSignerStatus.Signed))
+                    throw new ApiExceptionResponse("All required digital signers must sign before approval.", 409);
+
+                return;
+            }
+
+            var hasSignedTransaction = (await _unitOfWork.Repository<ApprovalSignatureTransaction>().FindAsync(
+                    t => t.ApprovalRequestId == request.Id
+                         && t.Status == SignatureTransactionStatus.Signed))
+                .Any();
+            if (!hasSignedTransaction)
+                throw new ApiExceptionResponse("Digital signature must be completed before approval.", 409);
         }
+
+        private static bool IsExplicitSignerApproval(ApprovalRequest request)
+            => request.FromZone == CdeArea.Shared && request.TargetZone == CdeArea.Published;
 
         /// <summary>
         /// Sau khi Team Leader approve thành công, file được chuyển sang vùng kế tiếp:

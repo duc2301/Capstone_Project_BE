@@ -1,10 +1,14 @@
 using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Discussion;
 using Application.Interfaces.IServices;
+using Capstone_Project.Extensions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
+    [ApiController]
+    [Authorize]
     [Route("api/discussions")]
     public class DiscussionsController : ControllerBase
     {
@@ -37,5 +41,13 @@ namespace Capstone_Project.Controllers
             await _service.DeleteAsync(id);
             return Ok(ApiResponse.Success("Deleted successfully"));
         }
+
+        [HttpGet("{id:guid}/messages")]
+        public async Task<IActionResult> GetMessages(Guid id)
+            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetMessagesAsync(id)));
+
+        [HttpPost("{id:guid}/messages")]
+        public async Task<IActionResult> PostMessage(Guid id, [FromBody] PostDiscussionMessageDTO dto)
+            => Ok(ApiResponse.Success("Message posted", await _service.PostMessageAsync(id, dto, User.GetAccountId())));
     }
 }

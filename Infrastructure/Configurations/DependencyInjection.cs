@@ -1,3 +1,5 @@
+using Application.BackgroundServices;
+using Application.Interfaces.IBackgroundServices;
 using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
@@ -91,6 +93,14 @@ namespace Infrastructure.Configurations
             // Notification dispatcher (event -> tạo Notification rows)
             services.AddScoped<INotificationService, NotificationService>();
 
+            // Repository cho Background Service digest
+            services.AddScoped<INotificationDigestRepository, NotificationDigestRepository>();
+
+            // Background Service: Gửi email digest thông báo chưa đọc (business logic ở Application)
+            services.AddHostedService<Application.BackgroundServices.NotificationEmailDigestBackgroundService>();
+            services.AddHostedService(sp => sp.GetRequiredService<IngestBackgroundService>());
+            services.AddHostedService(sp => sp.GetRequiredService<NameMatchContentBackgroundService>());
+
             // Invitation flow: Manager mời account vô dự án -> accept tạo ProjectParticipant
             services.AddScoped<IInvitationService, InvitationService>();
 
@@ -105,6 +115,11 @@ namespace Infrastructure.Configurations
             services.AddSingleton<IFileTextExtractor, FileTextExtractorService>();
             services.AddSingleton<ITextChunker, TextChunkerService>();
 
+            services.AddSingleton<IngestBackgroundService>();
+            services.AddSingleton<IIngestBackgroundService>(sp => sp.GetRequiredService<IngestBackgroundService>());
+            services.AddSingleton<NameMatchContentBackgroundService>();
+            services.AddSingleton<INameMatchContentBackgroundService>(sp => sp.GetRequiredService<NameMatchContentBackgroundService>());
+
             services.AddMemoryCache();
             services.AddHttpClient();
             services.AddHttpClient<IViewerService, ViewerService>((sp, client) =>
@@ -113,6 +128,15 @@ namespace Infrastructure.Configurations
                 var baseUrl = config["Aps:BaseUrl"] ?? "https://developer.api.autodesk.com";
                 client.BaseAddress = new Uri(baseUrl);
                 client.Timeout = TimeSpan.FromMinutes(10);   // upload file CAD/BIM lớn
+            });
+
+            // Convert DWG/DWGX -> PDF de ky so truc quan 
+            services.AddHttpClient<ICadToPdfConverter, ConvertApiCadToPdfConverter>((sp, client) =>
+            {
+                var config = sp.GetRequiredService<IConfiguration>();
+                var baseUrl = config["ConvertApi:BaseUrl"] ?? "https://v2.convertapi.com";
+                client.BaseAddress = new Uri(baseUrl);
+                client.Timeout = TimeSpan.FromMinutes(5);
             });
 
             return services;

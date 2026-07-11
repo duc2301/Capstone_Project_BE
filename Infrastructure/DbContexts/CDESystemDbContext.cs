@@ -84,6 +84,8 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<NamingConventionFieldValue> NamingConventionFieldValues { get; set; }
         public virtual DbSet<NamingConventionLockedValue> NamingConventionLockedValues { get; set; }
         public virtual DbSet<FileNamingMetadata> FileNamingMetadata { get; set; }
+        
+        public virtual DbSet<FileRelation> FileRelations { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
