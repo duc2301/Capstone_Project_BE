@@ -124,6 +124,15 @@ namespace Infrastructure.Configurations
                 client.Timeout = TimeSpan.FromMinutes(10);   // upload file CAD/BIM lớn
             });
 
+            // Convert DWG/DWGX -> PDF de ky so truc quan 
+            services.AddHttpClient<ICadToPdfConverter, ConvertApiCadToPdfConverter>((sp, client) =>
+            {
+                var config = sp.GetRequiredService<IConfiguration>();
+                var baseUrl = config["ConvertApi:BaseUrl"] ?? "https://v2.convertapi.com";
+                client.BaseAddress = new Uri(baseUrl);
+                client.Timeout = TimeSpan.FromMinutes(5);
+            });
+
             return services;
         }
     }

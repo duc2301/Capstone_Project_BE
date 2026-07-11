@@ -29,6 +29,13 @@ namespace Application.Services
         private const string GetCertificatePath = "v1/credentials/get_certificate";
         private const string SignPath = "v1/signatures/sign";
 
+        // Neu app SmartCA tren dien thoai loi ngay o buoc ket noi module ky (vd "Ket noi toi module ky so
+        // khong on dinh") thi user chua kip Xac nhan/Tu choi tren app -> phia VNPT khong bao gio chuyen
+        // trang thai khoi WaitingConfirm, giao dich se ket treo mai mai va chan khong cho tao yeu cau ky
+        // moi (xem hasPendingTransaction o SendSignRequestAsync). Tu dong coi la Expired sau khoang thoi
+        // gian hop ly de nguoi dung duoc bao va ky lai duoc.
+        private static readonly TimeSpan WaitingConfirmTimeout = TimeSpan.FromMinutes(5);
+
         private readonly IUnitOfWork _unitOfWork;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IPdfSignatureService _pdfSignatureService;
@@ -209,6 +216,16 @@ namespace Application.Services
             var newStatus = signatureValue != null
                 ? SignatureTransactionStatus.Signed
                 : ExtractStatus(external.RawResponse);
+
+            // App SmartCA co the loi ngay o buoc ket noi module ky tren dien thoai (truoc khi nguoi dung
+            // kip Xac nhan/Tu choi) -> VNPT khong bao gio tra ve trang thai khac WaitingConfirm. Qua thoi
+            // gian hop ly thi tu coi la Expired de nguoi dung duoc bao va tao yeu cau ky lai duoc.
+            if (newStatus is null or SignatureTransactionStatus.Created or SignatureTransactionStatus.WaitingConfirm
+                && now - transaction.CreatedAt > WaitingConfirmTimeout)
+            {
+                newStatus = SignatureTransactionStatus.Expired;
+            }
+
             var justSigned = false;
 
             if (newStatus is SignatureTransactionStatus.Signed
@@ -387,7 +404,7 @@ namespace Application.Services
 
         private async Task<string> CompleteSignedFileAndApproveAsync(SigningContext context, Guid currentUserId)
         {
-            if (context.FileItem.FileType == FileType.Pdf || await IsSignableOfficeFileAsync(context.FileItem))
+            if (context.FileItem.FileType == FileType.Pdf || await IsSignableFileAsync(context.FileItem))
             {
                 var signedFileResult = await _pdfSignatureService.GenerateSignedPdfAsync(context.ApprovalRequest.Id, currentUserId);
                 if (!signedFileResult.IsSuccess)
@@ -404,14 +421,18 @@ namespace Application.Services
             return "Signed file generated successfully and approval completed.";
         }
 
-        private async Task<bool> IsSignableOfficeFileAsync(FileItem fileItem)
+        // Office (Word/Excel) hoac ban ve CAD 2D (dwg/dwgx, convert qua ConvertAPI - xem PdfSignatureService)
+        // deu duoc stamp de len ban PDF da chuyen doi truoc khi approve.
+        private async Task<bool> IsSignableFileAsync(FileItem fileItem)
         {
-            if (fileItem.FileType != FileType.Office || !fileItem.CurrentVersionId.HasValue)
+            if (fileItem.FileType != FileType.Office && fileItem.FileType != FileType.Cad)
+                return false;
+            if (!fileItem.CurrentVersionId.HasValue)
                 return false;
 
             var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value);
             var format = (version?.Format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
-            return format is "doc" or "docx" or "xls" or "xlsx";
+            return format is "doc" or "docx" or "xls" or "xlsx" or "dwg" or "dwgx";
         }
 
         /// <summary>
@@ -957,5 +978,32 @@ namespace Application.Services
                 SignedAt = transaction.SignedAt,
                 Status = transaction.Status
             };
+
+        // Cac kieu duoi day chi la implementation detail noi bo cua service nay (khong bao gio serialize
+        // tra ve API) -> khong thuoc ve DTOs/ResponseDTOs (noi chi danh cho hop dong API thuc su).
+
+        /// <summary>Ngu canh da xac thuc cua 1 thao tac ky SmartCA: approval/file/folder/signer lien quan.</summary>
+        private sealed record SigningContext(
+            ApprovalRequest ApprovalRequest,
+            FileItem FileItem,
+            Folder Folder,
+            ApprovalRequestSigner Signer);
+
+        /// <summary>Ket qua xac thuc ngu canh ky: co Context (thanh cong) hoac Error (that bai), khong bao gio ca hai.</summary>
+        private sealed record SigningValidationResult(SigningContext? Context, string? Error)
+        {
+            public static SigningValidationResult Success(SigningContext context) => new(context, null);
+            public static SigningValidationResult Fail(string error) => new(null, error);
+        }
+
+        /// <summary>Response tho tu goi API VNPT SmartCA, da parse san HTTP status va business success.</summary>
+        private sealed record ExternalSmartCaResponse(
+            string RawRequest,
+            string SafeRawRequest,
+            string RawResponse,
+            int StatusCode,
+            bool HttpSucceeded,
+            bool IsBusinessSuccess,
+            string Message);
     }
 }
