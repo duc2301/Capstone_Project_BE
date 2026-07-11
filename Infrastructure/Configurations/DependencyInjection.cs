@@ -70,6 +70,10 @@ namespace Infrastructure.Configurations
             services.AddScoped<IFolderTreeService, FolderTreeService>();
             services.AddScoped<IFolderTreeRepository, FolderTreeRepository>();
 
+            // Centralized permission checking (baseline) — features call this instead of ad-hoc checks
+            services.AddScoped<IPermissionCheckingService, PermissionCheckingService>();
+            services.AddScoped<IPermissionCheckingRepository, PermissionCheckingRepository>();
+
             services.AddScoped<IJwtService, JwtService>();
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IEmailService, GmailEmailService>();
