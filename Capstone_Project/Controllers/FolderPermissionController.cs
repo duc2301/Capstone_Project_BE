@@ -25,7 +25,7 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("Group with permission retrieved successfully", result));
         }
 
-        //
+        
         [HttpGet("{folderId:guid}/group-ui")]
         public async Task<IActionResult> GetDataForFolderPermissionUI(Guid folderId)
         {

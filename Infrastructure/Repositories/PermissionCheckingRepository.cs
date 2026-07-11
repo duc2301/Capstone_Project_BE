@@ -46,5 +46,67 @@ namespace Infrastructure.Repositories
                 .AsNoTracking()
                 .FirstOrDefaultAsync();
         }
+
+        // ===== Current-user permission retrieval (viewing only) =====
+
+        public async Task<Account?> GetAccountAsync(Guid accountId)
+        {
+            return await _context.Accounts
+                .AsNoTracking()
+                .FirstOrDefaultAsync(a => a.Id == accountId);
+        }
+
+        public async Task<Folder?> GetFolderAsync(Guid folderId)
+        {
+            return await _context.Folders
+                .AsNoTracking()
+                .FirstOrDefaultAsync(f => f.Id == folderId);
+        }
+
+        public async Task<FileItem?> GetFileItemAsync(Guid fileItemId)
+        {
+            return await _context.FileItems
+                .AsNoTracking()
+                .FirstOrDefaultAsync(fi => fi.Id == fileItemId);
+        }
+
+        public async Task<List<GroupMember>> GetActiveGroupMembershipsAsync(Guid accountId)
+        {
+            return await _context.GroupMembers
+                .Where(m => m.AccountId == accountId && m.Status == GroupMemberStatus.Active)
+                .Include(m => m.Group)
+                .AsNoTracking()
+                .ToListAsync();
+        }
+
+        public async Task<List<ProjectParticipant>> GetActiveParticipantsByGroupIdsAsync(List<Guid> groupIds)
+        {
+            return await _context.ProjectParticipants
+                .Where(pp => groupIds.Contains(pp.GroupId)
+                          && pp.Status == ProjectParticipantStatus.Active)
+                .Include(pp => pp.Project)
+                .AsNoTracking()
+                .ToListAsync();
+        }
+
+        public async Task<List<FolderPermission>> GetFolderPermissionsByParticipantIdsAsync(List<Guid> participantIds)
+        {
+            return await _context.FolderPermissions
+                .Where(fp => fp.ProjectParticipantId != null
+                          && participantIds.Contains(fp.ProjectParticipantId.Value))
+                .Include(fp => fp.Folder)
+                .AsNoTracking()
+                .ToListAsync();
+        }
+
+        public async Task<List<FilePermission>> GetFilePermissionsByParticipantIdsAsync(List<Guid> participantIds)
+        {
+            return await _context.FilePermissions
+                .Where(fp => fp.ProjectParticipantId != null
+                          && participantIds.Contains(fp.ProjectParticipantId.Value))
+                .Include(fp => fp.FileItem)
+                .AsNoTracking()
+                .ToListAsync();
+        }
     }
 }

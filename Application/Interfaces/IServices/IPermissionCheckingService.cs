@@ -1,3 +1,5 @@
+using Application.DTOs.ResponseDTOs.PermissionChecking;
+
 namespace Application.Interfaces.IServices
 {
     /// <summary>
@@ -22,5 +24,16 @@ namespace Application.Interfaces.IServices
         Task CanDownloadFileAsync(Guid fileItemId, Guid accountId);
         Task CanVerifyFileAsync(Guid fileItemId, Guid accountId);
         Task CanApproveFileAsync(Guid fileItemId, Guid accountId);
+
+        // ===== Current-user permission retrieval (viewing only, no authorization) =====
+
+        /// <summary>Every folder/file permission the current user has, with the full user -> group -> participant chain.</summary>
+        Task<CurrentUserPermissionsResponseDTO> GetCurrentUserPermissionsAsync(Guid accountId);
+
+        /// <summary>The current user's permission on one specific folder.</summary>
+        Task<CurrentUserFolderPermissionResponseDTO> GetCurrentUserFolderPermissionAsync(Guid folderId, Guid accountId);
+
+        /// <summary>The current user's permission on one specific file.</summary>
+        Task<CurrentUserFilePermissionResponseDTO> GetCurrentUserFilePermissionAsync(Guid fileItemId, Guid accountId);
     }
 }
