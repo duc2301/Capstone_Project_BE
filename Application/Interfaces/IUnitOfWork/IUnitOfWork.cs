@@ -8,6 +8,7 @@ namespace Application.Interfaces.IUnitOfWork
         IRefreshTokenRepository RefreshTokenRepository { get; }
         IFilePermissionRepository FilePermissionRepository { get; }
         IFolderPermissionRepository FolderPermissionRepository { get; }
+        INamingConventionRepository NamingConventionRepository { get; }
 
         // Repo generic dùng chung cho mọi entity (không cần khai báo riêng từng cái)
         IGenericRepository<T> Repository<T>() where T : class;

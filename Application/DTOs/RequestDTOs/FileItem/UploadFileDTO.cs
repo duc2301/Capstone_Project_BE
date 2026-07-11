@@ -13,7 +13,12 @@ namespace Application.DTOs.RequestDTOs.FileItem
         public FileType FileType { get; set; }
 
         // Tên logic của tài liệu (không kèm đuôi). Bỏ trống -> lấy theo tên file gốc.
+        // Bị BỎ QUA nếu folder có naming convention (tên do backend tự sinh).
         [StringLength(200)]
         public string? Name { get; set; }
+
+        // Lựa chọn dropdown khi folder có naming convention — JSON array:
+        // [{"fieldId":"...","valueId":"..."}]. Field bị khóa không cần gửi.
+        public string? NamingSelections { get; set; }
     }
 }

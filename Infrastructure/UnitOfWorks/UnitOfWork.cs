@@ -33,6 +33,10 @@ namespace Infrastructure.UnitOfWorks
         public IFolderPermissionRepository FolderPermissionRepository =>
             _folderPermissionRepository ??= new FolderPermissionRepository(_context);
 
+        private INamingConventionRepository? _namingConventionRepository;
+        public INamingConventionRepository NamingConventionRepository =>
+            _namingConventionRepository ??= new NamingConventionRepository(_context);
+
         private IDocumentSearchRepository? _documentSearchRepository;
         public IDocumentSearchRepository DocumentSearchRepository =>
             _documentSearchRepository ??= new DocumentSearchRepository(_context);

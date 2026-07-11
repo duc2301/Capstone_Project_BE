@@ -57,6 +57,8 @@ namespace Infrastructure.Configurations
             else
                 services.AddSingleton<IFileStorageService, LocalFileStorageService>();
             services.AddScoped<IFileUploadService, FileUploadService>();
+            // Naming convention: cấu hình quy ước đặt tên file + sinh tên khi upload
+            services.AddScoped<INamingConventionService, NamingConventionService>();
             services.AddSingleton<IOfficeToPdfConverter, SyncfusionOfficeToPdfConverter>();
             services.AddScoped<IFileViewService, FileViewService>();
             services.AddScoped<IMarkupService, MarkupService>();
