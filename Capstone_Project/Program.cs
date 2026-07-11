@@ -41,18 +41,18 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        var feLocalBaseUrl = builder.Configuration["FrontendLocalBaseUrl"];
         var feDeployURL = builder.Configuration["FrontendDeployBaseUrl"];
-        var allowedOrigins = new[] { feLocalBaseUrl, feDeployURL }
-                            .Where(url => !string.IsNullOrEmpty(url))
-                            .ToArray();
+        var allowedOrigins = new List<string> { "http://localhost:5173", "http://localhost:5174" };
 
-        if (allowedOrigins.Length > 0)
+        if (!string.IsNullOrEmpty(feDeployURL))
         {
-            policy.WithOrigins(allowedOrigins)
-                  .AllowAnyHeader()
-                  .AllowAnyMethod();
+            allowedOrigins.Add(feDeployURL);
         }
+
+        policy.WithOrigins(allowedOrigins.ToArray())
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
     });
 });
 

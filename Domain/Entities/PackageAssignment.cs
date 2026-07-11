@@ -13,6 +13,7 @@ namespace Domain.Entities
         public Guid? RepresentativeAccountId { get; set; }   // người đại diện (Account)
         public string? Position { get; set; }                // chức danh
         public string? VatCode { get; set; }
+        public DateTime? ContractSignDate { get; set; }
         public DateTime? CreatedAt { get; set; }
 
         public ContractPackage ContractPackage { get; set; } = null!;
