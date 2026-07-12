@@ -26,6 +26,22 @@ namespace Capstone_Project.DataHandler.Exceptions
                 return;
             }
 
+            if (context.Exception is OperationCanceledException || context.Exception is TaskCanceledException)
+            {
+                context.Result = new ObjectResult(new
+                {
+                    isSuccess = false,
+                    statusCode = 499,
+                    message = "Client closed request",
+                    data = (object?)null
+                })
+                {
+                    StatusCode = 499
+                };
+                context.ExceptionHandled = true;
+                return;
+            }
+
             var inner = context.Exception.InnerException?.Message;
             context.Result = new ObjectResult(new
             {
