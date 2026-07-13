@@ -112,6 +112,13 @@ namespace Infrastructure.Configurations
             // Hàng đợi dịch model nền (singleton: producer upload/view + consumer ModelTranslationWorker dùng chung).
             // Worker (BackgroundService) đăng ký ở Program.cs (host) vì cần Microsoft.Extensions.Hosting.
             services.AddSingleton<IModelTranslationQueue, ModelTranslationQueue>();
+
+            // Kiểm LOI (thông tin phi hình học, BXD-347): parser STEP + engine + hàng đợi nền + read service.
+            // Worker (LoiCheckWorker) đăng ký ở Program.cs.
+            services.AddSingleton<IIfcLoiExtractor, Application.Services.Loi.IfcStepPropertyExtractor>();
+            services.AddSingleton<ILoiCheckQueue, LoiCheckQueue>();
+            services.AddScoped<ILoiConformanceService, Application.Services.Loi.LoiConformanceService>();
+            services.AddScoped<ILoiCheckService, Application.Services.Loi.LoiCheckService>();
             services.AddSingleton<IFileTextExtractor, FileTextExtractorService>();
             services.AddSingleton<ITextChunker, TextChunkerService>();
 
