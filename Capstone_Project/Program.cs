@@ -23,6 +23,9 @@ builder.Services.AddInfrastructureService(builder.Configuration);
 // Worker dịch model nền (tiêu thụ IModelTranslationQueue) — đăng ký ở host vì cần Microsoft.Extensions.Hosting.
 builder.Services.AddHostedService<ModelTranslationWorker>();
 
+// Worker kiểm LOI nền (tiêu thụ ILoiCheckQueue).
+builder.Services.AddHostedService<LoiCheckWorker>();
+
 // Validation
 builder.Services.AddGlobalValidation(builder.Configuration);
 

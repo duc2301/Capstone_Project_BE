@@ -8,6 +8,7 @@ using AutoMapper;
 using Domain.Entities;
 using Domain.Enum.Cde;
 using Domain.Enum.File;
+using Domain.Enum.Loi;
 
 namespace Application.Services
 {
@@ -27,14 +28,16 @@ namespace Application.Services
         //private readonly IFolderPermissionServiceOld _permission;
         private readonly IFileStorageService _storage;
         private readonly IModelTranslationQueue _translationQueue;
+        private readonly ILoiCheckQueue _loiCheckQueue;
         private readonly IMapper _mapper;
         private readonly INameMatchContentBackgroundService _nameMatchContentBackgroundService;
 
-        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, IMapper mapper, INameMatchContentBackgroundService nameMatchContentBackgroundService)
+        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INameMatchContentBackgroundService nameMatchContentBackgroundService)
         {
             _unitOfWork = unitOfWork;
             _storage = storage;
             _translationQueue = translationQueue;
+            _loiCheckQueue = loiCheckQueue;
             _mapper = mapper;
             _nameMatchContentBackgroundService = nameMatchContentBackgroundService;
         }
@@ -103,10 +106,15 @@ namespace Application.Services
 
                 await _unitOfWork.Repository<FileItem>().CreateAsync(fileItem);
                 await _unitOfWork.Repository<FileVersion>().CreateAsync(v1);
+                // Cổng kiểm LOI (advisory): file .ifc -> tạo bản ghi Pending để FE hiện "đang kiểm".
+                if (dto.FileType == FileType.Ifc)
+                    await _unitOfWork.Repository<FileVersionLoiCheck>().CreateAsync(NewLoiPending(v1.Id, now));
                 await _unitOfWork.CommitAsync();
 
                 if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
                     _translationQueue.Enqueue(v1.Id);
+                if (dto.FileType == FileType.Ifc)
+                    _loiCheckQueue.Enqueue(v1.Id);
                 _nameMatchContentBackgroundService.Enqueue(fileItem.Id);
 
                 return new FileUploadResultDTO
@@ -131,6 +139,8 @@ namespace Application.Services
             if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
                 newVersion.ViewerStatus = ModelViewerStatus.Pending;
             await _unitOfWork.Repository<FileVersion>().CreateAsync(newVersion);
+            if (dto.FileType == FileType.Ifc)
+                await _unitOfWork.Repository<FileVersionLoiCheck>().CreateAsync(NewLoiPending(newVersion.Id, now));
 
             existing.CurrentVersionId = newVersion.Id;   // entity được track -> mutate trực tiếp
             existing.UpdatedAt = now;
@@ -166,6 +176,8 @@ namespace Application.Services
 
             if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
                 _translationQueue.Enqueue(newVersion.Id);
+            if (dto.FileType == FileType.Ifc)
+                _loiCheckQueue.Enqueue(newVersion.Id);
 
             return new FileUploadResultDTO
             {
@@ -215,6 +227,17 @@ namespace Application.Services
 
         // Chỉ model IFC/CAD mới cần dịch lên APS (xem ModelTranslationWorker).
         private static bool IsModelType(FileType type) => type is FileType.Ifc or FileType.Cad;
+
+        // Bản ghi kiểm LOI ở trạng thái chờ (để FE hiện "đang kiểm" ngay sau upload .ifc).
+        private static FileVersionLoiCheck NewLoiPending(Guid fileVersionId, DateTime now) => new()
+        {
+            Id = Guid.NewGuid(),
+            FileVersionId = fileVersionId,
+            Status = LoiCheckStatus.Pending,
+            Verdict = LoiVerdict.None,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
 
         private static FileVersion NewVersion(
             Guid fileItemId, int number, StoredFile stored, string format, Guid actor, DateTime now) => new()
