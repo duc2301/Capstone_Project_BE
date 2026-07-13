@@ -63,7 +63,12 @@ namespace Application.Mapping
             CreateMap<UpdateProjectDTO, Project>()
                 .ForAllMembers(o => o.Condition((src, dest, val) => val != null));
             CreateMap<ProjectLocation, ProjectLocationResponseDTO>();
-            Crud<ContractPackage, CreateContractPackageDTO, UpdateContractPackageDTO, ContractPackageResponseDTO>();
+            CreateMap<ContractPackage, ContractPackageResponseDTO>()
+                .ForMember(d => d.Assignments, o => o.Ignore());
+            CreateMap<CreateContractPackageDTO, ContractPackage>();
+            CreateMap<UpdateContractPackageDTO, ContractPackage>()
+                .ForAllMembers(o => o.Condition((src, dest, val) => val != null));
+            CreateMap<PackageAssignment, PackageAssignmentResponseDTO>();
 
             // Notification: set thời điểm gửi + chưa đọc khi tạo
             CreateMap<Notification, NotificationResponseDTO>();

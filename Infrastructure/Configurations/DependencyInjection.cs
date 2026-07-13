@@ -59,6 +59,8 @@ namespace Infrastructure.Configurations
             else
                 services.AddSingleton<IFileStorageService, LocalFileStorageService>();
             services.AddScoped<IFileUploadService, FileUploadService>();
+            // Naming convention: cấu hình quy ước đặt tên file + sinh tên khi upload
+            services.AddScoped<INamingConventionService, NamingConventionService>();
             services.AddSingleton<IOfficeToPdfConverter, SyncfusionOfficeToPdfConverter>();
             services.AddScoped<IFileViewService, FileViewService>();
             services.AddScoped<IMarkupService, MarkupService>();
@@ -69,6 +71,10 @@ namespace Infrastructure.Configurations
             services.AddScoped<IFolderPermissionService, FolderPermissionService>();
             services.AddScoped<IFolderTreeService, FolderTreeService>();
             services.AddScoped<IFolderTreeRepository, FolderTreeRepository>();
+
+            // Centralized permission checking (baseline) — features call this instead of ad-hoc checks
+            services.AddScoped<IPermissionCheckingService, PermissionCheckingService>();
+            services.AddScoped<IPermissionCheckingRepository, PermissionCheckingRepository>();
 
             services.AddScoped<IJwtService, JwtService>();
             services.AddScoped<IAuthService, AuthService>();
