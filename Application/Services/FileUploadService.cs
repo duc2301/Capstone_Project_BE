@@ -30,15 +30,17 @@ namespace Application.Services
         private readonly IModelTranslationQueue _translationQueue;
         private readonly ILoiCheckQueue _loiCheckQueue;
         private readonly IMapper _mapper;
+        private readonly INamingConventionService _naming;
         private readonly INameMatchContentBackgroundService _nameMatchContentBackgroundService;
 
-        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INameMatchContentBackgroundService nameMatchContentBackgroundService)
+        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INamingConventionService naming, INameMatchContentBackgroundService nameMatchContentBackgroundService)
         {
             _unitOfWork = unitOfWork;
             _storage = storage;
             _translationQueue = translationQueue;
             _loiCheckQueue = loiCheckQueue;
             _mapper = mapper;
+            _naming = naming;
             _nameMatchContentBackgroundService = nameMatchContentBackgroundService;
         }
 
@@ -60,6 +62,9 @@ namespace Application.Services
                 ? Path.GetFileNameWithoutExtension(originalFileName)
                 : dto.Name.Trim();
             var ext = Path.GetExtension(originalFileName);
+            var naming = await _naming.GenerateFileNameAsync(dto.FolderId, dto.NamingSelections, originalFileName, ct);
+            if (naming.HasNamingConvention)
+                name = naming.FileNameWithoutExtension;
 
             // ③ Kiểm tra tên file (rule mặc định: không rỗng, không ký tự cấm, có đuôi).
             ValidateName(name);
@@ -106,6 +111,8 @@ namespace Application.Services
 
                 await _unitOfWork.Repository<FileItem>().CreateAsync(fileItem);
                 await _unitOfWork.Repository<FileVersion>().CreateAsync(v1);
+                if (naming.HasNamingConvention)
+                    await _naming.StageFileNamingMetadataAsync(fileItem.Id, naming);
                 // Cổng kiểm LOI (advisory): file .ifc -> tạo bản ghi Pending để FE hiện "đang kiểm".
                 if (dto.FileType == FileType.Ifc)
                     await _unitOfWork.Repository<FileVersionLoiCheck>().CreateAsync(NewLoiPending(v1.Id, now));

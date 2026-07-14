@@ -142,5 +142,27 @@ namespace Capstone_Project.Controllers
         {
             return Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByFolderAsync(folderId)));
         }
+
+        [HttpGet("import-template")]
+        public IActionResult DownloadImportTemplate()
+        {
+            return File(_service.GenerateImportTemplate(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "naming-convention-template.xlsx");
+        }
+
+        [HttpPost("import-preview")]
+        public IActionResult ImportPreview(IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest(ApiResponse.Fail("Chưa chọn file."));
+            if (file.Length > 2 * 1024 * 1024)
+                return BadRequest(ApiResponse.Fail("File vượt quá 2MB."));
+            if (!file.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                return BadRequest(ApiResponse.Fail("Chỉ chấp nhận file .xlsx."));
+
+            using var stream = file.OpenReadStream();
+            return Ok(ApiResponse.Success("Parsed successfully", _service.ParseImportFile(stream)));
+        }
     }
 }

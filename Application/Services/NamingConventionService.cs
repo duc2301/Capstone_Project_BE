@@ -5,6 +5,7 @@ using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
 using System.Text.Json;
+using Syncfusion.XlsIO;
 
 namespace Application.Services
 {
@@ -691,5 +692,133 @@ namespace Application.Services
             OrderIndex = value.OrderIndex,
             IsActive = value.IsActive
         };
+
+        private const int MaxImportFields = 30;
+        private const int MaxValuesPerField = 500;
+        private static readonly string[] TemplateHeaders =
+            { "FieldCode", "FieldName", "FieldDescription", "ValueCode", "ValueName", "ValueDescription" };
+
+        public NamingConventionImportPreviewDTO ParseImportFile(Stream stream)
+        {
+            var engine = new ExcelEngine();
+            IWorkbook workbook;
+            try
+            {
+                workbook = engine.Excel.Workbooks.Open(stream, ExcelOpenType.Automatic);
+            }
+            catch (Exception)
+            {
+
+                throw new ApiExceptionResponse("Không đọc được file. Hãy dùng file .xlsx theo template mẫu.", 400);
+            }
+
+            var ws = workbook.Worksheets[0];
+
+            for (int collum = 1; collum <= TemplateHeaders.Length; collum++)
+            {
+                var header = ws.Range[1, collum].DisplayText?.Trim();
+                if (!string.Equals(header, TemplateHeaders[collum -1 ], StringComparison.OrdinalIgnoreCase))
+                    throw new ApiExceptionResponse(
+                $"File không đúng template (cột {collum} phải là '{TemplateHeaders[collum - 1]}'). Hãy tải template mẫu và điền theo.", 400);
+            }
+
+            var result = new NamingConventionImportPreviewDTO();
+            var fieldsByCode = new Dictionary<string, ImportedNamingFieldDTO>(StringComparer.OrdinalIgnoreCase);
+            var valueCodesByField = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+            int lastRow = ws.UsedRange.LastRow;
+            for (int row = 2; row <= lastRow; row++)
+            {
+                var fieldCode = ws.Range[row, 1].DisplayText?.Trim();
+                var fieldName = ws.Range[row, 2].DisplayText?.Trim();
+                var fieldDescription = ws.Range[row, 3].DisplayText?.Trim();
+                var valueCode = ws.Range[row, 4].DisplayText?.Trim();
+                var valueName = ws.Range[row, 5].DisplayText?.Trim();
+                var valueDescription = ws.Range[row, 6].DisplayText?.Trim();
+
+                if (string.IsNullOrEmpty(fieldCode) && string.IsNullOrEmpty(valueCode))
+                    continue;
+
+                if (string.IsNullOrEmpty(fieldCode) || string.IsNullOrEmpty(valueCode))
+                {
+                    result.Warnings.Add($"Dòng {row}: thiếu FieldCode hoặc ValueCode — đã bỏ qua.");
+                    continue;
+                }
+
+                if (!fieldsByCode.TryGetValue(fieldCode, out var field))
+                {
+                    if (fieldsByCode.Count >= MaxImportFields)
+                        throw new ApiExceptionResponse($"File vượt quá {MaxImportFields} field.", 400);
+
+                    field = new ImportedNamingFieldDTO
+                    {
+                        Code = fieldCode,
+                        DisplayName = string.IsNullOrEmpty(fieldName) ? fieldCode : fieldName,
+                        Description = string.IsNullOrEmpty(fieldDescription) ? null : fieldDescription,
+                        OrderIndex = fieldsByCode.Count
+                    };
+
+                    if (string.IsNullOrEmpty(fieldName))
+                        result.Warnings.Add($"Dòng {row}: field '{fieldCode}' thiếu FieldName — tạm dùng chính code.");
+
+                    fieldsByCode.Add(fieldCode, field);
+                    valueCodesByField.Add(fieldCode, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+                    result.Fields.Add(field);
+                }
+
+                if (!valueCodesByField[fieldCode].Add(valueCode))
+                {
+                    result.Warnings.Add($"Dòng {row}: value '{valueCode}' trùng trong field '{fieldCode}' — đã bỏ qua.");
+                    continue;
+                }
+
+                if (field.Values.Count >= MaxValuesPerField)
+                    throw new ApiExceptionResponse($"Field '{fieldCode}' vượt quá {MaxValuesPerField} giá trị.", 400);
+
+                field.Values.Add(new ImportedNamingValueDTO
+                {
+                    Code = valueCode,
+                    DisplayName = string.IsNullOrEmpty(valueName) ? valueCode : valueName,
+                    Description = string.IsNullOrEmpty(valueDescription) ? null : valueDescription,
+                    OrderIndex = field.Values.Count
+                });
+            }
+
+            if (result.Fields.Count == 0)
+                throw new ApiExceptionResponse("File không có dữ liệu field/value hợp lệ nào.", 400);
+
+            return result;
+        }
+
+        public byte[] GenerateImportTemplate()
+        {
+            var engine = new ExcelEngine();
+            engine.Excel.DefaultVersion = ExcelVersion.Excel2016;
+            var wb = engine.Excel.Workbooks.Create(1);
+            var ws = wb.Worksheets[0];
+            ws.Name = "NamingFields";
+
+            for (int collum = 1; collum <= TemplateHeaders.Length; collum++)
+                ws[1, collum + 1].Text = TemplateHeaders[collum];
+            
+            ws["A1:F1"].CellStyle.Font.Bold = true;
+
+            string[,] sample =
+            {
+                { "ORIG", "Originator",    "Đơn vị tạo tài liệu", "ABC", "Công ty ABC",   ""                    },
+                { "ORIG", "",              "",                    "XYZ", "Nhà thầu XYZ",  ""                    },
+                { "TYPE", "Document Type", "Loại tài liệu",       "DR",  "Drawing",       "Bản vẽ"              },
+                { "TYPE", "",              "",                    "SP",  "Specification", "Thuyết minh kỹ thuật" },
+            };
+            for (int i = 0; i < sample.GetLength(0); i++)
+                for (int j = 0; j < sample.GetLength(1); j++)
+                    ws[i + 2, j + 1].Text = sample[i, j];
+
+            ws.UsedRange.AutofitColumns();
+
+            using var ms = new MemoryStream();
+            wb.SaveAs(ms);
+            return ms.ToArray();
+        }
     }
 }
