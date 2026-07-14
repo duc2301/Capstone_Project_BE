@@ -87,6 +87,10 @@ namespace Infrastructure.DbContexts
         
         public virtual DbSet<FileRelation> FileRelations { get; set; }
 
+        public virtual DbSet<LoiRequirement> LoiRequirements { get; set; }
+        public virtual DbSet<LoiFieldAlias> LoiFieldAliases { get; set; }
+        public virtual DbSet<FileVersionLoiCheck> FileVersionLoiChecks { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -435,6 +439,27 @@ namespace Infrastructure.DbContexts
 
             modelBuilder.Entity<FileNote>()
                 .HasIndex(n => n.MarkupSetId);
+
+            modelBuilder.Entity<FileVersionLoiCheck>(b =>
+            {
+                b.HasIndex(x => x.FileVersionId).IsUnique();
+                b.HasOne(x => x.FileVersion)
+                    .WithMany()
+                    .HasForeignKey(x => x.FileVersionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<LoiRequirement>(b =>
+            {
+                b.HasIndex(x => new { x.Discipline, x.ComponentCode });
+                b.HasIndex(x => new { x.Discipline, x.IsCommon });
+            });
+
+            modelBuilder.Entity<LoiFieldAlias>(b =>
+            {
+                b.HasIndex(x => x.AliasNormalized);
+                b.HasIndex(x => new { x.FieldNameNormalized, x.AliasNormalized }).IsUnique();
+            });
         }
     }
 }
