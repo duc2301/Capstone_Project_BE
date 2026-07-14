@@ -107,6 +107,12 @@ namespace Application.Services
             IReadOnlyCollection<Folder> projectFolders,
             string notFoundMessage)
         {
+            // Ưu tiên bản chiếu (mirror) của vị trí hiện tại ở khu vực đích —
+            // file ở WIP/TeamA/Drawings thì về Shared/TeamA/Drawings, không rơi về folder gốc của team.
+            var mirrorTarget = ResolveMirrorTargetFolder(currentFolder, targetZone, projectFolders);
+            if (mirrorTarget != null)
+                return mirrorTarget;
+
             var participantIds = (await _unitOfWork.Repository<ProjectParticipant>().FindAsync(
                     p => p.ProjectId == currentFolder.ProjectId
                          && p.Status == ProjectParticipantStatus.Active
@@ -178,6 +184,71 @@ namespace Application.Services
 
             return projectFolders.FirstOrDefault(
                 f => f.ParentFolderId == targetRoot.Id && teamNames.Contains(f.Name));
+        }
+
+        // Tìm bản chiếu của folder hiện tại ở khu vực đích qua link MirrorSourceFolderId.
+        // Mọi bản chiếu đều trỏ về folder WIP gốc: đang ở WIP thì lấy chính Id, ngoài WIP thì theo link ngược.
+        // Trả null nếu chưa có bản chiếu (folder cũ) — caller rơi xuống các cách tìm cũ.
+        private static Folder? ResolveMirrorTargetFolder(
+            Folder currentFolder,
+            CdeArea targetZone,
+            IReadOnlyCollection<Folder> projectFolders)
+        {
+            var wipSourceId = currentFolder.Area == CdeArea.Wip
+                ? currentFolder.Id
+                : currentFolder.MirrorSourceFolderId;
+
+            if (targetZone == CdeArea.Wip)
+            {
+                var wipFolder = wipSourceId.HasValue
+                    ? projectFolders.FirstOrDefault(f => f.Id == wipSourceId.Value && f.Area == CdeArea.Wip)
+                    : null;
+                return wipFolder ?? FindTargetFolderByPath(currentFolder, targetZone, projectFolders);
+            }
+
+            if (wipSourceId.HasValue)
+            {
+                var linked = projectFolders.FirstOrDefault(f =>
+                    f.Area == targetZone && f.MirrorSourceFolderId == wipSourceId.Value);
+                if (linked != null)
+                    return linked;
+            }
+
+            // Folder chưa có link mirror: dò theo đường dẫn tên cùng vị trí ở khu vực đích.
+            return FindTargetFolderByPath(currentFolder, targetZone, projectFolders);
+        }
+
+        // Dò folder cùng đường dẫn tên (so từ root khu vực) ở khu vực đích. Trả null nếu thiếu cấp nào đó.
+        private static Folder? FindTargetFolderByPath(
+            Folder currentFolder,
+            CdeArea targetZone,
+            IReadOnlyCollection<Folder> projectFolders)
+        {
+            var byId = projectFolders.ToDictionary(f => f.Id);
+
+            // Chuỗi tên từ ngay dưới root nguồn xuống folder hiện tại.
+            var names = new List<string>();
+            var cur = (Folder?)currentFolder;
+            while (cur is { ParentFolderId: not null })
+            {
+                names.Add(cur.Name);
+                byId.TryGetValue(cur.ParentFolderId.Value, out cur);
+            }
+            if (cur == null)
+                return null; // chuỗi cha bị đứt, không xác định được đường dẫn
+            names.Reverse();
+
+            var target = projectFolders.FirstOrDefault(f => f.ParentFolderId == null && f.Area == targetZone);
+            foreach (var name in names)
+            {
+                if (target == null)
+                    return null;
+                target = projectFolders.FirstOrDefault(f =>
+                    f.ParentFolderId == target.Id
+                    && string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return target;
         }
 
         private static HashSet<Guid> ResolveFolderPathIds(Folder folder, IReadOnlyCollection<Folder> projectFolders)

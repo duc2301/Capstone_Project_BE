@@ -4,6 +4,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using AutoMapper;
+using Domain.Entities;
 using Domain.Enum.Cde;
 
 namespace Application.Services
@@ -33,7 +34,9 @@ namespace Application.Services
             if (!hasFullAccess)
             {
                 var viewableIds = await _folderTreeRepository.GetViewableFolderIdsAsync(projectId, accountId);
-                visible = folders.Where(f => viewableIds.Contains(f.Id)).ToList();
+                // 4 khu vực gốc (WIP/Shared/Published/Archived) luôn hiển thị với mọi thành viên;
+                // các folder con vẫn lọc theo quyền View như cũ.
+                visible = folders.Where(f => f.ParentFolderId == null || viewableIds.Contains(f.Id)).ToList();
             }
 
             var visibleIds = visible.Select(f => f.Id).ToHashSet();
@@ -48,21 +51,28 @@ namespace Application.Services
             });
 
             var roots = new List<FolderTreeNodeDTO>();
+            var folderById = folders.ToDictionary(f => f.Id);
+            // Cha hiển thị thực tế của mỗi node (có thể khác cha thật khi cha thật bị ẩn).
+            var displayParentById = new Dictionary<Guid, Guid>();
 
             // forming tree structure by linking children to their parents
-
-            //Cái chỗ vd như folder shared ko có quyền coi, nhg mà đc quyền coi 1 folder trong đó, thì chỉ hiện 1 folder th, đang sửa - thứ tự fix: 3
-            //
+            // Folder được View nhưng cha bị ẩn: gắn vào tổ tiên gần nhất còn hiển thị
+            // (tối thiểu là khu vực gốc WIP/Shared/... — luôn hiển thị) thay vì đẩy lên cùng cấp với gốc.
             foreach (var f in visible)
             {
                 var node = nodes[f.Id];
-                if (f.ParentFolderId.HasValue && visibleIds.Contains(f.ParentFolderId.Value))
-                    nodes[f.ParentFolderId.Value].Children.Add(node); // parent visible → attach as child
+                var anchorId = FindNearestVisibleAncestorId(f, folderById, visibleIds);
+                if (anchorId.HasValue)
+                {
+                    nodes[anchorId.Value].Children.Add(node);
+                    displayParentById[f.Id] = anchorId.Value;
+                }
                 else
-                    roots.Add(node); // ← orphan promotion happens here
+                {
+                    roots.Add(node);
+                }
             }
-            
-            var parentById = visible.ToDictionary(f => f.Id, f => f.ParentFolderId);
+
             var warningFolderIds = await _folderTreeRepository.GetWarningFolderIdsAsync(projectId);
             foreach (var folderId in warningFolderIds)
             {
@@ -70,8 +80,8 @@ namespace Application.Services
                 while (nodes.TryGetValue(cur, out var node) && !node.HasWarning)
                 {
                     node.HasWarning = true;
-                    if (!parentById.TryGetValue(cur, out var parentId) || !parentId.HasValue) break;
-                    cur = parentId.Value;
+                    if (!displayParentById.TryGetValue(cur, out var parentId)) break;
+                    cur = parentId;
                 }
             }
 
@@ -91,7 +101,13 @@ namespace Application.Services
                 || await _folderTreeRepository.CanViewFolderAsync(folderId, accountId);
 
             if (!canView)
+            {
+                // Khu vực gốc luôn mở được: trả danh sách rỗng thay vì 403.
+                if (folder.ParentFolderId == null)
+                    return new List<FileItemResponseDTO>();
+
                 throw new ApiExceptionResponse("You do not have permission to view this folder.", 403);
+            }
 
             var files = await _folderTreeRepository.GetFilesByFolderIdAsync(folderId);
             return _mapper.Map<List<FileItemResponseDTO>>(files);
@@ -107,7 +123,12 @@ namespace Application.Services
             var hasFullAccess = isSystemAdmin
                 || await _folderTreeRepository.HasFullAccessAsync(folder.ProjectId, accountId);
 
-            if (!hasFullAccess && !await _folderTreeRepository.CanViewFolderAsync(folderId, accountId))
+            var canViewFolder = hasFullAccess
+                || await _folderTreeRepository.CanViewFolderAsync(folderId, accountId);
+
+            // 4 khu vực gốc luôn mở được (trả nội dung đã lọc theo quyền) thay vì 403;
+            // folder con không có quyền View vẫn bị chặn như cũ.
+            if (!canViewFolder && folder.ParentFolderId != null)
                 throw new ApiExceptionResponse("You do not have permission to view this folder.", 403);
 
             var children = await _folderTreeRepository.GetChildFoldersAsync(folderId);
@@ -129,7 +150,10 @@ namespace Application.Services
             }).ToList();
             SortRecursive(subfolders);
 
-            var files = await _folderTreeRepository.GetFilesByFolderIdAsync(folderId);
+            // Không có quyền View trên khu vực gốc thì ẩn file, chỉ thấy subfolder được phép.
+            var files = canViewFolder
+                ? await _folderTreeRepository.GetFilesByFolderIdAsync(folderId)
+                : new List<Domain.Entities.FileItem>();
 
             return new FolderContentsDTO
             {
@@ -137,6 +161,29 @@ namespace Application.Services
                 Subfolders = subfolders,
                 Files = _mapper.Map<List<FileItemResponseDTO>>(files)
             };
+        }
+
+        // Tìm tổ tiên gần nhất còn hiển thị của folder (đi ngược ParentFolderId trên toàn bộ
+        // folder của dự án, kể cả folder bị ẩn). Trả null nếu là folder gốc / không còn tổ tiên nào hiển thị.
+        private static Guid? FindNearestVisibleAncestorId(
+            Folder folder,
+            IReadOnlyDictionary<Guid, Folder> folderById,
+            HashSet<Guid> visibleIds)
+        {
+            var seen = new HashSet<Guid>();
+            var parentId = folder.ParentFolderId;
+
+            while (parentId.HasValue && seen.Add(parentId.Value))
+            {
+                if (visibleIds.Contains(parentId.Value))
+                    return parentId;
+
+                parentId = folderById.TryGetValue(parentId.Value, out var parent)
+                    ? parent.ParentFolderId
+                    : null;
+            }
+
+            return null;
         }
 
         private static void SortRecursive(List<FolderTreeNodeDTO> nodes)
