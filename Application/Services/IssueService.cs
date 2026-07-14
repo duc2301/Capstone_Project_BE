@@ -8,7 +8,9 @@ using AutoMapper;
 using Domain.Entities;
 using Domain.Enum.Cde;
 using Domain.Enum.Discussion;
+using Domain.Enum.Group;
 using Domain.Enum.Issue;
+using Domain.Enum.Project;
 
 namespace Application.Services
 {
@@ -108,10 +110,6 @@ namespace Application.Services
                     ?? throw new ApiExceptionResponse("File folder not found.", 404);
                 if (folder.Area != CdeArea.Shared && folder.Area != CdeArea.Published)
                     throw new ApiExceptionResponse("Issue can only be created for files in Shared or Published zone.", 400);
-
-                // O vung Publish: bat buoc nguoi tao issue phai la active Team Leader (issue o Publish anh
-                // huong tai lieu chinh thuc da phat hanh, chi Leader moi duoc phep mo issue). O vung Shared
-                // thi bat ky ai cung tao duoc.
                 if (folder.Area == CdeArea.Published)
                 {
                     var projectFolders = await _zoneResolver.GetProjectFoldersAsync(folder.ProjectId);
@@ -160,18 +158,11 @@ namespace Application.Services
         {
             var issue = await _unitOfWork.Repository<Issue>().GetByIdAsync(issueId)
                 ?? throw new ApiExceptionResponse("Issue not found.", 404);
-
-            // Chi nguoi tao issue moi duoc giai quyet/dong (o vung Publish, nguoi tao da bat buoc la
-            // Leader luc CreateAsync nen quy tac nay tu nhien khop voi "Leader nao tao issue thi tu giai
-            // quyet"). Muon tra file ve WIP thi di theo nhanh return-request rieng (Leader duyet).
             RequireCreator(issue, actorId, "Only the issue creator can mark this issue resolved.");
 
             issue.Status = IssueStatus.Closed;
             issue.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.CommitAsync();
-
-            // Dong bo hien thi: thread thao luan gan voi issue cung chuyen sang Resolved (best-effort,
-            // khong chan neu vi ly do gi do issue chua co discussion).
             var discussion = (await _unitOfWork.Repository<Discussion>().FindAsync(
                     d => d.ScopeType == DiscussionScopeType.Issue && d.ScopeId == issueId))
                 .FirstOrDefault();
@@ -245,8 +236,6 @@ namespace Application.Services
             await RequireCreatorOrLeaderAsync(
                 issue, actorId, "Only the issue creator or an active Team Leader can add attachments.");
 
-            // Luu chung vao folder cua file dang duoc thao luan (neu co) — khong co folder rieng cho
-            // "loose attachment" nen tan dung cay thu muc CDE de dinh vi storage (projectId/folderId).
             Folder folder;
             if (issue.LinkedFileItemId.HasValue)
             {
@@ -291,6 +280,51 @@ namespace Application.Services
                          && i.Status != IssueStatus.Closed))
                 .Select(i => i.LinkedFileItemId!.Value)
                 .Distinct();
+        }
+
+        public async Task<IEnumerable<AssignableMemberDTO>> GetAssignableMembersAsync(Guid fileItemId)
+        {
+            var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+                ?? throw new ApiExceptionResponse("File not found.", 404);
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
+                ?? throw new ApiExceptionResponse("File folder not found.", 404);
+
+            var activeGroupIds = (await _unitOfWork.Repository<ProjectParticipant>().FindAsync(
+                    p => p.ProjectId == folder.ProjectId && p.Status == ProjectParticipantStatus.Active))
+                .Select(p => p.GroupId)
+                .ToHashSet();
+
+            if (folder.Area == CdeArea.Wip)
+            {
+                var projectFolders = await _zoneResolver.GetProjectFoldersAsync(folder.ProjectId);
+                var teamGroupIds = await _zoneResolver.ResolveTeamGroupIdsByFolderNameAsync(folder.ProjectId, folder, projectFolders);
+                activeGroupIds.IntersectWith(teamGroupIds);
+            }
+
+            if (activeGroupIds.Count == 0) return Enumerable.Empty<AssignableMemberDTO>();
+
+            var groupNameById = (await _unitOfWork.Repository<Group>().FindAsync(g => activeGroupIds.Contains(g.Id)))
+                .ToDictionary(g => g.Id, g => g.Name);
+
+            var members = (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                    m => activeGroupIds.Contains(m.GroupId) && m.Status == GroupMemberStatus.Active))
+                .ToList();
+            if (members.Count == 0) return Enumerable.Empty<AssignableMemberDTO>();
+
+            var accountIds = members.Select(m => m.AccountId).ToHashSet();
+            var accountsById = (await _unitOfWork.Repository<Account>().FindAsync(a => accountIds.Contains(a.Id)))
+                .ToDictionary(a => a.Id);
+
+            return members
+                .Where(m => accountsById.ContainsKey(m.AccountId) && groupNameById.ContainsKey(m.GroupId))
+                .Select(m => new AssignableMemberDTO
+                {
+                    AccountId = m.AccountId,
+                    Name = accountsById[m.AccountId].UserName,
+                    Email = accountsById[m.AccountId].Email,
+                    GroupId = m.GroupId,
+                    GroupName = groupNameById[m.GroupId]
+                });
         }
 
         private async Task<IssueAttachmentResponseDTO> BuildAttachmentDtoAsync(IssueAttachment attachment)

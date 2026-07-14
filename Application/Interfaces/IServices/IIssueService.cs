@@ -18,14 +18,9 @@ namespace Application.Interfaces.IServices
         Task<IEnumerable<Guid>> GetParticipantsAsync(Guid issueId);
         Task AddParticipantAsync(Guid issueId, Guid accountId, Guid actorId);
         Task RemoveParticipantAsync(Guid issueId, Guid accountId, Guid actorId);
-
-        /// <summary>Upload 1 file/anh (moi, khong phai file co san trong cay thu muc) gan truc tiep vao issue.</summary>
         Task<IssueAttachmentResponseDTO> AddAttachmentAsync(
             Guid issueId, Stream content, string fileName, long fileSizeBytes, Guid actorId);
-
-        /// <summary>Loc trong danh sach fileItemId truyen vao, tra ve nhung file dang co it nhat 1 Issue
-        /// chua Closed — dung de FE tu ghep co "Dang xu ly issue" vao danh sach file o cac trang khac
-        /// (vd bang danh sach file cua FolderTreeService) ma khong can BE cho do phai biet ve Issue.</summary>
         Task<IEnumerable<Guid>> GetOpenIssueFileIdsAsync(IEnumerable<Guid> fileItemIds);
+        Task<IEnumerable<AssignableMemberDTO>> GetAssignableMembersAsync(Guid fileItemId);
     }
 }
