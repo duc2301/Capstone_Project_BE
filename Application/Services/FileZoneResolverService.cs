@@ -68,6 +68,28 @@ namespace Application.Services
                 : activeParticipants.Values.ToHashSet();
         }
 
+        public async Task<IReadOnlyCollection<Guid>> ResolveTeamGroupIdsByFolderNameAsync(
+            Guid projectId,
+            Folder folder,
+            IReadOnlyCollection<Folder> projectFolders)
+        {
+            var teamFolder = ResolveZoneTeamFolder(folder, projectFolders);
+            if (teamFolder == null)
+                return Array.Empty<Guid>();
+
+            var activeGroupIds = (await _unitOfWork.Repository<ProjectParticipant>().FindAsync(
+                    p => p.ProjectId == projectId && p.Status == ProjectParticipantStatus.Active))
+                .Select(p => p.GroupId)
+                .ToHashSet();
+            if (activeGroupIds.Count == 0)
+                return Array.Empty<Guid>();
+
+            return (await _unitOfWork.Repository<Group>().FindAsync(
+                    g => activeGroupIds.Contains(g.Id) && g.Name == teamFolder.Name))
+                .Select(g => g.Id)
+                .ToList();
+        }
+
         public async Task RequireActiveTeamLeaderAsync(
             Guid actorId,
             IReadOnlyCollection<Guid> teamGroupIds,
