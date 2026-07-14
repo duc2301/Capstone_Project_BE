@@ -40,10 +40,10 @@ namespace Application.Services
             if (folder == null)
                 throw new ApiExceptionResponse("Folder not found", 404);
 
-            //if (folder.Area != CdeArea.Published)
-            //{
-            //    throw new ApiExceptionResponse("Chỉ đọc file khi đã ở published", 400);
-            //}
+            if (folder.Area != CdeArea.Published)
+            {
+                throw new ApiExceptionResponse("Chỉ đọc file khi đã ở published", 400);
+            }
 
             var contentHash = version.Checksum;
             var existing = await _unitOfWork.Repository<Document>()
