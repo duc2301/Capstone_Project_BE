@@ -28,12 +28,15 @@ namespace Capstone_Project.Controllers
         [HttpGet("by-file/{fileItemId:guid}")]
         public async Task<IActionResult> GetByFileItem(Guid fileItemId)
             => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByFileItemAsync(fileItemId)));
-
-        // FE tu goi de ghep co "Dang xu ly issue" vao cac bang danh sach file khac (vd DocumentsTab) ma
-        // khong can dong cham vao FolderTreeService/FileItemService cua các trang do.
+            
         [HttpPost("open-file-ids")]
         public async Task<IActionResult> GetOpenIssueFileIds([FromBody] GetOpenIssueFileIdsDTO dto)
             => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetOpenIssueFileIdsAsync(dto.FileItemIds)));
+
+        //Danh sach nhom o vung WIP
+        [HttpGet("assignable-members/{fileItemId:guid}")]
+        public async Task<IActionResult> GetAssignableMembers(Guid fileItemId)
+            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAssignableMembersAsync(fileItemId)));
 
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetById(Guid id)
