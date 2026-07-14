@@ -12,6 +12,10 @@ namespace Application.Interfaces.IServices
             FileItem fileItem,
             Folder currentFolder,
             IReadOnlyCollection<Folder> projectFolders);
+        Task<IReadOnlyCollection<Guid>> ResolveTeamGroupIdsByFolderNameAsync(
+            Guid projectId,
+            Folder folder,
+            IReadOnlyCollection<Folder> projectFolders);
         Task RequireActiveTeamLeaderAsync(
             Guid actorId,
             IReadOnlyCollection<Guid> teamGroupIds,
