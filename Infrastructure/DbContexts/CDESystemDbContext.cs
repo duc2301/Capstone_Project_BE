@@ -87,6 +87,10 @@ namespace Infrastructure.DbContexts
         
         public virtual DbSet<FileRelation> FileRelations { get; set; }
 
+        public virtual DbSet<LoiRequirement> LoiRequirements { get; set; }
+        public virtual DbSet<LoiFieldAlias> LoiFieldAliases { get; set; }
+        public virtual DbSet<FileVersionLoiCheck> FileVersionLoiChecks { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -240,12 +244,19 @@ namespace Infrastructure.DbContexts
                 .OnDelete(DeleteBehavior.Restrict);
 
 
-            // NamingConvention → Folder (1:1)
+            // NamingConvention → Project (N:1): convention tái sử dụng ở mức dự án
             modelBuilder.Entity<NamingConvention>()
-                .HasOne(nc => nc.Folder)
-                .WithOne(f => f.NamingConvention)           // Assume Folder has NamingConvention navigation
-                .HasForeignKey<NamingConvention>(nc => nc.FolderId)
-                .OnDelete(DeleteBehavior.Cascade);         // Deleting folder deletes its convention
+                .HasOne(nc => nc.Project)
+                .WithMany()
+                .HasForeignKey(nc => nc.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);          // Deleting project deletes its conventions
+
+            // Folder → NamingConvention (N:1, optional): nhiều folder dùng chung 1 convention
+            modelBuilder.Entity<Folder>()
+                .HasOne(f => f.NamingConvention)
+                .WithMany(nc => nc.Folders)
+                .HasForeignKey(f => f.NamingConventionId)
+                .OnDelete(DeleteBehavior.SetNull);          // Deleting convention unassigns folders
 
             // NamingConvention → NamingConventionField (1:N)
             modelBuilder.Entity<NamingConventionField>()
@@ -428,6 +439,27 @@ namespace Infrastructure.DbContexts
 
             modelBuilder.Entity<FileNote>()
                 .HasIndex(n => n.MarkupSetId);
+
+            modelBuilder.Entity<FileVersionLoiCheck>(b =>
+            {
+                b.HasIndex(x => x.FileVersionId).IsUnique();
+                b.HasOne(x => x.FileVersion)
+                    .WithMany()
+                    .HasForeignKey(x => x.FileVersionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<LoiRequirement>(b =>
+            {
+                b.HasIndex(x => new { x.Discipline, x.ComponentCode });
+                b.HasIndex(x => new { x.Discipline, x.IsCommon });
+            });
+
+            modelBuilder.Entity<LoiFieldAlias>(b =>
+            {
+                b.HasIndex(x => x.AliasNormalized);
+                b.HasIndex(x => new { x.FieldNameNormalized, x.AliasNormalized }).IsUnique();
+            });
         }
     }
 }

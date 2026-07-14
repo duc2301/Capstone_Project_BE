@@ -67,33 +67,33 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("Deleted successfully"));
         }
 
-        // Quyền hiệu lực của chính người gọi trên 1 folder.
-        [HttpGet("{id:guid}/permissions/me")]
-        public async Task<IActionResult> GetMyPermission(Guid id)
-        {
-            //var perm = await _permission.EvaluateAsync(User.GetAccountId(), id);
-            return Ok(ApiResponse.Success("Effective permission retrieved", true));
-        }
+        //// Quyền hiệu lực của chính người gọi trên 1 folder.
+        //[HttpGet("{id:guid}/permissions/me")]
+        //public async Task<IActionResult> GetMyPermission(Guid id)
+        //{
+        //    //var perm = await _permission.EvaluateAsync(User.GetAccountId(), id);
+        //    return Ok(ApiResponse.Success("Effective permission retrieved", true));
+        //}
 
-        // ACL override tường minh (Admin/PM). Liệt kê / set / xóa.
-        [HttpGet("{id:guid}/permissions")]
-        public async Task<IActionResult> GetPermissions(Guid id)
-            //=> Ok(ApiResponse.Success("Permissions retrieved",
-            //    await _permission.GetPermissionsAsync(id, User.GetAccountId(), User.GetSystemRole())));
-            => Ok(ApiResponse.Success("Permissions retrieved", true));
+        //// ACL override tường minh (Admin/PM). Liệt kê / set / xóa.
+        //[HttpGet("{id:guid}/permissions")]
+        //public async Task<IActionResult> GetPermissions(Guid id)
+        //    //=> Ok(ApiResponse.Success("Permissions retrieved",
+        //    //    await _permission.GetPermissionsAsync(id, User.GetAccountId(), User.GetSystemRole())));
+        //    => Ok(ApiResponse.Success("Permissions retrieved", true));
 
 
-        [HttpPut("{id:guid}/permissions")]
-        public async Task<IActionResult> SetPermission(Guid id, [FromBody] SetFolderPermissionDTO dto)
-            //=> Ok(ApiResponse.Success("Permission saved",
-            //    await _permission.SetPermissionAsync(id, dto, User.GetAccountId(), User.GetSystemRole())));
-            => Ok(ApiResponse.Success("Permissions retrieved", true));
+        //[HttpPut("{id:guid}/permissions")]
+        //public async Task<IActionResult> SetPermission(Guid id, [FromBody] SetFolderPermissionDTO dto)
+        //    //=> Ok(ApiResponse.Success("Permission saved",
+        //    //    await _permission.SetPermissionAsync(id, dto, User.GetAccountId(), User.GetSystemRole())));
+        //    => Ok(ApiResponse.Success("Permissions retrieved", true));
 
-        [HttpDelete("{id:guid}/permissions/{permissionId:guid}")]
-        public async Task<IActionResult> DeletePermission(Guid id, Guid permissionId)
-        {
-            //await _permission.DeletePermissionAsync(id, permissionId, User.GetAccountId(), User.GetSystemRole());
-            return Ok(ApiResponse.Success("Permission removed"));
-        }
+        //[HttpDelete("{id:guid}/permissions/{permissionId:guid}")]
+        //public async Task<IActionResult> DeletePermission(Guid id, Guid permissionId)
+        //{
+        //    //await _permission.DeletePermissionAsync(id, permissionId, User.GetAccountId(), User.GetSystemRole());
+        //    return Ok(ApiResponse.Success("Permission removed"));
+        //}
     }
 }

@@ -8,9 +8,8 @@ namespace Application.DTOs.RequestDTOs.ContractPackage
         [Required]
         public Guid ProjectId { get; set; }
 
-        [Required]
         [StringLength(50)]
-        public string Code { get; set; } = null!;
+        public string? Code { get; set; }
 
         [Required]
         [StringLength(250)]
@@ -27,5 +26,18 @@ namespace Application.DTOs.RequestDTOs.ContractPackage
         public PackageStatus Status { get; set; }
 
         public bool IsDefault { get; set; }
+
+        public string? WorkTypes { get; set; }
+        public string? ScopeDescription { get; set; }
+        public decimal? TaxRate { get; set; }
+        public string? Currency { get; set; }
+        public string? Notes { get; set; }
+        public Guid? DocumentFolderId { get; set; }
+
+        public Guid? ContractorOrganizationId { get; set; }
+        public Guid? RepresentativeAccountId { get; set; }
+        public string? ContractNumber { get; set; }
+        public DateTime? ContractSignDate { get; set; }
+        public string? ContractJobTitle { get; set; }
     }
 }

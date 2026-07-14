@@ -59,6 +59,8 @@ namespace Infrastructure.Configurations
             else
                 services.AddSingleton<IFileStorageService, LocalFileStorageService>();
             services.AddScoped<IFileUploadService, FileUploadService>();
+            // Naming convention: cấu hình quy ước đặt tên file + sinh tên khi upload
+            services.AddScoped<INamingConventionService, NamingConventionService>();
             services.AddSingleton<IOfficeToPdfConverter, SyncfusionOfficeToPdfConverter>();
             services.AddScoped<IFileViewService, FileViewService>();
             services.AddScoped<IMarkupService, MarkupService>();
@@ -69,6 +71,10 @@ namespace Infrastructure.Configurations
             services.AddScoped<IFolderPermissionService, FolderPermissionService>();
             services.AddScoped<IFolderTreeService, FolderTreeService>();
             services.AddScoped<IFolderTreeRepository, FolderTreeRepository>();
+
+            // Centralized permission checking (baseline) — features call this instead of ad-hoc checks
+            services.AddScoped<IPermissionCheckingService, PermissionCheckingService>();
+            services.AddScoped<IPermissionCheckingRepository, PermissionCheckingRepository>();
 
             services.AddScoped<IJwtService, JwtService>();
             services.AddScoped<IAuthService, AuthService>();
@@ -106,6 +112,13 @@ namespace Infrastructure.Configurations
             // Hàng đợi dịch model nền (singleton: producer upload/view + consumer ModelTranslationWorker dùng chung).
             // Worker (BackgroundService) đăng ký ở Program.cs (host) vì cần Microsoft.Extensions.Hosting.
             services.AddSingleton<IModelTranslationQueue, ModelTranslationQueue>();
+
+            // Kiểm LOI (thông tin phi hình học, BXD-347): parser STEP + engine + hàng đợi nền + read service.
+            // Worker (LoiCheckWorker) đăng ký ở Program.cs.
+            services.AddSingleton<IIfcLoiExtractor, Application.Services.Loi.IfcStepPropertyExtractor>();
+            services.AddSingleton<ILoiCheckQueue, LoiCheckQueue>();
+            services.AddScoped<ILoiConformanceService, Application.Services.Loi.LoiConformanceService>();
+            services.AddScoped<ILoiCheckService, Application.Services.Loi.LoiCheckService>();
             services.AddSingleton<IFileTextExtractor, FileTextExtractorService>();
             services.AddSingleton<ITextChunker, TextChunkerService>();
 
