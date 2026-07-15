@@ -2,15 +2,18 @@ using Domain.Enum.File;
 
 namespace Domain.Entities
 {
-    // Trạng thái versioning hiện hành của 1 tài liệu (1 dòng / 1 FileItem).
-    // Bảng mới, độc lập với FileVersions (VersionNumber tuần tự) — không đụng bảng cũ.
-    // FileVersionService đọc/ghi bảng này để tính P{Rev}.{Ver} / C{PubRev}.
+    // Lịch sử versioning của tài liệu — MỖI lần đổi version (upload/shared/publish/về WIP)
+    // INSERT 1 dòng mới kèm snapshot dữ liệu file tại thời điểm đó, KHÔNG update đè.
+    // Dòng IsCurrent = true là trạng thái hiện hành (đúng 1 dòng / FileItem); các dòng còn lại là lịch sử.
     public class FileVersionState
     {
         public Guid Id { get; set; }
         public Guid FileItemId { get; set; }
 
-        // Giai đoạn hiện tại: Working (P) hoặc Published (C)
+        // true = trạng thái version hiện hành; false = snapshot lịch sử
+        public bool IsCurrent { get; set; } = true;
+
+        // Giai đoạn tại thời điểm snapshot: Working (P) hoặc Published (C)
         public VersionStage Stage { get; set; } = VersionStage.Working;
 
         // Revision sau chữ P — tăng khi tài liệu vào SHARED thành công
@@ -26,6 +29,16 @@ namespace Domain.Entities
 
         // Chuỗi hiển thị đã format sẵn, vd "P01.02" hoặc "C01"
         public string DisplayVersion { get; set; } = null!;
+
+        // --- Snapshot dữ liệu file tại thời điểm version này ---
+        // Chép giá trị (không FK cứng sang FileVersions) để dòng lịch sử tự đủ,
+        // không vỡ nếu bản ghi FileVersion vật lý bị ẩn/xóa sau này.
+        public Guid? FileVersionId { get; set; }
+        public string? FileName { get; set; }
+        public string? StoragePath { get; set; }
+        public long? FileSizeBytes { get; set; }
+        public string? Format { get; set; }
+        public string? Checksum { get; set; }
 
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }

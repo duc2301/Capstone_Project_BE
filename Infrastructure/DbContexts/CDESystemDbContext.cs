@@ -464,11 +464,18 @@ namespace Infrastructure.DbContexts
                 b.HasIndex(x => new { x.FieldNameNormalized, x.AliasNormalized }).IsUnique();
             });
 
-            // Mỗi FileItem chỉ có 1 trạng thái versioning hiện hành.
+            // Lịch sử versioning: nhiều dòng / FileItem (append-only), mỗi dòng snapshot 1 version.
             // WithMany() rỗng để không phải thêm navigation vào FileItem (không đụng entity cũ).
             modelBuilder.Entity<FileVersionState>(b =>
             {
-                b.HasIndex(x => x.FileItemId).IsUnique();
+                // Tra cứu trạng thái hiện hành / duyệt lịch sử theo tài liệu
+                b.HasIndex(x => new { x.FileItemId, x.IsCurrent });
+
+                // Ràng buộc toàn vẹn: mỗi FileItem chỉ có đúng 1 dòng IsCurrent = true (partial unique index)
+                b.HasIndex(x => x.FileItemId)
+                    .IsUnique()
+                    .HasFilter("\"IsCurrent\" = TRUE");
+
                 b.HasOne(x => x.FileItem)
                     .WithMany()
                     .HasForeignKey(x => x.FileItemId)
