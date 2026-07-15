@@ -1,5 +1,7 @@
 using Application.DTOs.RequestDTOs.FileItem;
+using Application.DTOs.RequestDTOs.FileVersion;
 using Application.DTOs.ResponseDTOs.FileItem;
+using Application.DTOs.ResponseDTOs.FileVersion;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IBackgroundServices;
 using Application.Interfaces.IServices;
@@ -31,8 +33,9 @@ namespace Application.Services
         private readonly ILoiCheckQueue _loiCheckQueue;
         private readonly IMapper _mapper;
         private readonly INameMatchContentBackgroundService _nameMatchContentBackgroundService;
+        private readonly IFileVersionService _fileVersionService;
 
-        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INameMatchContentBackgroundService nameMatchContentBackgroundService)
+        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService)
         {
             _unitOfWork = unitOfWork;
             _storage = storage;
@@ -40,6 +43,7 @@ namespace Application.Services
             _loiCheckQueue = loiCheckQueue;
             _mapper = mapper;
             _nameMatchContentBackgroundService = nameMatchContentBackgroundService;
+            _fileVersionService = fileVersionService;
         }
 
         public async Task<FileUploadResultDTO> UploadAsync(
@@ -69,13 +73,6 @@ namespace Application.Services
             // ④ Đuôi file phải khớp FileType khai báo.
             ValidateExtensionMatchesType(ext, dto.FileType);
 
-            // ⑤ Tên file phải duy nhất trong folder (versioning cũ đã bỏ — không còn tự tạo phiên bản mới).
-            var siblings = (await _unitOfWork.Repository<FileItem>()
-                    .FindAsync(f => f.FolderId == folder.Id))
-                .ToList();
-            if (siblings.Any(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase)))
-                throw new ApiExceptionResponse("Tên file đã tồn tại trong thư mục này.", 400);
-
             // ① Đối chiếu quyền: file mới cần Edit.
             //await _permission.RequireAsync(actor, folder.Id, FolderAction.Edit);
 
@@ -85,39 +82,88 @@ namespace Application.Services
             var now = DateTime.UtcNow;
             var format = ext.TrimStart('.').ToLowerInvariant();
 
-            var fileItem = new FileItem
+            // ⑤ Versioning: trùng tên trong folder = upload thay thế (WorkingVersion +1);
+            // tên mới = tài liệu mới (P01.01). Toàn bộ quy tắc nằm trong FileVersionService.
+            var fileData = new FileVersionDataDTO
             {
-                Id = Guid.NewGuid(),
-                FolderId = folder.Id,
-                Name = name,
-                FileType = dto.FileType,
-                CreatedByAccountId = actor,
-                CreatedAt = now,
-                UpdatedAt = now
+                StoragePath = stored.RelativePath,
+                FileSizeBytes = stored.SizeBytes,
+                Format = format,
+                Checksum = stored.Checksum,
+                UploadedByAccountId = actor,
+                // Model IFC/CAD: chỉ đánh dấu chờ dịch nền khi BẬT công tắc tự dịch khi upload.
+                ViewerStatus = AutoTranslateModelsOnUpload && IsModelType(dto.FileType)
+                    ? ModelViewerStatus.Pending
+                    : ModelViewerStatus.None
             };
-            var v1 = NewVersion(fileItem.Id, 1, stored, format, actor, now);
-            fileItem.CurrentVersionId = v1.Id;
-            // Model IFC/CAD: chỉ đánh dấu chờ dịch nền khi BẬT công tắc tự dịch khi upload (xem AutoTranslateModelsOnUpload).
-            if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
-                v1.ViewerStatus = ModelViewerStatus.Pending;
 
-            await _unitOfWork.Repository<FileItem>().CreateAsync(fileItem);
-            await _unitOfWork.Repository<FileVersion>().CreateAsync(v1);
+            FileVersionResult version;
+            FileItem fileItem;
+            try
+            {
+                version = await _fileVersionService.GetNextUploadVersionAsync(folder.Id, name, fileData);
+            }
+            catch (InvalidOperationException ex)
+            {
+                // vd: tài liệu đang Published — không nhận upload thay thế.
+                throw new ApiExceptionResponse(ex.Message, 409);
+            }
+
+            if (version.IsNewDocument)
+            {
+                fileItem = new FileItem
+                {
+                    Id = Guid.NewGuid(),
+                    FolderId = folder.Id,
+                    Name = name,
+                    FileType = dto.FileType,
+                    CreatedByAccountId = actor,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+                await _unitOfWork.Repository<FileItem>().CreateAsync(fileItem);
+                // FileItem đang tracked (Added) nên versioning service nhìn thấy ngay qua cùng DbContext.
+                version = await _fileVersionService.CreateInitialVersionAsync(fileItem.Id, fileData);
+            }
+            else
+            {
+                fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(version.FileItemId!.Value)
+                    ?? throw new ApiExceptionResponse("File not found.", 404);
+                fileItem.FileType = dto.FileType;
+                fileItem.UpdatedAt = now;
+            }
+
+            // CurrentVersionId giờ trỏ sang dòng FileVersionStates hiện hành (hệ versioning mới).
+            fileItem.CurrentVersionId = version.VersionStateId;
+
             // Cổng kiểm LOI (advisory): file .ifc -> tạo bản ghi Pending để FE hiện "đang kiểm".
             if (dto.FileType == FileType.Ifc)
-                await _unitOfWork.Repository<FileVersionLoiCheck>().CreateAsync(NewLoiPending(v1.Id, now));
+                await _unitOfWork.Repository<FileVersionLoiCheck>().CreateAsync(NewLoiPending(version.VersionStateId!.Value, now));
             await _unitOfWork.CommitAsync();
 
             if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
-                _translationQueue.Enqueue(v1.Id);
+                _translationQueue.Enqueue(version.VersionStateId!.Value);
             if (dto.FileType == FileType.Ifc)
-                _loiCheckQueue.Enqueue(v1.Id);
+                _loiCheckQueue.Enqueue(version.VersionStateId!.Value);
             _nameMatchContentBackgroundService.Enqueue(fileItem.Id);
 
             return new FileUploadResultDTO
             {
                 FileItem = _mapper.Map<FileItemResponseDTO>(fileItem),
-                Version = _mapper.Map<FileVersionResponseDTO>(v1),
+                Version = new FileVersionResponseDTO
+                {
+                    Id = version.VersionStateId!.Value,
+                    FileItemId = fileItem.Id,
+                    VersionNumber = version.WorkingVersion,
+                    DisplayVersion = version.DisplayVersion,
+                    StoragePath = stored.RelativePath,
+                    FileSizeBytes = stored.SizeBytes,
+                    Format = format,
+                    Checksum = stored.Checksum,
+                    IsHidden = false,
+                    UploadedByAccountId = actor,
+                    UploadedAt = now
+                },
                 Url = url
             };
         }
@@ -132,8 +178,11 @@ namespace Application.Services
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
 
-            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value)
+            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
+
+            if (string.IsNullOrEmpty(version.StoragePath) || string.IsNullOrEmpty(version.Format))
+                throw new ApiExceptionResponse("Current version has no stored content.", 404);
 
             var stream = await _storage.OpenReadAsync(version.StoragePath, ct);
             var downloadName = $"{fileItem.Name}.{version.Format}";
@@ -150,8 +199,11 @@ namespace Application.Services
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
 
-            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value)
+            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
+
+            if (string.IsNullOrEmpty(version.StoragePath))
+                throw new ApiExceptionResponse("Current version has no stored content.", 404);
 
             return await _storage.GetPresignedUrlAsync(version.StoragePath, minutes, ct);
         }
@@ -170,21 +222,6 @@ namespace Application.Services
             Verdict = LoiVerdict.None,
             CreatedAt = now,
             UpdatedAt = now
-        };
-
-        private static FileVersion NewVersion(
-            Guid fileItemId, int number, StoredFile stored, string format, Guid actor, DateTime now) => new()
-        {
-            Id = Guid.NewGuid(),
-            FileItemId = fileItemId,
-            VersionNumber = number,
-            StoragePath = stored.RelativePath,
-            FileSizeBytes = stored.SizeBytes,
-            Format = format,
-            Checksum = stored.Checksum,
-            IsHidden = false,
-            UploadedByAccountId = actor,
-            UploadedAt = now
         };
 
         private static void ValidateName(string name)

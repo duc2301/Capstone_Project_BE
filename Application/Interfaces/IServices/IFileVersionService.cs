@@ -1,19 +1,22 @@
+using Application.DTOs.RequestDTOs.FileVersion;
 using Application.DTOs.ResponseDTOs.FileVersion;
 
 namespace Application.Interfaces.IServices
 {
     // File Versioning: mọi quy tắc tính version (P{Rev}.{Ver} / C{PubRev}) nằm duy nhất ở service này.
     // KHÔNG upload file, KHÔNG chuyển zone, KHÔNG check quyền — caller tự lo các việc đó rồi gọi vào đây.
+    // Dữ liệu file vật lý do caller truyền vào (FileVersionDataDTO) — không đọc từ hệ FileVersions cũ.
     public interface IFileVersionService
     {
-        // Upload vào folder: tài liệu mới -> trả P01.01 (chưa lưu state, chờ caller tạo FileItem);
-        // tài liệu đã tồn tại (trùng Name) -> Working Version +1 và lưu state.
-        Task<FileVersionResult> GetNextUploadVersionAsync(Guid folderId, string fileName);
+        // Upload vào folder: tài liệu mới -> trả P01.01 (chưa lưu, chờ caller tạo FileItem);
+        // tài liệu đã tồn tại (trùng Name) -> Working Version +1, lưu dòng state mới kèm dữ liệu file.
+        Task<FileVersionResult> GetNextUploadVersionAsync(Guid folderId, string fileName, FileVersionDataDTO? fileData = null);
 
-        // Chốt version đầu tiên (P01.01) cho FileItem vừa được tạo.
-        Task<FileVersionResult> CreateInitialVersionAsync(Guid fileItemId);
+        // Chốt version đầu tiên (P01.01) cho FileItem vừa được tạo, kèm dữ liệu file vật lý.
+        Task<FileVersionResult> CreateInitialVersionAsync(Guid fileItemId, FileVersionDataDTO? fileData = null);
 
         // Tài liệu vào SHARED thành công: Working Revision +1, Working Version reset về 01.
+        // Dữ liệu file giữ nguyên (copy từ dòng state trước).
         Task<FileVersionResult> GetNextSharedVersionAsync(Guid fileItemId);
 
         // Publish: Published Revision +1, hiển thị C{PubRev} (không có Version Number).

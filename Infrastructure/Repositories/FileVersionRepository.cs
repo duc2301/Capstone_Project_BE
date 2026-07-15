@@ -38,25 +38,5 @@ namespace Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        public async Task<FileVersion?> GetCurrentFileVersionAsync(Guid fileItemId)
-        {
-            var currentVersionId = await _context.FileItems
-                .Where(f => f.Id == fileItemId)
-                .Select(f => f.CurrentVersionId)
-                .FirstOrDefaultAsync();
-
-            if (currentVersionId == null)
-                return null;
-
-            return await _context.FileVersions
-                .AsNoTracking()
-                .FirstOrDefaultAsync(v => v.Id == currentVersionId);
-        }
-
-        public async Task<int> CountFileVersionsAsync(Guid fileItemId)
-        {
-            return await _context.FileVersions
-                .CountAsync(v => v.FileItemId == fileItemId);
-        }
     }
 }

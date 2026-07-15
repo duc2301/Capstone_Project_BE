@@ -7,6 +7,10 @@ namespace Application.DTOs.ResponseDTOs.FileVersion
     {
         public Guid? FileItemId { get; set; }
 
+        // Id dòng FileVersionState vừa được tạo — caller dùng để set FileItem.CurrentVersionId
+        // (null khi tài liệu mới hoàn toàn, chưa có gì được lưu).
+        public Guid? VersionStateId { get; set; }
+
         // true = tài liệu hoàn toàn mới (chưa có FileItem trùng tên) —
         // caller tạo FileItem xong gọi CreateInitialVersionAsync để chốt trạng thái.
         public bool IsNewDocument { get; set; }

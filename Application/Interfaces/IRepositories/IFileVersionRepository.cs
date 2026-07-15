@@ -16,11 +16,5 @@ namespace Application.Interfaces.IRepositories
 
         // Toàn bộ lịch sử version của tài liệu, mới nhất trước (read-only).
         Task<List<FileVersionState>> GetHistoryAsync(Guid fileItemId);
-
-        // Bản FileVersion vật lý hiện hành (FileItem.CurrentVersionId) — nguồn dữ liệu snapshot.
-        Task<FileVersion?> GetCurrentFileVersionAsync(Guid fileItemId);
-
-        // Số bản FileVersion vật lý đã có — dùng seed WorkingVersion cho tài liệu cũ chưa có state
-        Task<int> CountFileVersionsAsync(Guid fileItemId);
     }
 }
