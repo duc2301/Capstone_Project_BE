@@ -140,17 +140,12 @@ namespace Application.Services
                 var stored = await _storage.SaveAsync(output, folder.ProjectId, fileItem.FolderId, signedExtension);
 
                 var now = DateTime.UtcNow;
-                var nextVersionNumber = (await _unitOfWork.Repository<FileVersion>().FindAsync(
-                        v => v.FileItemId == fileItem.Id))
-                    .Select(v => v.VersionNumber)
-                    .DefaultIfEmpty(0)
-                    .Max() + 1;
 
                 signedVersion = new FileVersion
                 {
                     Id = Guid.NewGuid(),
                     FileItemId = fileItem.Id,
-                    VersionNumber = nextVersionNumber,
+                    VersionNumber = currentVersion.VersionNumber + 1,
                     StoragePath = stored.RelativePath,
                     FileSizeBytes = stored.SizeBytes,
                     Format = signedFormat,

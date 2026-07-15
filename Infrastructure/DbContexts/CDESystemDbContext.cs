@@ -87,6 +87,9 @@ namespace Infrastructure.DbContexts
         
         public virtual DbSet<FileRelation> FileRelations { get; set; }
 
+        // --- File Versioning (trạng thái version hiện hành của tài liệu) ---
+        public virtual DbSet<FileVersionState> FileVersionStates { get; set; }
+
         public virtual DbSet<LoiRequirement> LoiRequirements { get; set; }
         public virtual DbSet<LoiFieldAlias> LoiFieldAliases { get; set; }
         public virtual DbSet<FileVersionLoiCheck> FileVersionLoiChecks { get; set; }
@@ -459,6 +462,17 @@ namespace Infrastructure.DbContexts
             {
                 b.HasIndex(x => x.AliasNormalized);
                 b.HasIndex(x => new { x.FieldNameNormalized, x.AliasNormalized }).IsUnique();
+            });
+
+            // Mỗi FileItem chỉ có 1 trạng thái versioning hiện hành.
+            // WithMany() rỗng để không phải thêm navigation vào FileItem (không đụng entity cũ).
+            modelBuilder.Entity<FileVersionState>(b =>
+            {
+                b.HasIndex(x => x.FileItemId).IsUnique();
+                b.HasOne(x => x.FileItem)
+                    .WithMany()
+                    .HasForeignKey(x => x.FileItemId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
         }
     }

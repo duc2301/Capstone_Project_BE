@@ -183,26 +183,6 @@ namespace Application.Services
                 || (request.DecidedAt ?? request.CreatedAt) >= fileItem.UpdatedAt.Value);
         }
 
-        public async Task<IEnumerable<FileVersionResponseDTO>> GetVersionsAsync(Guid fileItemId, Guid actorId)
-        {
-            var file = await GetFileItemAsync(fileItemId);
-            //await _permission.RequireAsync(actorId, file.FolderId, FolderAction.View);
-
-            var accounts = (await _unitOfWork.Repository<Account>().GetAllAsync())
-                .ToDictionary(a => a.Id);
-
-            return (await _unitOfWork.Repository<FileVersion>()
-                    .FindAsync(v => v.FileItemId == fileItemId))
-                .OrderByDescending(v => v.VersionNumber)
-                .Select(v =>
-                {
-                    var dto = _mapper.Map<FileVersionResponseDTO>(v);
-                    dto.UploadedByName = v.UploadedByAccountId.HasValue && accounts.TryGetValue(v.UploadedByAccountId.Value, out var a) ? a.UserName : null;
-                    return dto;
-                })
-                .ToList();
-        }
-
         private async Task<FileItem> GetFileItemAsync(Guid fileItemId)
             => await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                ?? throw new ApiExceptionResponse("File not found.", 404);

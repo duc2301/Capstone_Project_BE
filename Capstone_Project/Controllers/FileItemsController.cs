@@ -148,11 +148,6 @@ namespace Capstone_Project.Controllers
         public async Task<IActionResult> GetByFolder(Guid folderId)
             => Ok(ApiResponse.Success("Files retrieved", await _service.GetByFolderAsync(folderId, User.GetAccountId())));
 
-        // Tất cả phiên bản của 1 file.
-        [HttpGet("{id:guid}/versions")]
-        public async Task<IActionResult> GetVersions(Guid id)
-            => Ok(ApiResponse.Success("Versions retrieved", await _service.GetVersionsAsync(id, User.GetAccountId())));
-
         [HttpGet]
         public async Task<IActionResult> GetAll()
             => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAllAsync()));
