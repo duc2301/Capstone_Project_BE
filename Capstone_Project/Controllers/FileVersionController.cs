@@ -114,6 +114,14 @@ namespace Capstone_Project.Controllers
             }
         }
 
+        // Toàn bộ lịch sử version (mới nhất trước), kèm snapshot dữ liệu file của từng version.
+        [HttpGet("{fileItemId:guid}/history")]
+        public async Task<IActionResult> GetVersionHistory(Guid fileItemId)
+        {
+            var result = await _fileVersionService.GetVersionHistoryAsync(fileItemId);
+            return Ok(ApiResponse.Success("Version history retrieved", result));
+        }
+
         // Trạng thái version hiện hành + chuỗi hiển thị đã format.
         [HttpGet("{fileItemId:guid}/current")]
         public async Task<IActionResult> GetCurrentVersion(Guid fileItemId)

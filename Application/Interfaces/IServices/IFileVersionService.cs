@@ -25,5 +25,8 @@ namespace Application.Interfaces.IServices
 
         // Trạng thái version hiện hành (null nếu tài liệu chưa có state).
         Task<FileVersionResult?> GetCurrentVersionAsync(Guid fileItemId);
+
+        // Toàn bộ lịch sử version (mới nhất trước), kèm snapshot dữ liệu file của từng version.
+        Task<List<FileVersionHistoryItemDTO>> GetVersionHistoryAsync(Guid fileItemId);
     }
 }

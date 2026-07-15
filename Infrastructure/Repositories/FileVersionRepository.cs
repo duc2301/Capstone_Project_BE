@@ -22,11 +22,35 @@ namespace Infrastructure.Repositories
                 .FirstOrDefaultAsync(f => f.FolderId == folderId && f.Name == fileName);
         }
 
-        // Không AsNoTracking: service cần entity tracked để cập nhật rồi SaveChangesAsync.
-        public async Task<FileVersionState?> GetVersionStateAsync(Guid fileItemId)
+        // Không AsNoTracking: service cần entity tracked để set IsCurrent = false rồi SaveChangesAsync.
+        public async Task<FileVersionState?> GetCurrentStateAsync(Guid fileItemId)
         {
             return await _context.FileVersionStates
-                .FirstOrDefaultAsync(s => s.FileItemId == fileItemId);
+                .FirstOrDefaultAsync(s => s.FileItemId == fileItemId && s.IsCurrent);
+        }
+
+        public async Task<List<FileVersionState>> GetHistoryAsync(Guid fileItemId)
+        {
+            return await _context.FileVersionStates
+                .Where(s => s.FileItemId == fileItemId)
+                .OrderByDescending(s => s.CreatedAt)
+                .AsNoTracking()
+                .ToListAsync();
+        }
+
+        public async Task<FileVersion?> GetCurrentFileVersionAsync(Guid fileItemId)
+        {
+            var currentVersionId = await _context.FileItems
+                .Where(f => f.Id == fileItemId)
+                .Select(f => f.CurrentVersionId)
+                .FirstOrDefaultAsync();
+
+            if (currentVersionId == null)
+                return null;
+
+            return await _context.FileVersions
+                .AsNoTracking()
+                .FirstOrDefaultAsync(v => v.Id == currentVersionId);
         }
 
         public async Task<int> CountFileVersionsAsync(Guid fileItemId)

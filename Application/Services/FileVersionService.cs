@@ -14,6 +14,9 @@ namespace Application.Services
     //  - Vào SHARED thành công -> WorkingRevision +1, WorkingVersion = 1
     //  - Publish               -> PublishedRevision +1, Stage = Published
     //  - Về WIP từ Published   -> Stage = Working, giữ WorkingRevision, WorkingVersion = 1
+    //
+    // Lưu trữ: append-only — mỗi lần đổi version INSERT 1 dòng FileVersionState mới
+    // (kèm snapshot dữ liệu file hiện hành), dòng cũ bị retire (IsCurrent = false), không update đè.
     public class FileVersionService : IFileVersionService
     {
         private readonly IUnitOfWork _unitOfWork;
@@ -35,28 +38,32 @@ namespace Application.Services
             if (existing == null)
                 return ToResult(null, isNew: true, VersionStage.Working, workingRevision: 1, workingVersion: 1, publishedRevision: 0);
 
-            var state = await _unitOfWork.FileVersionRepository.GetVersionStateAsync(existing.Id);
+            var current = await _unitOfWork.FileVersionRepository.GetCurrentStateAsync(existing.Id);
 
-            if (state == null)
+            FileVersionState snapshot;
+            if (current == null)
             {
                 // Tài liệu cũ (tạo trước khi có File Versioning): seed từ số bản vật lý đã có.
                 // Upload lần này là bản thay thế tiếp theo trong Revision 1.
                 var existingVersionCount = await _unitOfWork.FileVersionRepository.CountFileVersionsAsync(existing.Id);
-                state = NewState(existing.Id, workingRevision: 1, workingVersion: existingVersionCount + 1);
-                await _unitOfWork.Repository<FileVersionState>().CreateAsync(state);
+                snapshot = await BuildSnapshotAsync(existing.Id, existing.Name,
+                    VersionStage.Working, current: null,
+                    workingRevision: 1, workingVersion: existingVersionCount + 1, publishedRevision: 0);
             }
             else
             {
-                if (state.Stage == VersionStage.Published)
+                if (current.Stage == VersionStage.Published)
                     throw new InvalidOperationException(
                         "Published documents cannot receive replacement uploads. Return the document to WIP first.");
 
-                state.WorkingVersion += 1;
-                Touch(state);
+                snapshot = await BuildSnapshotAsync(existing.Id, existing.Name,
+                    VersionStage.Working, current,
+                    current.WorkingRevision, current.WorkingVersion + 1, current.PublishedRevision);
             }
 
+            await _unitOfWork.Repository<FileVersionState>().CreateAsync(snapshot);
             await _unitOfWork.SaveChangesAsync();
-            return ToResult(state);
+            return ToResult(snapshot);
         }
 
         public async Task<FileVersionResult> CreateInitialVersionAsync(Guid fileItemId)
@@ -64,103 +71,157 @@ namespace Application.Services
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new KeyNotFoundException($"FileItem {fileItemId} not found.");
 
-            var state = await _unitOfWork.FileVersionRepository.GetVersionStateAsync(fileItemId);
-            if (state != null)
+            var current = await _unitOfWork.FileVersionRepository.GetCurrentStateAsync(fileItemId);
+            if (current != null)
                 throw new InvalidOperationException(
-                    $"FileItem {fileItemId} already has version state ({state.DisplayVersion}).");
+                    $"FileItem {fileItemId} already has version state ({current.DisplayVersion}).");
 
-            state = NewState(fileItem.Id, workingRevision: 1, workingVersion: 1);
-            await _unitOfWork.Repository<FileVersionState>().CreateAsync(state);
+            var snapshot = await BuildSnapshotAsync(fileItem.Id, fileItem.Name,
+                VersionStage.Working, current: null,
+                workingRevision: 1, workingVersion: 1, publishedRevision: 0);
+
+            await _unitOfWork.Repository<FileVersionState>().CreateAsync(snapshot);
             await _unitOfWork.SaveChangesAsync();
 
-            return ToResult(state, isNew: true);
+            return ToResult(snapshot, isNew: true);
         }
 
         public async Task<FileVersionResult> GetNextSharedVersionAsync(Guid fileItemId)
         {
-            var state = await RequireStateAsync(fileItemId);
+            var current = await RequireCurrentStateAsync(fileItemId);
 
-            if (state.Stage == VersionStage.Published)
+            if (current.Stage == VersionStage.Published)
                 throw new InvalidOperationException(
                     "Published documents cannot enter SHARED directly. Return the document to WIP first.");
 
-            state.WorkingRevision += 1;
-            state.WorkingVersion = 1;
-            Touch(state);
+            var snapshot = await BuildTransitionSnapshotAsync(fileItemId, current,
+                VersionStage.Working, current.WorkingRevision + 1, workingVersion: 1, current.PublishedRevision);
 
+            await _unitOfWork.Repository<FileVersionState>().CreateAsync(snapshot);
             await _unitOfWork.SaveChangesAsync();
-            return ToResult(state);
+            return ToResult(snapshot);
         }
 
         public async Task<FileVersionResult> GetNextPublishedVersionAsync(Guid fileItemId)
         {
-            var state = await RequireStateAsync(fileItemId);
+            var current = await RequireCurrentStateAsync(fileItemId);
 
-            if (state.Stage == VersionStage.Published)
+            if (current.Stage == VersionStage.Published)
                 throw new InvalidOperationException("Document is already Published.");
 
-            // WorkingRevision/WorkingVersion giữ nguyên nội bộ — cần cho lần quay về WIP sau này.
-            state.Stage = VersionStage.Published;
-            state.PublishedRevision += 1;
-            Touch(state);
+            // WorkingRevision/WorkingVersion chép nguyên sang dòng mới — cần cho lần quay về WIP sau này.
+            var snapshot = await BuildTransitionSnapshotAsync(fileItemId, current,
+                VersionStage.Published, current.WorkingRevision, current.WorkingVersion, current.PublishedRevision + 1);
 
+            await _unitOfWork.Repository<FileVersionState>().CreateAsync(snapshot);
             await _unitOfWork.SaveChangesAsync();
-            return ToResult(state);
+            return ToResult(snapshot);
         }
 
         public async Task<FileVersionResult> GetReturnToWipVersionAsync(Guid fileItemId)
         {
-            var state = await RequireStateAsync(fileItemId);
+            var current = await RequireCurrentStateAsync(fileItemId);
 
-            if (state.Stage != VersionStage.Published)
+            if (current.Stage != VersionStage.Published)
                 throw new InvalidOperationException("Only Published documents can return to WIP.");
 
             // Giữ WorkingRevision, reset WorkingVersion, bảo toàn PublishedRevision.
-            state.Stage = VersionStage.Working;
-            state.WorkingVersion = 1;
-            Touch(state);
+            var snapshot = await BuildTransitionSnapshotAsync(fileItemId, current,
+                VersionStage.Working, current.WorkingRevision, workingVersion: 1, current.PublishedRevision);
 
+            await _unitOfWork.Repository<FileVersionState>().CreateAsync(snapshot);
             await _unitOfWork.SaveChangesAsync();
-            return ToResult(state);
+            return ToResult(snapshot);
         }
 
         public async Task<FileVersionResult?> GetCurrentVersionAsync(Guid fileItemId)
         {
-            var state = await _unitOfWork.FileVersionRepository.GetVersionStateAsync(fileItemId);
-            return state == null ? null : ToResult(state);
+            var current = await _unitOfWork.FileVersionRepository.GetCurrentStateAsync(fileItemId);
+            return current == null ? null : ToResult(current);
+        }
+
+        public async Task<List<FileVersionHistoryItemDTO>> GetVersionHistoryAsync(Guid fileItemId)
+        {
+            var history = await _unitOfWork.FileVersionRepository.GetHistoryAsync(fileItemId);
+
+            return history.Select(s => new FileVersionHistoryItemDTO
+            {
+                Id = s.Id,
+                FileItemId = s.FileItemId,
+                IsCurrent = s.IsCurrent,
+                Stage = s.Stage,
+                WorkingRevision = s.WorkingRevision,
+                WorkingVersion = s.WorkingVersion,
+                PublishedRevision = s.PublishedRevision,
+                DisplayVersion = s.DisplayVersion,
+                FileVersionId = s.FileVersionId,
+                FileName = s.FileName,
+                StoragePath = s.StoragePath,
+                FileSizeBytes = s.FileSizeBytes,
+                Format = s.Format,
+                Checksum = s.Checksum,
+                CreatedAt = s.CreatedAt
+            }).ToList();
         }
 
         // --- Helpers ---
 
-        private async Task<FileVersionState> RequireStateAsync(Guid fileItemId)
+        private async Task<FileVersionState> RequireCurrentStateAsync(Guid fileItemId)
         {
-            return await _unitOfWork.FileVersionRepository.GetVersionStateAsync(fileItemId)
+            return await _unitOfWork.FileVersionRepository.GetCurrentStateAsync(fileItemId)
                 ?? throw new KeyNotFoundException(
                     $"FileItem {fileItemId} has no version state. Call CreateInitialVersionAsync first.");
         }
 
-        private static FileVersionState NewState(Guid fileItemId, int workingRevision, int workingVersion)
+        // Snapshot cho zone transition (shared/publish/về WIP): tự lấy Name từ FileItem.
+        private async Task<FileVersionState> BuildTransitionSnapshotAsync(
+            Guid fileItemId, FileVersionState current,
+            VersionStage stage, int workingRevision, int workingVersion, int publishedRevision)
         {
-            var state = new FileVersionState
+            var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId);
+            return await BuildSnapshotAsync(fileItemId, fileItem?.Name, stage, current,
+                workingRevision, workingVersion, publishedRevision);
+        }
+
+        // Tạo dòng snapshot mới (IsCurrent = true) chép kèm dữ liệu file vật lý hiện hành,
+        // đồng thời retire dòng hiện hành cũ (IsCurrent = false) nếu có.
+        private async Task<FileVersionState> BuildSnapshotAsync(
+            Guid fileItemId, string? fileName,
+            VersionStage stage, FileVersionState? current,
+            int workingRevision, int workingVersion, int publishedRevision)
+        {
+            if (current != null)
+            {
+                // Retire dòng cũ và LƯU TRƯỚC khi insert dòng mới — nếu để chung 1 SaveChanges,
+                // EF có thể gửi INSERT trước UPDATE và vi phạm partial unique index
+                // (mỗi FileItem chỉ được 1 dòng IsCurrent = true).
+                current.IsCurrent = false;
+                current.UpdatedAt = DateTime.UtcNow;
+                await _unitOfWork.SaveChangesAsync();
+            }
+
+            var currentFile = await _unitOfWork.FileVersionRepository.GetCurrentFileVersionAsync(fileItemId);
+            var now = DateTime.UtcNow;
+
+            return new FileVersionState
             {
                 Id = Guid.NewGuid(),
                 FileItemId = fileItemId,
-                Stage = VersionStage.Working,
+                IsCurrent = true,
+                Stage = stage,
                 WorkingRevision = workingRevision,
                 WorkingVersion = workingVersion,
-                PublishedRevision = 0,
-                CreatedAt = DateTime.UtcNow
+                PublishedRevision = publishedRevision,
+                DisplayVersion = FormatDisplayVersion(stage, workingRevision, workingVersion, publishedRevision),
+                FileVersionId = currentFile?.Id,
+                FileName = fileName,
+                StoragePath = currentFile?.StoragePath,
+                FileSizeBytes = currentFile?.FileSizeBytes,
+                Format = currentFile?.Format,
+                Checksum = currentFile?.Checksum,
+                CreatedAt = now,
+                UpdatedAt = now
             };
-            Touch(state);
-            return state;
-        }
-
-        // Cập nhật DisplayVersion + UpdatedAt sau mỗi lần đổi số — state luôn tự nhất quán.
-        private static void Touch(FileVersionState state)
-        {
-            state.DisplayVersion = FormatDisplayVersion(
-                state.Stage, state.WorkingRevision, state.WorkingVersion, state.PublishedRevision);
-            state.UpdatedAt = DateTime.UtcNow;
         }
 
         private static string FormatDisplayVersion(VersionStage stage, int workingRevision, int workingVersion, int publishedRevision)
