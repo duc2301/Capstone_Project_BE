@@ -8,7 +8,14 @@ namespace Application.Interfaces.IServices
     {
         Task<AuthResponseDTO> Register(RegisterDTO request);
         Task<AuthResponseDTO> Login(LoginDTO request);
+        Task<AuthResponseDTO> GoogleLogin(GoogleLoginDTO request);
         Task<AuthResponseDTO> Refresh(RefreshTokenRequestDTO request);
         Task Logout(RefreshTokenRequestDTO request);
+        Task ForgotPassword(ForgotPasswordDTO request);
+        Task ResetPassword(ResetPasswordDTO request);
+
+        // OTP xác thực email
+        Task<AuthResponseDTO> VerifyOtp(VerifyOtpDTO request);
+        Task ResendOtp(ResendOtpDTO request);
     }
 }

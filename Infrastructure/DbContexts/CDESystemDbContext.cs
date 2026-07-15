@@ -1,13 +1,21 @@
 using Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace Infrastructure.DbContexts
 {
     public class CDESystemDbContext : DbContext
     {
-        public CDESystemDbContext() { }
+        private readonly IConfiguration _configuration;        
 
-        public CDESystemDbContext(DbContextOptions<CDESystemDbContext> options) : base(options) { }
+        public CDESystemDbContext(DbContextOptions<CDESystemDbContext> options, IConfiguration configuration) : base(options) 
+        {
+            _configuration = configuration;
+        }
+
+        protected CDESystemDbContext()
+        {
+        }
 
         // --- Đã có sẵn ---
         public virtual DbSet<Account> Accounts { get; set; }
@@ -33,16 +41,15 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<FolderPermission> FolderPermissions { get; set; }
         public virtual DbSet<FileItem> FileItems { get; set; }
         public virtual DbSet<FileVersion> FileVersions { get; set; }
+        public virtual DbSet<MarkupSet> MarkupSets { get; set; }
         public virtual DbSet<FileNote> FileNotes { get; set; }
         public virtual DbSet<FilePermission> FilePermissions { get; set; }
         public virtual DbSet<ApprovalRequest> ApprovalRequests { get; set; }
+        public virtual DbSet<ApprovalRequestSigner> ApprovalRequestSigners { get; set; }
         public virtual DbSet<ApprovalSignatureTransaction> ApprovalSignatureTransactions { get; set; }
+        public virtual DbSet<ZoneReturnRequest> ZoneReturnRequests { get; set; }
+        public virtual DbSet<FileSignaturePosition> FileSignaturePositions { get; set; }
 
-        // --- Module D: Phiếu yêu cầu ---
-        public virtual DbSet<Submittal> Submittals { get; set; }
-        public virtual DbSet<SubmittalStep> SubmittalSteps { get; set; }
-        public virtual DbSet<SubmittalAttachment> SubmittalAttachments { get; set; }
-        public virtual DbSet<SubmittalCitedFolder> SubmittalCitedFolders { get; set; }
 
         // --- Module E: Thảo luận ---
         public virtual DbSet<Discussion> Discussions { get; set; }
@@ -60,21 +67,29 @@ namespace Infrastructure.DbContexts
 
         // --- Module H: Nhật ký / RAG ---
         public virtual DbSet<AuditLog> AuditLogs { get; set; }
-        public virtual DbSet<DocumentChunk> DocumentChunks { get; set; }
+        public virtual DbSet<DocumentChildChunk> DocumentChunks { get; set; }
+        public virtual DbSet<DocumentParentChunk> DocumentParentChunks { get; set; }
 
         // --- Module J: Hợp đồng / Bill thầu ---
         public virtual DbSet<Contract> Contracts { get; set; }
         public virtual DbSet<ContractAppendix> ContractAppendices { get; set; }
         public virtual DbSet<BillItem> BillItems { get; set; }
 
-        // --- Module K: Mô hình BIM ---
-        public virtual DbSet<ProjectModel> ProjectModels { get; set; }
-        public virtual DbSet<ModelFile> ModelFiles { get; set; }
-        public virtual DbSet<ModelObject> ModelObjects { get; set; }
-
         // --- Module L: Giải phóng mặt bằng / Công trường số ---
         public virtual DbSet<ProjectLocation> ProjectLocations { get; set; }
 
+        // --- Naming Convention Module ---
+        public virtual DbSet<NamingConvention> NamingConventions { get; set; }
+        public virtual DbSet<NamingConventionField> NamingConventionFields { get; set; }
+        public virtual DbSet<NamingConventionFieldValue> NamingConventionFieldValues { get; set; }
+        public virtual DbSet<NamingConventionLockedValue> NamingConventionLockedValues { get; set; }
+        public virtual DbSet<FileNamingMetadata> FileNamingMetadata { get; set; }
+        
+        public virtual DbSet<FileRelation> FileRelations { get; set; }
+
+        public virtual DbSet<LoiRequirement> LoiRequirements { get; set; }
+        public virtual DbSet<LoiFieldAlias> LoiFieldAliases { get; set; }
+        public virtual DbSet<FileVersionLoiCheck> FileVersionLoiChecks { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -122,6 +137,18 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(fp => fp.ProjectParticipantId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            modelBuilder.Entity<FolderPermission>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+
+                entity.HasIndex(x => new
+                {
+                    x.FolderId,
+                    x.ProjectParticipantId
+                })
+                .IsUnique();
+            });
+
             // ACL thư mục: xóa File -> xóa các dòng phân quyền của nó.
             // Group được tham chiếu Restrict để tránh nhiều đường cascade.
             modelBuilder.Entity<FilePermission>()
@@ -136,11 +163,19 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(fp => fp.ProjectParticipantId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            modelBuilder.Entity<Submittal>()
-                .HasOne(s => s.ParentSubmittal)
-                .WithMany(s => s.ChildSubmittals)
-                .HasForeignKey(s => s.ParentSubmittalId)
-                .OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<FilePermission>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+
+                entity.HasIndex(x => new
+                {
+                    x.FileItemId,
+                    x.ProjectParticipantId
+                })
+                .IsUnique();
+            });
+
+            
 
             modelBuilder.Entity<BillItem>()
                 .HasOne(b => b.ParentBillItem)
@@ -172,6 +207,24 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(a => a.ApproverId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            modelBuilder.Entity<ApprovalRequestSigner>()
+                .HasOne(s => s.ApprovalRequest)
+                .WithMany(a => a.Signers)
+                .HasForeignKey(s => s.ApprovalRequestId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<ApprovalRequestSigner>()
+                .HasOne(s => s.SignerAccount)
+                .WithMany()
+                .HasForeignKey(s => s.SignerAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ApprovalRequestSigner>()
+                .HasOne(s => s.SignerGroup)
+                .WithMany()
+                .HasForeignKey(s => s.SignerGroupId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             modelBuilder.Entity<ApprovalSignatureTransaction>()
                 .HasOne(t => t.ApprovalRequest)
                 .WithMany()
@@ -189,6 +242,224 @@ namespace Infrastructure.DbContexts
                 .WithMany()
                 .HasForeignKey(t => t.SignedBy)
                 .OnDelete(DeleteBehavior.Restrict);
+
+
+            // NamingConvention → Project (N:1): convention tái sử dụng ở mức dự án
+            modelBuilder.Entity<NamingConvention>()
+                .HasOne(nc => nc.Project)
+                .WithMany()
+                .HasForeignKey(nc => nc.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);          // Deleting project deletes its conventions
+
+            // Folder → NamingConvention (N:1, optional): nhiều folder dùng chung 1 convention
+            modelBuilder.Entity<Folder>()
+                .HasOne(f => f.NamingConvention)
+                .WithMany(nc => nc.Folders)
+                .HasForeignKey(f => f.NamingConventionId)
+                .OnDelete(DeleteBehavior.SetNull);          // Deleting convention unassigns folders
+
+            // NamingConvention → NamingConventionField (1:N)
+            modelBuilder.Entity<NamingConventionField>()
+                .HasOne(nf => nf.NamingConvention)
+                .WithMany(nc => nc.Fields)                  // Add ICollection<NamingConventionField> Fields to NamingConvention if missing
+                .HasForeignKey(nf => nf.NamingConventionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // NamingConventionField → NamingConventionFieldValue (1:N)
+            modelBuilder.Entity<NamingConventionFieldValue>()
+                .HasOne(nfv => nfv.Field)
+                .WithMany(nf => nf.AllowedValues)
+                .HasForeignKey(nfv => nfv.NamingConventionFieldId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // NamingConventionField → NamingConventionLockedValue (1:0..1)
+            modelBuilder.Entity<NamingConventionField>()
+                .HasOne(nf => nf.LockedValue)
+                .WithOne(lv => lv.Field)
+                .HasForeignKey<NamingConventionLockedValue>(lv => lv.NamingConventionFieldId)
+                .OnDelete(DeleteBehavior.Restrict);         // Protect locked value
+
+            // NamingConventionLockedValue → NamingConventionFieldValue (1:1)
+            modelBuilder.Entity<NamingConventionLockedValue>()
+                .HasOne(lv => lv.Value)
+                .WithOne(nfv => nfv.LockedValue)
+                .HasForeignKey<NamingConventionLockedValue>(lv => lv.NamingConventionFieldValueId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // FileItem → FileNamingMetadata (1:N)
+            modelBuilder.Entity<FileNamingMetadata>()
+                .HasOne(m => m.FileItem)
+                .WithMany(f => f.NamingMetadata)            // Add this collection to FileItem
+                .HasForeignKey(m => m.FileItemId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // FileNamingMetadata → NamingConventionField (N:1)
+            modelBuilder.Entity<FileNamingMetadata>()
+                .HasOne(m => m.Field)
+                .WithMany()
+                .HasForeignKey(m => m.NamingConventionFieldId)
+                .OnDelete(DeleteBehavior.Restrict);         // Don't delete field if metadata exists
+
+            // FileNamingMetadata → NamingConventionFieldValue (N:0..1)
+            modelBuilder.Entity<FileNamingMetadata>()
+                .HasOne(m => m.SelectedValue)
+                .WithMany()
+                .HasForeignKey(m => m.SelectedValueId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // INDEXES & CONSTRAINTS
+
+            // Unique constraints
+            modelBuilder.Entity<NamingConventionField>()
+                .HasIndex(nf => new { nf.NamingConventionId, nf.Code })
+                .IsUnique();
+
+            modelBuilder.Entity<NamingConventionFieldValue>()
+                .HasIndex(nfv => new { nfv.NamingConventionFieldId, nfv.Code })
+                .IsUnique();
+
+            modelBuilder.Entity<FileNamingMetadata>()
+                .HasIndex(m => new { m.FileItemId, m.NamingConventionFieldId })
+                .IsUnique();   // One metadata per field per file
+
+            modelBuilder.Entity<FileNamingMetadata>()
+                .HasIndex(m => new { m.FileItemId, m.SelectedValueId })
+                .IsUnique();
+
+            //// Performance indexes
+            //modelBuilder.Entity<NamingConventionField>()
+            //    .HasIndex(nf => new { nf.NamingConventionId, nf.OrderIndex });
+
+            //modelBuilder.Entity<NamingConventionFieldValue>()
+            //    .HasIndex(nfv => new { nfv.NamingConventionFieldId, nfv.OrderIndex });
+
+            //modelBuilder.Entity<NamingConventionLockedValue>()
+            //    .HasIndex(lv => lv.NamingConventionFieldId)
+            //    .IsUnique();   // One lock per field
+
+            // --- RAG: Document / DocumentChunk (pgvector) ---
+            modelBuilder.HasPostgresExtension("vector");
+
+
+            var embeddingDimension = _configuration?.GetValue<int>("Ollama:EmbeddingDimension") ?? 1024;
+            if (embeddingDimension <= 0)
+                embeddingDimension = 1024;
+
+            modelBuilder.Entity<Document>(b =>
+            {
+                b.HasIndex(d => d.ProjectId);
+                b.HasIndex(d => d.FileItemId);
+                b.HasIndex(d => d.SourceFileVersionId);
+                b.HasIndex(d => new { d.ProjectId, d.UpdateAt });   // hard-filter bản mới nhất
+            });
+
+            modelBuilder.Entity<DocumentParentChunk>(b =>
+            {
+                b.HasOne(p => p.Document)
+                    .WithMany(d => d.Chunks)
+                    .HasForeignKey(p => p.DocumentId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                b.HasIndex(p => p.ProjectId);
+                b.HasIndex(p => p.DocumentId);
+            });
+            
+            modelBuilder.Entity<DocumentChildChunk>(b =>
+            {
+                b.Property(c => c.Embedding)
+                    .HasColumnType($"vector({embeddingDimension})");
+
+                b.HasOne(c => c.ParentChunk)
+                    .WithMany(p => p.ChildChunks)
+                    .HasForeignKey(c => c.ParentChunkId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasIndex(c => c.ProjectId);      
+                b.HasIndex(c => c.DocumentId);
+                b.HasIndex(c => c.ParentChunkId);
+            });
+            modelBuilder.Entity<ZoneReturnRequest>()
+                .HasOne(r => r.FileItem)
+                .WithMany()
+                .HasForeignKey(r => r.FileItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ZoneReturnRequest>()
+                .HasOne(r => r.Requester)
+                .WithMany()
+                .HasForeignKey(r => r.RequestedBy)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<ZoneReturnRequest>()
+                .HasOne(r => r.Approver)
+                .WithMany()
+                .HasForeignKey(r => r.ApprovedBy)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Moi FileItem chi giu 1 vi tri chu ky hien hanh.
+            modelBuilder.Entity<FileSignaturePosition>()
+                .HasIndex(p => p.FileItemId)
+                .IsUnique();
+
+            modelBuilder.Entity<FileSignaturePosition>()
+                .HasOne(p => p.FileItem)
+                .WithMany()
+                .HasForeignKey(p => p.FileItemId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<MarkupSet>()
+                .HasOne(m => m.FileItem)
+                .WithMany()
+                .HasForeignKey(m => m.FileItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<MarkupSet>()
+                .HasOne(m => m.FileVersion)
+                .WithMany()
+                .HasForeignKey(m => m.FileVersionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<MarkupSet>(b =>
+            {
+                b.HasIndex(m => m.FileItemId);
+                b.HasIndex(m => m.FileVersionId);
+                b.HasIndex(m => m.IssueId);
+            });
+
+            modelBuilder.Entity<FileNote>()
+                .HasOne(n => n.MarkupSet)
+                .WithMany(m => m.Notes)
+                .HasForeignKey(n => n.MarkupSetId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<FileNote>()
+                .HasOne(n => n.FileVersion)
+                .WithMany()
+                .HasForeignKey(n => n.FileVersionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<FileNote>()
+                .HasIndex(n => n.MarkupSetId);
+
+            modelBuilder.Entity<FileVersionLoiCheck>(b =>
+            {
+                b.HasIndex(x => x.FileVersionId).IsUnique();
+                b.HasOne(x => x.FileVersion)
+                    .WithMany()
+                    .HasForeignKey(x => x.FileVersionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<LoiRequirement>(b =>
+            {
+                b.HasIndex(x => new { x.Discipline, x.ComponentCode });
+                b.HasIndex(x => new { x.Discipline, x.IsCommon });
+            });
+
+            modelBuilder.Entity<LoiFieldAlias>(b =>
+            {
+                b.HasIndex(x => x.AliasNormalized);
+                b.HasIndex(x => new { x.FieldNameNormalized, x.AliasNormalized }).IsUnique();
+            });
         }
     }
 }

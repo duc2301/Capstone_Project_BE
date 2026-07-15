@@ -1,6 +1,5 @@
 using Application.DTOs.RequestDTOs.Project;
 using Application.DTOs.ResponseDTOs.Project;
-using Application.DTOs.ResponseDTOs.ProjectModel;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
@@ -34,7 +33,6 @@ namespace Application.Services
 
             var dto = _mapper.Map<ProjectResponseDTO>(entity);
             dto.Location = await GetDefaultLocationAsync(id);
-            dto.Models = await GetModelsAsync(id);
             return dto;
         }
 
@@ -76,15 +74,6 @@ namespace Application.Services
                 .ToList();
             var location = locations.FirstOrDefault(l => l.IsDefault) ?? locations.FirstOrDefault();
             return location == null ? null : _mapper.Map<ProjectLocationResponseDTO>(location);
-        }
-
-        private async Task<List<ProjectModelResponseDTO>> GetModelsAsync(Guid projectId)
-        {
-            var models = (await _unitOfWork.Repository<ProjectModel>()
-                    .FindAsync(m => m.ProjectId == projectId))
-                .OrderByDescending(m => m.CreatedAt)
-                .ToList();
-            return _mapper.Map<List<ProjectModelResponseDTO>>(models);
         }
 
         public async Task<ProjectResponseDTO> UpdateAsync(Guid id, UpdateProjectDTO dto)

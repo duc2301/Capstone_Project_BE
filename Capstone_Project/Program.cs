@@ -1,3 +1,4 @@
+using Application.BackgroundServices;
 using Application.Interfaces.IServices;
 using Capstone_Project.DataHandler.Exceptions;
 using Capstone_Project.Extensions;
@@ -7,6 +8,9 @@ using Microsoft.AspNetCore.SignalR;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Syncfusion Community license (convert Office -> PDF)
+builder.RegisterSyncfusionLicense();
+
 // Controllers + Exception Filter
 builder.Services.AddControllers(options =>
 {
@@ -15,6 +19,12 @@ builder.Services.AddControllers(options =>
 
 // Infrastructure (DB, AutoMapper, Repositories, Services)
 builder.Services.AddInfrastructureService(builder.Configuration);
+
+// Worker dịch model nền (tiêu thụ IModelTranslationQueue) — đăng ký ở host vì cần Microsoft.Extensions.Hosting.
+builder.Services.AddHostedService<ModelTranslationWorker>();
+
+// Worker kiểm LOI nền (tiêu thụ ILoiCheckQueue).
+builder.Services.AddHostedService<LoiCheckWorker>();
 
 // Validation
 builder.Services.AddGlobalValidation(builder.Configuration);
@@ -27,6 +37,7 @@ builder.Services.SwaggerServices(builder);
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<IUserIdProvider, NameIdentifierUserIdProvider>();
 builder.Services.AddScoped<INotificationPusher, SignalRNotificationPusher>();
+builder.Services.AddScoped<IMarkupBroadcaster, SignalRMarkupBroadcaster>();
 
 // CORS — withCredentials cần cho SignalR
 builder.Services.AddCors(options =>
@@ -71,5 +82,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.MapHub<NotificationHub>("/hubs/notifications");
+app.MapHub<MarkupHub>("/hubs/markup");
 
 app.Run();

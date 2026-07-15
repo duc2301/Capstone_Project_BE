@@ -31,7 +31,7 @@ namespace Capstone_Project.Controllers
                 return BadRequest(ApiResponse.Fail("Tệp trống."));
 
             using var stream = file.OpenReadStream();
-            var result = await _viewer.UploadAndTranslateAsync(stream, file.FileName, ct);
+            var result = await _viewer.UploadAndTranslateAsync(stream, file.FileName, file.Length, ct);
             return Ok(ApiResponse.Success("OK", result));
         }
 

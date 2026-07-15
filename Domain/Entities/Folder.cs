@@ -14,13 +14,17 @@ namespace Domain.Entities
         public CdeArea Area { get; set; }
         public bool IsTemplate { get; set; }
         public Guid? CreatedByAccountId { get; set; }
+        // Folder gốc mà folder này là "bản chiếu" (mirror) ở khu vực khác — dùng để tra cứu
+        // đích chuyển zone theo Id, không phụ thuộc tên (tránh vỡ liên kết khi đổi tên).
+        public Guid? MirrorSourceFolderId { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
-
+        public Guid? NamingConventionId { get; set; }
         public Project Project { get; set; } = null!;
         public Folder? ParentFolder { get; set; }
         public ICollection<Folder> ChildFolders { get; set; } = new List<Folder>();
         public ICollection<FileItem> FileItems { get; set; } = new List<FileItem>();
         public ICollection<FolderPermission> Permissions { get; set; } = new List<FolderPermission>();
+        public NamingConvention? NamingConvention { get; set; }
     }
 }

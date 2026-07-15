@@ -10,6 +10,8 @@ namespace Application.DTOs.ResponseDTOs.FileItem
         public string Name { get; set; } = null!;
         public FileType FileType { get; set; }
         public FileItemStatus Status { get; set; }
+        public ZoneReturnRequestStatus? ReturnRequestStatus { get; set; }
+        public string? ReturnTargetZone { get; set; }
 
         public Guid? CurrentVersionId { get; set; }
         public int CurrentVersionNumber { get; set; }
@@ -20,5 +22,11 @@ namespace Application.DTOs.ResponseDTOs.FileItem
         public string? AuthorName { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
+        
+        public bool? Warnning { get; set; }
+        public string? WarnningMessage { get; set; }
+
+        /// <summary>File dang co it nhat 1 Issue chua Closed (Open/InProgress/Answered).</summary>
+        public bool HasOpenIssue { get; set; }
     }
 }

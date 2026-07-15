@@ -7,6 +7,8 @@ using Domain.Entities;
 using Domain.Enum.Account;
 using Domain.Enum.Cde;
 using Domain.Enum.Group;
+using Domain.Enum.Permission;
+using Domain.Enum.Project;
 
 namespace Application.Services
 {
@@ -48,6 +50,13 @@ namespace Application.Services
             var group = await _unitOfWork.Repository<Group>().GetByIdAsync(groupId)
                 ?? throw new ApiExceptionResponse("Group not found.", 404);
 
+            var participant = (await _unitOfWork.Repository<ProjectParticipant>()
+                    .FindAsync(p => p.ProjectId == projectId
+                                 && p.GroupId == groupId
+                                 && p.Status == ProjectParticipantStatus.Active))
+                .FirstOrDefault()
+                ?? throw new ApiExceptionResponse("Group is not an active participant of this project.", 404);
+
             var roots = await EnsureRootsAsync(projectId);
 
             // Snapshot folder hiện có của dự án để kiểm tra trùng (cả root mới tạo lẫn con đã có).
@@ -56,21 +65,49 @@ namespace Application.Services
                 .ToList();
 
             var now = DateTime.UtcNow;
+            var groupFolders = new List<Folder>();
 
             foreach (var root in roots)
             {
-                await _unitOfWork.Repository<Folder>().CreateAsync(new Folder
+                // Idempotent: đã có "ô" của group dưới root này thì dùng lại, không tạo trùng.
+                var folder = existing.FirstOrDefault(f =>
+                    f.ParentFolderId == root.Id
+                    && string.Equals(f.Name, group.Name, StringComparison.OrdinalIgnoreCase));
+
+                if (folder == null)
                 {
-                    Id = Guid.NewGuid(),
-                    ProjectId = projectId,
-                    ParentFolderId = root.Id,
-                    Name = group.Name,
-                    Area = root.Area,
-                    IsTemplate = false,
-                    CreatedAt = now,
-                    UpdatedAt = now
-                });
+                    folder = new Folder
+                    {
+                        Id = Guid.NewGuid(),
+                        ProjectId = projectId,
+                        ParentFolderId = root.Id,
+                        Name = group.Name,
+                        Area = root.Area,
+                        IsTemplate = false,
+                        CreatedAt = now,
+                        UpdatedAt = now
+                    };
+                    await _unitOfWork.Repository<Folder>().CreateAsync(folder);
+                }
+
+                groupFolders.Add(folder);
             }
+
+            // Liên kết bản chiếu: "ô" của group ở Shared/Published/Archived trỏ về "ô" WIP.
+            var wipGroupFolder = groupFolders.FirstOrDefault(f => f.Area == CdeArea.Wip);
+            if (wipGroupFolder != null)
+            {
+                foreach (var folder in groupFolders)
+                {
+                    if (folder.Area == CdeArea.Wip || folder.MirrorSourceFolderId != null) continue;
+
+                    folder.MirrorSourceFolderId = wipGroupFolder.Id;
+                    if (existing.Contains(folder))
+                        _unitOfWork.Repository<Folder>().Update(folder);
+                }
+            }
+
+            await GrantGroupFolderPermissionsAsync(participant.Id, groupFolders);
 
             await _unitOfWork.CommitAsync();
         }
@@ -104,8 +141,73 @@ namespace Application.Services
             };
 
             await _unitOfWork.Repository<Folder>().CreateAsync(child);
+
+            // Kế thừa ACL của folder cha để thành viên đang thấy cha cũng thấy/thao tác được folder con.
+            var parentPermissions = await _unitOfWork.Repository<FolderPermission>()
+                .FindAsync(p => p.FolderId == parent.Id);
+            var childPermissions = new List<FolderPermission>();
+            foreach (var permission in parentPermissions)
+            {
+                var copied = new FolderPermission
+                {
+                    Id = Guid.NewGuid(),
+                    FolderId = child.Id,
+                    ProjectParticipantId = permission.ProjectParticipantId,
+                    CanView = permission.CanView,
+                    CanEdit = permission.CanEdit,
+                    CanUpdate = permission.CanUpdate,
+                    CanDownload = permission.CanDownload,
+                    CanVerify = permission.CanVerify,
+                    CanApprove = permission.CanApprove,
+                    Status = permission.Status
+                };
+                childPermissions.Add(copied);
+                await _unitOfWork.Repository<FolderPermission>().CreateAsync(copied);
+            }
+
+            // Folder tạo trong WIP luôn có "bản chiếu" cùng vị trí ở Shared/Published/Archived.
+            if (child.Area == CdeArea.Wip)
+                await CreateMirrorFoldersAsync(child, parent, childPermissions, now);
+
             await _unitOfWork.CommitAsync();
             return _mapper.Map<FolderResponseDTO>(child);
+        }
+
+        // Cấp quyền mặc định cho participant trên các folder "ô" của group (bỏ qua folder đã có ACL).
+        private async Task GrantGroupFolderPermissionsAsync(Guid participantId, IReadOnlyCollection<Folder> folders)
+        {
+            var folderIds = folders.Select(f => f.Id).ToList();
+            var alreadyGranted = (await _unitOfWork.Repository<FolderPermission>()
+                    .FindAsync(p => p.ProjectParticipantId == participantId && folderIds.Contains(p.FolderId)))
+                .Select(p => p.FolderId)
+                .ToHashSet();
+
+            foreach (var folder in folders)
+            {
+                if (alreadyGranted.Contains(folder.Id)) continue;
+                await _unitOfWork.Repository<FolderPermission>()
+                    .CreateAsync(BuildDefaultGroupPermission(participantId, folder));
+            }
+        }
+
+        // WIP: toàn quyền làm việc trên "ô" của chính nhóm; các khu vực còn lại chỉ Xem/Tải
+        // (file vào Shared/Published/Archived qua luồng duyệt, không sửa trực tiếp).
+        private static FolderPermission BuildDefaultGroupPermission(Guid participantId, Folder folder)
+        {
+            var isWip = folder.Area == CdeArea.Wip;
+            return new FolderPermission
+            {
+                Id = Guid.NewGuid(),
+                FolderId = folder.Id,
+                ProjectParticipantId = participantId,
+                CanView = true,
+                CanEdit = isWip,
+                CanUpdate = isWip,
+                CanDownload = true,
+                CanVerify = isWip,
+                CanApprove = isWip,
+                Status = PermissionStatus.Active
+            };
         }
 
         private async Task<Guid?> ResolveOwnerGroupIdAsync(Folder folder)
@@ -145,6 +247,135 @@ namespace Application.Services
 
             throw new ApiExceptionResponse(
                 "Only the group's Team Leader (or project manager/Admin) can create sub-folders here.", 403);
+        }
+
+        // Các khu vực nhận "bản chiếu" của folder tạo trong WIP.
+        private static readonly CdeArea[] MirrorAreas =
+        {
+            CdeArea.Shared, CdeArea.Published, CdeArea.Archived
+        };
+
+        // Tạo bản chiếu của folder WIP mới ở cả 3 khu vực còn lại, đúng vị trí tương ứng.
+        private async Task CreateMirrorFoldersAsync(
+            Folder wipChild,
+            Folder wipParent,
+            IReadOnlyCollection<FolderPermission> wipChildPermissions,
+            DateTime now)
+        {
+            var projectFolders = (await _unitOfWork.Repository<Folder>()
+                    .FindAsync(f => f.ProjectId == wipChild.ProjectId && !f.IsTemplate))
+                .ToList();
+
+            foreach (var area in MirrorAreas)
+            {
+                var zoneRoot = projectFolders.FirstOrDefault(f => f.ParentFolderId == null && f.Area == area);
+                if (zoneRoot == null) continue; // khu vực gốc chưa dựng thì bỏ qua
+
+                var mirrorParent = await ResolveMirrorParentAsync(wipParent, area, zoneRoot, projectFolders, now);
+
+                // Idempotent: đã có bản chiếu (theo link hoặc trùng tên cùng vị trí) thì thôi.
+                var alreadyMirrored = projectFolders.Any(f =>
+                    f.Area == area
+                    && (f.MirrorSourceFolderId == wipChild.Id
+                        || (f.ParentFolderId == mirrorParent.Id
+                            && string.Equals(f.Name, wipChild.Name, StringComparison.OrdinalIgnoreCase))));
+                if (alreadyMirrored) continue;
+
+                await CreateMirrorFolderAsync(wipChild, mirrorParent, wipChildPermissions, now, projectFolders);
+            }
+        }
+
+        // Tìm folder tương ứng của wipParent trong khu vực đích; các cấp trung gian còn thiếu
+        // được dựng bù để bản chiếu luôn nằm đúng vị trí như bên WIP.
+        private async Task<Folder> ResolveMirrorParentAsync(
+            Folder wipParent,
+            CdeArea area,
+            Folder zoneRoot,
+            List<Folder> projectFolders,
+            DateTime now)
+        {
+            if (wipParent.ParentFolderId == null)
+                return zoneRoot;
+
+            var byId = projectFolders.ToDictionary(f => f.Id);
+
+            // Chuỗi tổ tiên từ ngay dưới root WIP xuống tới wipParent.
+            var pathSegments = new List<Folder>();
+            var cur = (Folder?)wipParent;
+            while (cur is { ParentFolderId: not null })
+            {
+                pathSegments.Add(cur);
+                byId.TryGetValue(cur.ParentFolderId.Value, out cur);
+            }
+            pathSegments.Reverse();
+
+            var mirrorParent = zoneRoot;
+            foreach (var segment in pathSegments)
+            {
+                // Ưu tiên khớp theo link mirror (không vỡ khi đổi tên), fallback khớp theo tên cùng vị trí.
+                var next = projectFolders.FirstOrDefault(f =>
+                               f.Area == area && f.MirrorSourceFolderId == segment.Id)
+                           ?? projectFolders.FirstOrDefault(f =>
+                               f.Area == area
+                               && f.ParentFolderId == mirrorParent.Id
+                               && string.Equals(f.Name, segment.Name, StringComparison.OrdinalIgnoreCase));
+
+                if (next == null)
+                {
+                    var segmentPermissions = (await _unitOfWork.Repository<FolderPermission>()
+                            .FindAsync(p => p.FolderId == segment.Id))
+                        .ToList();
+                    next = await CreateMirrorFolderAsync(segment, mirrorParent, segmentPermissions, now, projectFolders);
+                }
+
+                mirrorParent = next;
+            }
+
+            return mirrorParent;
+        }
+
+        private async Task<Folder> CreateMirrorFolderAsync(
+            Folder source,
+            Folder mirrorParent,
+            IReadOnlyCollection<FolderPermission> sourcePermissions,
+            DateTime now,
+            List<Folder> projectFolders)
+        {
+            var mirror = new Folder
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = source.ProjectId,
+                ParentFolderId = mirrorParent.Id,
+                Name = source.Name,
+                Area = mirrorParent.Area,
+                IsTemplate = false,
+                CreatedByAccountId = source.CreatedByAccountId,
+                MirrorSourceFolderId = source.Id,
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+            await _unitOfWork.Repository<Folder>().CreateAsync(mirror);
+            projectFolders.Add(mirror);
+
+            // Ngoài WIP chỉ Xem/Tải — file vào các khu vực này qua luồng duyệt, không sửa trực tiếp.
+            foreach (var permission in sourcePermissions)
+            {
+                await _unitOfWork.Repository<FolderPermission>().CreateAsync(new FolderPermission
+                {
+                    Id = Guid.NewGuid(),
+                    FolderId = mirror.Id,
+                    ProjectParticipantId = permission.ProjectParticipantId,
+                    CanView = permission.CanView,
+                    CanDownload = permission.CanDownload,
+                    CanEdit = false,
+                    CanUpdate = false,
+                    CanVerify = false,
+                    CanApprove = false,
+                    Status = permission.Status
+                });
+            }
+
+            return mirror;
         }
 
         // Đảm bảo 4 folder gốc tồn tại; trả về danh sách 4 root (cũ + mới, chưa commit).

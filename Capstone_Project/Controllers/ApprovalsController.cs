@@ -16,10 +16,12 @@ namespace Capstone_Project.Controllers
     public class ApprovalsController : ControllerBase
     {
         private readonly IApprovalService _approvalService;
+        private readonly IPdfSignatureService _pdfSignatureService;
 
-        public ApprovalsController(IApprovalService approvalService)
+        public ApprovalsController(IApprovalService approvalService, IPdfSignatureService pdfSignatureService)
         {
             _approvalService = approvalService;
+            _pdfSignatureService = pdfSignatureService;
         }
 
         /// <summary>
@@ -57,5 +59,12 @@ namespace Capstone_Project.Controllers
         [HttpPost("{id:guid}/reject")]
         public async Task<IActionResult> Reject(Guid id, [FromBody] RejectApprovalRequestDTO dto)
             => Ok(ApiResponse.Success("File rejected", await _approvalService.RejectAsync(id, dto, User.GetAccountId())));
+
+        /// <summary>
+        /// Sinh ban PDF da ky truc quan sau khi VNPT SmartCA ky thanh cong.
+        /// </summary>
+        [HttpPost("{id:guid}/generate-signed-pdf")]
+        public async Task<IActionResult> GenerateSignedPdf(Guid id)
+            => Ok(await _pdfSignatureService.GenerateSignedPdfAsync(id, User.GetAccountId()));
     }
 }
