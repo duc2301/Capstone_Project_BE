@@ -2,9 +2,10 @@ using Domain.Enum.File;
 
 namespace Domain.Entities
 {
-    // Lịch sử versioning của tài liệu — MỖI lần đổi version (upload/shared/publish/về WIP)
-    // INSERT 1 dòng mới kèm snapshot dữ liệu file tại thời điểm đó, KHÔNG update đè.
-    // Dòng IsCurrent = true là trạng thái hiện hành (đúng 1 dòng / FileItem); các dòng còn lại là lịch sử.
+    // Bản ghi version HOÀN CHỈNH của tài liệu — thay thế bảng FileVersions cũ (đang gỡ dần).
+    // Append-only: mỗi lần đổi version (upload/shared/publish/về WIP) INSERT 1 dòng mới,
+    // KHÔNG update đè. Dòng IsCurrent = true là version hiện hành (đúng 1 dòng / FileItem).
+    // Mỗi dòng vừa giữ số version (P/C) vừa giữ dữ liệu file vật lý + viewer + chữ ký của version đó.
     public class FileVersionState
     {
         public Guid Id { get; set; }
@@ -30,15 +31,31 @@ namespace Domain.Entities
         // Chuỗi hiển thị đã format sẵn, vd "P01.02" hoặc "C01"
         public string DisplayVersion { get; set; } = null!;
 
-        // --- Snapshot dữ liệu file tại thời điểm version này ---
-        // Chép giá trị (không FK cứng sang FileVersions) để dòng lịch sử tự đủ,
-        // không vỡ nếu bản ghi FileVersion vật lý bị ẩn/xóa sau này.
+        // --- Dữ liệu file vật lý của version này ---
+        // FileVersionId: tham chiếu tạm sang bảng FileVersions cũ trong giai đoạn chuyển đổi —
+        // sẽ bị xóa cùng bảng cũ ở bước cuối.
         public Guid? FileVersionId { get; set; }
         public string? FileName { get; set; }
         public string? StoragePath { get; set; }
         public long? FileSizeBytes { get; set; }
         public string? Format { get; set; }
         public string? Checksum { get; set; }
+        public bool IsHidden { get; set; }
+        public Guid? UploadedByAccountId { get; set; }
+        public DateTime? UploadedAt { get; set; }
+
+        // --- Viewer / dịch model APS (chỉ dùng cho FileType Ifc/Cad) ---
+        public string? ViewerUrn { get; set; }
+        public string? PreviewStoragePath { get; set; }
+        public ModelViewerStatus ViewerStatus { get; set; }
+        public string? ViewerProgress { get; set; }
+        public string? ViewerError { get; set; }
+
+        // --- Chữ ký trực quan (visual signature) trên PDF ---
+        public bool IsSigned { get; set; }
+        public DateTime? SignedAt { get; set; }
+        public Guid? SignedBy { get; set; }
+        public string? CertificateSerial { get; set; }
 
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
