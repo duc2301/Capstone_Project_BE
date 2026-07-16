@@ -171,8 +171,17 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("DigestBase64")
+                        .HasColumnType("text");
+
                     b.Property<Guid>("FileItemId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("HashAlgorithm")
+                        .HasColumnType("text");
+
+                    b.Property<string>("PreparedPdfStoragePath")
+                        .HasColumnType("text");
 
                     b.Property<string>("RawRequest")
                         .HasColumnType("text");
@@ -183,11 +192,20 @@ namespace Infrastructure.Migrations
                     b.Property<string>("Sad")
                         .HasColumnType("text");
 
+                    b.Property<string>("SignatureValueBase64")
+                        .HasColumnType("text");
+
                     b.Property<DateTime?>("SignedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("SignedAttributesBase64")
+                        .HasColumnType("text");
+
                     b.Property<Guid?>("SignedBy")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("SignerCertificateBase64")
+                        .HasColumnType("text");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
@@ -932,75 +950,6 @@ namespace Infrastructure.Migrations
                     b.ToTable("FileSignaturePositions");
                 });
 
-            modelBuilder.Entity("Domain.Entities.FileVersion", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("CertificateSerial")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Checksum")
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("FileItemId")
-                        .HasColumnType("uuid");
-
-                    b.Property<long>("FileSizeBytes")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Format")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsHidden")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsSigned")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("PreviewStoragePath")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("SignedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("SignedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("StoragePath")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("UploadedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("UploadedByAccountId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("VersionNumber")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ViewerError")
-                        .HasColumnType("text");
-
-                    b.Property<string>("ViewerProgress")
-                        .HasColumnType("text");
-
-                    b.Property<int>("ViewerStatus")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ViewerUrn")
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FileItemId");
-
-                    b.ToTable("FileVersions");
-                });
-
             modelBuilder.Entity("Domain.Entities.FileVersionLoiCheck", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1055,6 +1004,102 @@ namespace Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("FileVersionLoiChecks");
+                });
+
+            modelBuilder.Entity("Domain.Entities.FileVersionState", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CertificateSerial")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Checksum")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DisplayVersion")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("FileItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("FileName")
+                        .HasColumnType("text");
+
+                    b.Property<long?>("FileSizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Format")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsCurrent")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsHidden")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsSigned")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("PreviewStoragePath")
+                        .HasColumnType("text");
+
+                    b.Property<int>("PublishedRevision")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("SignedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("SignedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Stage")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("StoragePath")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("UploadedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UploadedByAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ViewerError")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ViewerProgress")
+                        .HasColumnType("text");
+
+                    b.Property<int>("ViewerStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ViewerUrn")
+                        .HasColumnType("text");
+
+                    b.Property<int>("WorkingRevision")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("WorkingVersion")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FileItemId")
+                        .IsUnique()
+                        .HasFilter("\"IsCurrent\" = TRUE");
+
+                    b.HasIndex("FileItemId", "IsCurrent");
+
+                    b.ToTable("FileVersionStates");
                 });
 
             modelBuilder.Entity("Domain.Entities.Folder", b =>
@@ -2356,7 +2401,7 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Domain.Entities.FileNote", b =>
                 {
-                    b.HasOne("Domain.Entities.FileVersion", "FileVersion")
+                    b.HasOne("Domain.Entities.FileVersionState", "FileVersion")
                         .WithMany()
                         .HasForeignKey("FileVersionId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -2402,26 +2447,26 @@ namespace Infrastructure.Migrations
                     b.Navigation("FileItem");
                 });
 
-            modelBuilder.Entity("Domain.Entities.FileVersion", b =>
-                {
-                    b.HasOne("Domain.Entities.FileItem", "FileItem")
-                        .WithMany("Versions")
-                        .HasForeignKey("FileItemId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("FileItem");
-                });
-
             modelBuilder.Entity("Domain.Entities.FileVersionLoiCheck", b =>
                 {
-                    b.HasOne("Domain.Entities.FileVersion", "FileVersion")
+                    b.HasOne("Domain.Entities.FileVersionState", "FileVersion")
                         .WithMany()
                         .HasForeignKey("FileVersionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("FileVersion");
+                });
+
+            modelBuilder.Entity("Domain.Entities.FileVersionState", b =>
+                {
+                    b.HasOne("Domain.Entities.FileItem", "FileItem")
+                        .WithMany()
+                        .HasForeignKey("FileItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("FileItem");
                 });
 
             modelBuilder.Entity("Domain.Entities.Folder", b =>
@@ -2566,7 +2611,7 @@ namespace Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("Domain.Entities.FileVersion", "FileVersion")
+                    b.HasOne("Domain.Entities.FileVersionState", "FileVersion")
                         .WithMany()
                         .HasForeignKey("FileVersionId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -2801,8 +2846,6 @@ namespace Infrastructure.Migrations
                     b.Navigation("NamingMetadata");
 
                     b.Navigation("Permissions");
-
-                    b.Navigation("Versions");
                 });
 
             modelBuilder.Entity("Domain.Entities.Folder", b =>

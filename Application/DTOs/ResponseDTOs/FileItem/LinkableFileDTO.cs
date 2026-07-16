@@ -12,6 +12,8 @@ namespace Application.DTOs.ResponseDTOs.FileItem
         public string FolderName { get; set; } = null!;
 
         public int CurrentVersionNumber { get; set; }
+        // Chuỗi version theo hệ mới, vd "P01.02" / "C01" (null nếu file chưa có version state).
+        public string? DisplayVersion { get; set; }
         public string? Format { get; set; }
         public long SizeBytes { get; set; }
         public DateTime? UpdatedAt { get; set; }

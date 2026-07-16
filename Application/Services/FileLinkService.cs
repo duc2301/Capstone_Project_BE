@@ -80,7 +80,8 @@ namespace Application.Services
                         FolderId = f.FolderId,
                         FolderName = folder.Name,
                         Area = folder.Area,
-                        CurrentVersionNumber = version?.VersionNumber ?? 0,
+                        CurrentVersionNumber = version?.WorkingVersion ?? 0,
+                        DisplayVersion = version?.DisplayVersion,
                         Format = version?.Format,
                         SizeBytes = version?.FileSizeBytes ?? 0,
                         LinkedAt = link.CreatedAt,
@@ -130,7 +131,8 @@ namespace Application.Services
                         FileType = f.FileType,
                         FolderId = f.FolderId,
                         FolderName = foldersById[f.FolderId].Name,
-                        CurrentVersionNumber = version?.VersionNumber ?? 0,
+                        CurrentVersionNumber = version?.WorkingVersion ?? 0,
+                        DisplayVersion = version?.DisplayVersion,
                         Format = version?.Format,
                         SizeBytes = version?.FileSizeBytes ?? 0,
                         UpdatedAt = f.UpdatedAt,
@@ -161,6 +163,17 @@ namespace Application.Services
             Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
             => await StageLinksAsync(fileItemId, targetFolder, relatedFileItemIds, actorId, isSystemAdmin);
 
+        public async Task ValidateUploadLinkTargetsAsync(
+            Folder targetFolder, IReadOnlyCollection<Guid> relatedFileItemIds,
+            Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
+        {
+            var targetIds = relatedFileItemIds.Distinct().ToList();
+            if (targetIds.Count == 0) return;
+            // Chỉ kiểm phạm vi + quyền, KHÔNG ghi. Gọi TRƯỚC khi lưu file để lỗi thì chưa có file mồ côi
+            // (hệ versioning mới commit FileItem giữa luồng nên không thể rollback bằng 1 commit cuối).
+            await ResolveValidatedTargetsAsync(targetFolder, targetIds, actorId, isSystemAdmin);
+        }
+
         public async Task RemoveLinkAsync(
             Guid fileItemId, Guid linkedFileItemId, Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
         {
@@ -186,21 +199,7 @@ namespace Application.Services
             var targetIds = relatedFileItemIds.Distinct().Where(id => id != fileItemId).ToList();
             if (targetIds.Count == 0) return;
 
-            var scopeFolderIds = await ResolveScopeFolderIdsAsync(sourceFolder, actorId, isSystemAdmin);
-
-            var targets = (await _unitOfWork.Repository<FileItem>()
-                    .FindAsync(f => targetIds.Contains(f.Id)))
-                .ToList();
-
-            var missing = targetIds.Except(targets.Select(f => f.Id)).ToList();
-            if (missing.Count > 0)
-                throw new ApiExceptionResponse($"Related file not found: {string.Join(", ", missing)}.", 404);
-
-            var outOfScope = targets.Where(f => !scopeFolderIds.Contains(f.FolderId)).ToList();
-            if (outOfScope.Count > 0)
-                throw new ApiExceptionResponse(
-                    "Chỉ được liên kết với tệp trong thư mục của nhóm ở cùng khu vực và bạn có quyền xem: "
-                    + string.Join(", ", outOfScope.Select(f => f.Name)) + ".", 403);
+            var targets = await ResolveValidatedTargetsAsync(sourceFolder, targetIds, actorId, isSystemAdmin);
 
             var existingPairs = (await GetLinksOfAsync(fileItemId))
                 .Select(l => OtherEndOf(l, fileItemId))
@@ -221,6 +220,30 @@ namespace Application.Services
                     CreatedAt = now
                 });
             }
+        }
+
+        // Kiểm file đích tồn tại + nằm trong phạm vi cho phép (ô của nhóm ở cùng khu vực, giao quyền View).
+        // Trả về danh sách FileItem đích đã kiểm; ném lỗi nếu thiếu hoặc ngoài phạm vi. KHÔNG ghi gì.
+        private async Task<List<FileItem>> ResolveValidatedTargetsAsync(
+            Folder sourceFolder, IReadOnlyCollection<Guid> targetIds, Guid actorId, bool isSystemAdmin)
+        {
+            var scopeFolderIds = await ResolveScopeFolderIdsAsync(sourceFolder, actorId, isSystemAdmin);
+
+            var targets = (await _unitOfWork.Repository<FileItem>()
+                    .FindAsync(f => targetIds.Contains(f.Id)))
+                .ToList();
+
+            var missing = targetIds.Except(targets.Select(f => f.Id)).ToList();
+            if (missing.Count > 0)
+                throw new ApiExceptionResponse($"Related file not found: {string.Join(", ", missing)}.", 404);
+
+            var outOfScope = targets.Where(f => !scopeFolderIds.Contains(f.FolderId)).ToList();
+            if (outOfScope.Count > 0)
+                throw new ApiExceptionResponse(
+                    "Chỉ được liên kết với tệp trong thư mục của nhóm ở cùng khu vực và bạn có quyền xem: "
+                    + string.Join(", ", outOfScope.Select(f => f.Name)) + ".", 403);
+
+            return targets;
         }
 
         private async Task<List<FileLink>> GetLinksOfAsync(Guid fileItemId)
@@ -310,7 +333,8 @@ namespace Application.Services
                 .ToDictionary(f => f.Id);
         }
 
-        private async Task<Dictionary<Guid, FileVersion>> GetCurrentVersionsByIdAsync(
+        // Hệ versioning mới: version hiện hành nằm ở dòng FileVersionState mà CurrentVersionId trỏ tới.
+        private async Task<Dictionary<Guid, FileVersionState>> GetCurrentVersionsByIdAsync(
             IReadOnlyCollection<FileItem> files)
         {
             var versionIds = files
@@ -318,14 +342,14 @@ namespace Application.Services
                 .Select(f => f.CurrentVersionId!.Value)
                 .Distinct()
                 .ToList();
-            if (versionIds.Count == 0) return new Dictionary<Guid, FileVersion>();
+            if (versionIds.Count == 0) return new Dictionary<Guid, FileVersionState>();
 
-            return (await _unitOfWork.Repository<FileVersion>().FindAsync(v => versionIds.Contains(v.Id)))
+            return (await _unitOfWork.Repository<FileVersionState>().FindAsync(v => versionIds.Contains(v.Id)))
                 .ToDictionary(v => v.Id);
         }
 
-        private static FileVersion? ResolveCurrentVersion(
-            FileItem file, IReadOnlyDictionary<Guid, FileVersion> versionsById)
+        private static FileVersionState? ResolveCurrentVersion(
+            FileItem file, IReadOnlyDictionary<Guid, FileVersionState> versionsById)
             => file.CurrentVersionId.HasValue && versionsById.TryGetValue(file.CurrentVersionId.Value, out var version)
                 ? version
                 : null;

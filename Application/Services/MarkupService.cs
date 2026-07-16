@@ -37,7 +37,7 @@ namespace Application.Services
             var versionId = dto.FileVersionId ?? fileItem.CurrentVersionId
                 ?? throw new ApiExceptionResponse("File has no content version to markup.", 400);
 
-            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(versionId)
+            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(versionId)
                 ?? throw new ApiExceptionResponse("File version not found.", 404);
             if (version.FileItemId != fileItem.Id)
                 throw new ApiExceptionResponse("Version does not belong to this file.", 400);
@@ -59,7 +59,7 @@ namespace Application.Services
             await _unitOfWork.CommitAsync();
 
             var actorName = await GetAccountNameAsync(actorId);
-            return BuildSetDto(set, version.VersionNumber, actorName, 0, 0, new List<FileNoteResponseDTO>());
+            return BuildSetDto(set, version.WorkingVersion, actorName, 0, 0, new List<FileNoteResponseDTO>());
         }
 
         public async Task<IEnumerable<MarkupSetResponseDTO>> GetSetsByFileAsync(Guid fileItemId, Guid actorId, CancellationToken ct = default)
@@ -116,12 +116,12 @@ namespace Application.Services
 
             var accounts = await LoadAccountNamesAsync(
                 notes.Select(n => n.AuthorAccountId).Append(set.CreatedByAccountId));
-            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(set.FileVersionId);
+            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(set.FileVersionId);
 
             var noteDtos = notes.Select(n => BuildNoteDto(n, NameOf(accounts, n.AuthorAccountId))).ToList();
             return BuildSetDto(
                 set,
-                version?.VersionNumber ?? 0,
+                version?.WorkingVersion ?? 0,
                 NameOf(accounts, set.CreatedByAccountId),
                 noteDtos.Count,
                 noteDtos.Count(d => d.Status == FileNoteStatus.Open),
@@ -274,10 +274,10 @@ namespace Application.Services
         private async Task<MarkupSetResponseDTO> BuildSetDetailDtoAsync(MarkupSet set)
         {
             var notes = (await _unitOfWork.Repository<FileNote>().FindAsync(n => n.MarkupSetId == set.Id)).ToList();
-            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(set.FileVersionId);
+            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(set.FileVersionId);
             var createdByName = await GetAccountNameAsync(set.CreatedByAccountId);
             return BuildSetDto(
-                set, version?.VersionNumber ?? 0, createdByName,
+                set, version?.WorkingVersion ?? 0, createdByName,
                 notes.Count, notes.Count(n => n.Status == FileNoteStatus.Open), new List<FileNoteResponseDTO>());
         }
 
@@ -291,8 +291,8 @@ namespace Application.Services
                 .ToDictionary(g => g.Key, g => g.ToList());
 
             var versionIds = sets.Select(s => s.FileVersionId).Distinct().ToList();
-            var versions = (await _unitOfWork.Repository<FileVersion>().FindAsync(v => versionIds.Contains(v.Id)))
-                .ToDictionary(v => v.Id, v => v.VersionNumber);
+            var versions = (await _unitOfWork.Repository<FileVersionState>().FindAsync(v => versionIds.Contains(v.Id)))
+                .ToDictionary(v => v.Id, v => v.WorkingVersion);
 
             var accounts = await LoadAccountNamesAsync(sets.Select(s => s.CreatedByAccountId));
 

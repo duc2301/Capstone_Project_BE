@@ -4,7 +4,7 @@ using Domain.Common;
 
 namespace Domain.Entities
 {
-    // 1 tài liệu trong thư mục CDE; nội dung thực nằm ở các FileVersion
+    // 1 tài liệu trong thư mục CDE; nội dung thực + số version nằm ở các dòng FileVersionState
     public class FileItem : IEntity, IAuditable
     {
         public Guid Id { get; set; }
@@ -24,7 +24,6 @@ namespace Domain.Entities
         public string? WarnningMessage { get; set; } = string.Empty;
 
         public Folder Folder { get; set; } = null!;
-        public ICollection<FileVersion> Versions { get; set; } = new List<FileVersion>();
         public ICollection<FilePermission> Permissions { get; set; } = new List<FilePermission>();
         public ICollection<FileNamingMetadata> NamingMetadata { get; set; } = new List<FileNamingMetadata>();
     }

@@ -1,5 +1,8 @@
 using Application.DTOs.RequestDTOs.FileItem;
+using Application.DTOs.RequestDTOs.FileVersion;
 using Application.DTOs.ResponseDTOs.FileItem;
+using Application.DTOs.ResponseDTOs.FileVersion;
+using Application.DTOs.ResponseDTOs.NamingConvention;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IBackgroundServices;
 using Application.Interfaces.IServices;
@@ -30,17 +33,21 @@ namespace Application.Services
         private readonly IModelTranslationQueue _translationQueue;
         private readonly ILoiCheckQueue _loiCheckQueue;
         private readonly IMapper _mapper;
+        private readonly INamingConventionService _naming;
         private readonly INameMatchContentBackgroundService _nameMatchContentBackgroundService;
+        private readonly IFileVersionService _fileVersionService;
         private readonly IFileLinkService _fileLink;
 
-        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileLinkService fileLink)
+        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INamingConventionService naming, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService, IFileLinkService fileLink)
         {
             _unitOfWork = unitOfWork;
             _storage = storage;
             _translationQueue = translationQueue;
             _loiCheckQueue = loiCheckQueue;
             _mapper = mapper;
+            _naming = naming;
             _nameMatchContentBackgroundService = nameMatchContentBackgroundService;
+            _fileVersionService = fileVersionService;
             _fileLink = fileLink;
         }
 
@@ -63,6 +70,11 @@ namespace Application.Services
                 ? Path.GetFileNameWithoutExtension(originalFileName)
                 : dto.Name.Trim();
             var ext = Path.GetExtension(originalFileName);
+            var naming = dto.BypassNamingConvention
+                ? new FileNameGenerationResultDTO { HasNamingConvention = false }
+                : await _naming.GenerateFileNameAsync(dto.FolderId, dto.NamingSelections, originalFileName, ct);
+            if (naming.HasNamingConvention)
+                name = naming.FileNameWithoutExtension;
 
             // ③ Kiểm tra tên file (rule mặc định: không rỗng, không ký tự cấm, có đuôi).
             ValidateName(name);
@@ -72,16 +84,13 @@ namespace Application.Services
             // ④ Đuôi file phải khớp FileType khai báo.
             ValidateExtensionMatchesType(ext, dto.FileType);
 
-            // ⑤ Trùng tên trong folder -> đây là phiên bản mới.
-            var siblings = (await _unitOfWork.Repository<FileItem>()
-                    .FindAsync(f => f.FolderId == folder.Id))
-                .ToList();
-            var existing = siblings.FirstOrDefault(
-                f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
-            var isNewVersion = existing != null;
+            // ① Đối chiếu quyền: file mới cần Edit.
+            //await _permission.RequireAsync(actor, folder.Id, FolderAction.Edit);
 
-            // ① Đối chiếu quyền: phiên bản mới cần Update, file mới cần Edit.
-            //await _permission.RequireAsync(actor, folder.Id, isNewVersion ? FolderAction.Update : FolderAction.Edit);
+            // ② Tệp liên quan: KIỂM phạm vi TRƯỚC khi lưu file — id sai/ngoài phạm vi thì fail ở đây,
+            // chưa lưu byte nào (hệ versioning mới commit FileItem giữa luồng, không thể rollback file mồ côi).
+            if (dto.RelatedFileItemIds is { Count: > 0 })
+                await _fileLink.ValidateUploadLinkTargetsAsync(folder, dto.RelatedFileItemIds, actor, isSystemAdmin, ct);
 
             // ⑦ Lưu nội dung file (đĩa local).
             var stored = await _storage.SaveAsync(content, folder.ProjectId, folder.Id, ext, ct);
@@ -89,9 +98,36 @@ namespace Application.Services
             var now = DateTime.UtcNow;
             var format = ext.TrimStart('.').ToLowerInvariant();
 
-            if (!isNewVersion)
+            // ⑤ Versioning: trùng tên trong folder = upload thay thế (WorkingVersion +1);
+            // tên mới = tài liệu mới (P01.01). Toàn bộ quy tắc nằm trong FileVersionService.
+            var fileData = new FileVersionDataDTO
             {
-                var fileItem = new FileItem
+                StoragePath = stored.RelativePath,
+                FileSizeBytes = stored.SizeBytes,
+                Format = format,
+                Checksum = stored.Checksum,
+                UploadedByAccountId = actor,
+                // Model IFC/CAD: chỉ đánh dấu chờ dịch nền khi BẬT công tắc tự dịch khi upload.
+                ViewerStatus = AutoTranslateModelsOnUpload && IsModelType(dto.FileType)
+                    ? ModelViewerStatus.Pending
+                    : ModelViewerStatus.None
+            };
+
+            FileVersionResult version;
+            FileItem fileItem;
+            try
+            {
+                version = await _fileVersionService.GetNextUploadVersionAsync(folder.Id, name, fileData);
+            }
+            catch (InvalidOperationException ex)
+            {
+                // vd: tài liệu đang Published — không nhận upload thay thế.
+                throw new ApiExceptionResponse(ex.Message, 409);
+            }
+
+            if (version.IsNewDocument)
+            {
+                fileItem = new FileItem
                 {
                     Id = Guid.NewGuid(),
                     FolderId = folder.Id,
@@ -101,95 +137,58 @@ namespace Application.Services
                     CreatedAt = now,
                     UpdatedAt = now
                 };
-                var v1 = NewVersion(fileItem.Id, 1, stored, format, actor, now);
-                fileItem.CurrentVersionId = v1.Id;
-                // Model IFC/CAD: chỉ đánh dấu chờ dịch nền khi BẬT công tắc tự dịch khi upload (xem AutoTranslateModelsOnUpload).
-                if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
-                    v1.ViewerStatus = ModelViewerStatus.Pending;
-
                 await _unitOfWork.Repository<FileItem>().CreateAsync(fileItem);
-                await _unitOfWork.Repository<FileVersion>().CreateAsync(v1);
-                // Cổng kiểm LOI (advisory): file .ifc -> tạo bản ghi Pending để FE hiện "đang kiểm".
-                if (dto.FileType == FileType.Ifc)
-                    await _unitOfWork.Repository<FileVersionLoiCheck>().CreateAsync(NewLoiPending(v1.Id, now));
-                await StageRelatedFileLinksAsync(fileItem.Id, folder, dto, actor, isSystemAdmin);
-                await _unitOfWork.CommitAsync();
-
-                if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
-                    _translationQueue.Enqueue(v1.Id);
-                if (dto.FileType == FileType.Ifc)
-                    _loiCheckQueue.Enqueue(v1.Id);
-                _nameMatchContentBackgroundService.Enqueue(fileItem.Id);
-
-                return new FileUploadResultDTO
-                {
-                    FileItem = _mapper.Map<FileItemResponseDTO>(fileItem),
-                    Version = _mapper.Map<FileVersionResponseDTO>(v1),
-                    IsNewVersion = false,
-                    Url = url
-                };
+                // Naming convention: lưu breakdown từng segment của tên — chỉ khi tài liệu MỚI
+                // (upload thay thế trùng tên = cùng bộ giá trị, metadata giữ nguyên).
+                // Không SaveChanges ở đây: commit chung 1 lần ở cuối flow.
+                if (naming.HasNamingConvention)
+                    await _naming.StageFileNamingMetadataAsync(fileItem.Id, naming);
+                // FileItem đang tracked (Added) nên versioning service nhìn thấy ngay qua cùng DbContext.
+                version = await _fileVersionService.CreateInitialVersionAsync(fileItem.Id, fileData);
             }
-
-            // --- Phiên bản mới của file đã tồn tại ---
-            var versions = (await _unitOfWork.Repository<FileVersion>()
-                    .FindAsync(v => v.FileItemId == existing!.Id))
-                .ToList();
-            var nextNo = (versions.Count == 0 ? 0 : versions.Max(v => v.VersionNumber)) + 1;
-
-            var oldVersion = versions.FirstOrDefault(v => v.Id == existing!.CurrentVersionId)
-                             ?? versions.OrderByDescending(v => v.VersionNumber).FirstOrDefault();
-
-            var newVersion = NewVersion(existing!.Id, nextNo, stored, format, actor, now);
-            if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
-                newVersion.ViewerStatus = ModelViewerStatus.Pending;
-            await _unitOfWork.Repository<FileVersion>().CreateAsync(newVersion);
-            if (dto.FileType == FileType.Ifc)
-                await _unitOfWork.Repository<FileVersionLoiCheck>().CreateAsync(NewLoiPending(newVersion.Id, now));
-
-            existing.CurrentVersionId = newVersion.Id;   // entity được track -> mutate trực tiếp
-            existing.UpdatedAt = now;
-
-            Guid? archivedFileItemId = null;
-            if (oldVersion != null)
+            else
             {
-                var archivedFolder = await ResolveArchivedFolderAsync(folder);
-                var archivedItem = new FileItem
-                {
-                    Id = Guid.NewGuid(),
-                    FolderId = archivedFolder.Id,
-                    Name = $"{existing.Name} (v{oldVersion.VersionNumber})",
-                    FileType = existing.FileType,
-                    CurrentVersionId = oldVersion.Id,
-                    CreatedByAccountId = actor,
-                    CreatedAt = now,
-                    UpdatedAt = now
-                };
-                await _unitOfWork.Repository<FileItem>().CreateAsync(archivedItem);
-
-                // Chuyển bản cũ sang file mục Archived (cập nhật FK).
-                oldVersion.FileItemId = archivedItem.Id;
-                oldVersion.IsHidden = false;
-                archivedFileItemId = archivedItem.Id;
+                fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(version.FileItemId!.Value)
+                    ?? throw new ApiExceptionResponse("File not found.", 404);
+                fileItem.FileType = dto.FileType;
+                fileItem.UpdatedAt = now;
             }
 
-            await StageRelatedFileLinksAsync(existing.Id, folder, dto, actor, isSystemAdmin);
+            // CurrentVersionId giờ trỏ sang dòng FileVersionStates hiện hành (hệ versioning mới).
+            fileItem.CurrentVersionId = version.VersionStateId;
 
+            // ② Tệp liên quan (tùy chọn): stage row link cho CẢ file mới lẫn upload thay thế (fileItem đã có ở đây).
+            // Đã validate scope từ đầu flow (trước khi lưu file) nên tới đây chỉ tạo row, commit chung ở dưới.
+            await StageRelatedFileLinksAsync(fileItem.Id, folder, dto, actor, isSystemAdmin);
+
+            // Cổng kiểm LOI (advisory): file .ifc -> tạo bản ghi Pending để FE hiện "đang kiểm".
+            if (dto.FileType == FileType.Ifc)
+                await _unitOfWork.Repository<FileVersionLoiCheck>().CreateAsync(NewLoiPending(version.VersionStateId!.Value, now));
             await _unitOfWork.CommitAsync();
 
-            if (dto.FileType is FileType.Pdf or FileType.Office)
-                _nameMatchContentBackgroundService.Enqueue(existing.Id);
-
             if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
-                _translationQueue.Enqueue(newVersion.Id);
+                _translationQueue.Enqueue(version.VersionStateId!.Value);
             if (dto.FileType == FileType.Ifc)
-                _loiCheckQueue.Enqueue(newVersion.Id);
+                _loiCheckQueue.Enqueue(version.VersionStateId!.Value);
+            _nameMatchContentBackgroundService.Enqueue(fileItem.Id);
 
             return new FileUploadResultDTO
             {
-                FileItem = _mapper.Map<FileItemResponseDTO>(existing),
-                Version = _mapper.Map<FileVersionResponseDTO>(newVersion),
-                IsNewVersion = true,
-                ArchivedFileItemId = archivedFileItemId,
+                FileItem = _mapper.Map<FileItemResponseDTO>(fileItem),
+                Version = new FileVersionResponseDTO
+                {
+                    Id = version.VersionStateId!.Value,
+                    FileItemId = fileItem.Id,
+                    VersionNumber = version.WorkingVersion,
+                    DisplayVersion = version.DisplayVersion,
+                    StoragePath = stored.RelativePath,
+                    FileSizeBytes = stored.SizeBytes,
+                    Format = format,
+                    Checksum = stored.Checksum,
+                    IsHidden = false,
+                    UploadedByAccountId = actor,
+                    UploadedAt = now
+                },
                 Url = url
             };
         }
@@ -204,8 +203,11 @@ namespace Application.Services
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
 
-            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value)
+            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
+
+            if (string.IsNullOrEmpty(version.StoragePath) || string.IsNullOrEmpty(version.Format))
+                throw new ApiExceptionResponse("Current version has no stored content.", 404);
 
             var stream = await _storage.OpenReadAsync(version.StoragePath, ct);
             var downloadName = $"{fileItem.Name}.{version.Format}";
@@ -222,8 +224,11 @@ namespace Application.Services
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
 
-            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value)
+            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
+
+            if (string.IsNullOrEmpty(version.StoragePath))
+                throw new ApiExceptionResponse("Current version has no stored content.", 404);
 
             return await _storage.GetPresignedUrlAsync(version.StoragePath, minutes, ct);
         }
@@ -252,40 +257,6 @@ namespace Application.Services
             CreatedAt = now,
             UpdatedAt = now
         };
-
-        private static FileVersion NewVersion(
-            Guid fileItemId, int number, StoredFile stored, string format, Guid actor, DateTime now) => new()
-        {
-            Id = Guid.NewGuid(),
-            FileItemId = fileItemId,
-            VersionNumber = number,
-            StoragePath = stored.RelativePath,
-            FileSizeBytes = stored.SizeBytes,
-            Format = format,
-            Checksum = stored.Checksum,
-            IsHidden = false,
-            UploadedByAccountId = actor,
-            UploadedAt = now
-        };
-
-        // Tìm folder Archived của nhóm sở hữu (đi ngược cây tìm OwnerGroupId), fallback về Archived gốc.
-        private async Task<Folder> ResolveArchivedFolderAsync(Folder folder)
-        {
-            var projectFolders = (await _unitOfWork.Repository<Folder>()
-                    .FindAsync(f => f.ProjectId == folder.ProjectId))
-                .ToList();
-            var byId = projectFolders.ToDictionary(f => f.Id);
-
-            // Xác định nhóm sở hữu: chính folder hoặc tổ tiên gần nhất có OwnerGroupId.
-            var cur = folder;
-           
-
-            var archivedRoot = projectFolders.FirstOrDefault(
-                f => f.ParentFolderId == null && f.Area == CdeArea.Archived)
-                ?? throw new ApiExceptionResponse("Archived area is missing for this project.", 500);
-
-            return archivedRoot;
-        }
 
         private static void ValidateName(string name)
         {
