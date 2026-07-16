@@ -31,8 +31,9 @@ namespace Application.Services
         private readonly ILoiCheckQueue _loiCheckQueue;
         private readonly IMapper _mapper;
         private readonly INameMatchContentBackgroundService _nameMatchContentBackgroundService;
+        private readonly IFileLinkService _fileLink;
 
-        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INameMatchContentBackgroundService nameMatchContentBackgroundService)
+        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileLinkService fileLink)
         {
             _unitOfWork = unitOfWork;
             _storage = storage;
@@ -40,10 +41,12 @@ namespace Application.Services
             _loiCheckQueue = loiCheckQueue;
             _mapper = mapper;
             _nameMatchContentBackgroundService = nameMatchContentBackgroundService;
+            _fileLink = fileLink;
         }
 
         public async Task<FileUploadResultDTO> UploadAsync(
-            UploadFileDTO dto, Stream content, string originalFileName, Guid actor, CancellationToken ct = default)
+            UploadFileDTO dto, Stream content, string originalFileName, Guid actor, bool isSystemAdmin,
+            CancellationToken ct = default)
         {
             var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(dto.FolderId)
                 ?? throw new ApiExceptionResponse("Folder not found.", 404);
@@ -109,6 +112,7 @@ namespace Application.Services
                 // Cổng kiểm LOI (advisory): file .ifc -> tạo bản ghi Pending để FE hiện "đang kiểm".
                 if (dto.FileType == FileType.Ifc)
                     await _unitOfWork.Repository<FileVersionLoiCheck>().CreateAsync(NewLoiPending(v1.Id, now));
+                await StageRelatedFileLinksAsync(fileItem.Id, folder, dto, actor, isSystemAdmin);
                 await _unitOfWork.CommitAsync();
 
                 if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
@@ -168,6 +172,7 @@ namespace Application.Services
                 archivedFileItemId = archivedItem.Id;
             }
 
+            await StageRelatedFileLinksAsync(existing.Id, folder, dto, actor, isSystemAdmin);
 
             await _unitOfWork.CommitAsync();
 
@@ -224,6 +229,15 @@ namespace Application.Services
         }
 
         // ---------- nội bộ ----------
+
+        private async Task StageRelatedFileLinksAsync(
+            Guid fileItemId, Folder targetFolder, UploadFileDTO dto, Guid actor, bool isSystemAdmin)
+        {
+            if (dto.RelatedFileItemIds is not { Count: > 0 }) return;
+
+            await _fileLink.StageLinksOnUploadAsync(
+                fileItemId, targetFolder, dto.RelatedFileItemIds, actor, isSystemAdmin);
+        }
 
         // Chỉ model IFC/CAD mới cần dịch lên APS (xem ModelTranslationWorker).
         private static bool IsModelType(FileType type) => type is FileType.Ifc or FileType.Cad;

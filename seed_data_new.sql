@@ -30,7 +30,7 @@
 --    e0*=ContractPackages e1*=PackageAssignments
 --    f0*=Folders f1*=FolderPermissions f2*=FileItems f3*=FileVersions
 --    f4*=FilePermissions f5*=FileNotes f6*=MarkupSets f9*=FileSignaturePositions
---    ff*=FileRelations
+--    ff*=FileLinks
 --    fa*=NamingConventions fb*=NamingConventionFields fc*=NamingConventionFieldValues
 --    fd*=NamingConventionLockedValues fe*=FileNamingMetadata
 --    aa*=ApprovalRequests ab*=ApprovalSignatureTransactions ac*=ZoneReturnRequests
@@ -54,7 +54,7 @@ TRUNCATE TABLE
     "FileNotes", "MarkupSets", "FileSignaturePositions",
     "FileNamingMetadata", "NamingConventionLockedValues", "NamingConventionFieldValues",
     "NamingConventionFields", "NamingConventions",
-    "FilePermissions", "FileVersions", "FileItems", "FileRelations", "FolderPermissions", "Folders",
+    "FileLinks", "FilePermissions", "FileVersions", "FileItems", "FolderPermissions", "Folders",
     "PackageAssignments", "ContractPackages",
     "ProjectInvitations", "ProjectParticipants", "ProjectLocations", "Projects",
     "GroupMembers", "Groups", "Organizations",
@@ -351,29 +351,31 @@ INSERT INTO "FolderPermissions" ("Id","FolderId","ProjectParticipantId","CanView
 ('f1000000-0000-0000-0000-000000000026','f0000000-0000-0000-0000-000000000025','d3000000-0000-0000-0000-000000000008',true,false,false,false,false,false,1);
 
 -- ============================================================================
--- 17a) FILE RELATIONS — nhóm file liên quan (FileItemId = file GỐC của nhóm;
---      các FileItems cùng nhóm trỏ ngược về qua FileItems.FileRelationId).
---      FileItemId KHÔNG có FK → chèn trước FileItems an toàn.
--- ============================================================================
-INSERT INTO "FileRelations" ("Id","FileItemId") VALUES
-('ff000000-0000-0000-0000-000000000001','f2000000-0000-0000-0000-000000000001');
-
--- ============================================================================
 -- 17) FILE ITEMS  FileType: Pdf=0,Ifc=1,Image=2,Cad=3,Office=4,Other=5
 --     Status(FileItemStatus): Draft=0,PendingApproval=1,Approved=2,Rejected=3
 --     Tên file trong folder có quy ước ĐÚNG CHUẨN đã khai báo (khớp FileNamingMetadata).
 --     CurrentVersionId/SignedVersionId: cột scalar KHÔNG FK — trỏ FileVersions an toàn.
---     FileRelationId: f2..0001 + f2..0002 cùng nhóm ff..0001 (bản vẽ ↔ mô hình).
 --     Warnning/WarnningMessage: f2..0004 bị cảnh báo tên sai quy ước.
+--     Tệp liên quan: xem 17a) FILE LINKS bên dưới (phải chèn SAU vì có FK về FileItems).
 -- ============================================================================
-INSERT INTO "FileItems" ("Id","FolderId","Name","FileType","Status","RequiresSignature","IsSigned","CurrentVersionId","SignedVersionId","Warnning","WarnningMessage","FileRelationId","CreatedByAccountId","CreatedAt","UpdatedAt") VALUES
-('f2000000-0000-0000-0000-000000000001','f0000000-0000-0000-0000-000000000005','RIV-BIM-TA-01-DR-ARC-001.pdf',0,1,true,false,'f3000000-0000-0000-0000-000000000001',NULL,false,NULL,'ff000000-0000-0000-0000-000000000001','a0000000-0000-0000-0000-000000000003','2026-02-05 08:00:00+07',NULL),
-('f2000000-0000-0000-0000-000000000002','f0000000-0000-0000-0000-000000000005','RIV-BIM-TA-ZZ-M3-ARC-001.ifc',1,2,false,false,'f3000000-0000-0000-0000-000000000003',NULL,false,NULL,'ff000000-0000-0000-0000-000000000001','a0000000-0000-0000-0000-000000000003','2026-02-05 08:10:00+07','2026-02-20 10:00:00+07'),
-('f2000000-0000-0000-0000-000000000003','f0000000-0000-0000-0000-000000000006','RIV-TSN-XX-ZZ-CA-STR-001.xlsx',4,0,false,false,'f3000000-0000-0000-0000-000000000004',NULL,false,NULL,NULL,'a0000000-0000-0000-0000-000000000004','2026-02-06 08:00:00+07',NULL),
-('f2000000-0000-0000-0000-000000000004','f0000000-0000-0000-0000-000000000008','Coord-Drawing.dwg',3,3,false,false,'f3000000-0000-0000-0000-000000000005',NULL,true,'Tên file không theo quy ước đặt tên; bản vẽ đã bị từ chối phê duyệt.',NULL,'a0000000-0000-0000-0000-000000000003','2026-02-07 08:00:00+07',NULL),
-('f2000000-0000-0000-0000-000000000005','f0000000-0000-0000-0000-000000000009','Published-Set.pdf',0,2,true,true,'f3000000-0000-0000-0000-000000000006','f3000000-0000-0000-0000-000000000006',false,NULL,NULL,'a0000000-0000-0000-0000-000000000002','2026-02-08 08:00:00+07',NULL),
-('f2000000-0000-0000-0000-000000000006','f0000000-0000-0000-0000-000000000005','RIV-BIM-TB-00-DR-ARC-002.pdf',0,0,false,false,'f3000000-0000-0000-0000-000000000007',NULL,false,NULL,NULL,'a0000000-0000-0000-0000-000000000004','2026-03-01 08:00:00+07',NULL),
-('f2000000-0000-0000-0000-000000000007','f0000000-0000-0000-0000-000000000026','CCL_STR_DR_001.pdf',0,0,false,false,'f3000000-0000-0000-0000-000000000008',NULL,false,NULL,NULL,'a0000000-0000-0000-0000-000000000003','2026-03-02 08:00:00+07',NULL);
+INSERT INTO "FileItems" ("Id","FolderId","Name","FileType","Status","RequiresSignature","IsSigned","CurrentVersionId","SignedVersionId","Warnning","WarnningMessage","CreatedByAccountId","CreatedAt","UpdatedAt") VALUES
+('f2000000-0000-0000-0000-000000000001','f0000000-0000-0000-0000-000000000005','RIV-BIM-TA-01-DR-ARC-001.pdf',0,1,true,false,'f3000000-0000-0000-0000-000000000001',NULL,false,NULL,'a0000000-0000-0000-0000-000000000003','2026-02-05 08:00:00+07',NULL),
+('f2000000-0000-0000-0000-000000000002','f0000000-0000-0000-0000-000000000005','RIV-BIM-TA-ZZ-M3-ARC-001.ifc',1,2,false,false,'f3000000-0000-0000-0000-000000000003',NULL,false,NULL,'a0000000-0000-0000-0000-000000000003','2026-02-05 08:10:00+07','2026-02-20 10:00:00+07'),
+('f2000000-0000-0000-0000-000000000003','f0000000-0000-0000-0000-000000000006','RIV-TSN-XX-ZZ-CA-STR-001.xlsx',4,0,false,false,'f3000000-0000-0000-0000-000000000004',NULL,false,NULL,'a0000000-0000-0000-0000-000000000004','2026-02-06 08:00:00+07',NULL),
+('f2000000-0000-0000-0000-000000000004','f0000000-0000-0000-0000-000000000008','Coord-Drawing.dwg',3,3,false,false,'f3000000-0000-0000-0000-000000000005',NULL,true,'Tên file không theo quy ước đặt tên; bản vẽ đã bị từ chối phê duyệt.','a0000000-0000-0000-0000-000000000003','2026-02-07 08:00:00+07',NULL),
+('f2000000-0000-0000-0000-000000000005','f0000000-0000-0000-0000-000000000009','Published-Set.pdf',0,2,true,true,'f3000000-0000-0000-0000-000000000006','f3000000-0000-0000-0000-000000000006',false,NULL,'a0000000-0000-0000-0000-000000000002','2026-02-08 08:00:00+07',NULL),
+('f2000000-0000-0000-0000-000000000006','f0000000-0000-0000-0000-000000000005','RIV-BIM-TB-00-DR-ARC-002.pdf',0,0,false,false,'f3000000-0000-0000-0000-000000000007',NULL,false,NULL,'a0000000-0000-0000-0000-000000000004','2026-03-01 08:00:00+07',NULL),
+('f2000000-0000-0000-0000-000000000007','f0000000-0000-0000-0000-000000000026','CCL_STR_DR_001.pdf',0,0,false,false,'f3000000-0000-0000-0000-000000000008',NULL,false,NULL,'a0000000-0000-0000-0000-000000000003','2026-03-02 08:00:00+07',NULL);
+
+-- ============================================================================
+-- 17a) FILE LINKS — "tệp liên quan", quan hệ HAI CHIỀU giữa 2 FileItem.
+--      Mỗi cặp CHỈ 1 dòng, thứ tự đã chuẩn hoá (FileItemId < LinkedFileItemId theo
+--      Guid.CompareTo) đúng như FileLinkService ghi — đọc phải tìm theo cả hai cột.
+--      Có FK về FileItems → bắt buộc chèn SAU mục 17.
+--      Cặp mẫu: bản vẽ f2..0001 ↔ mô hình f2..0002 (cùng folder f0..0005).
+-- ============================================================================
+INSERT INTO "FileLinks" ("Id","FileItemId","LinkedFileItemId","CreatedByAccountId","CreatedAt") VALUES
+('ff000000-0000-0000-0000-000000000001','f2000000-0000-0000-0000-000000000001','f2000000-0000-0000-0000-000000000002','a0000000-0000-0000-0000-000000000003','2026-02-05 08:15:00+07');
 
 -- ============================================================================
 -- 18) FILE VERSIONS
@@ -683,7 +685,7 @@ COMMIT;
 --    ★ NamingConventionLockedValues 3 · FileNamingMetadata 32
 --    Folders 26 (2 template, cây sâu 4 cấp)
 --    ★ FolderPermissions 26 · ★ FilePermissions 13
---    FileRelations 1 · FileItems 7 · FileVersions 8 · FileSignaturePositions 2
+--    FileItems 7 · FileLinks 1 · FileVersions 8 · FileSignaturePositions 2
 --    ApprovalRequests 4 · ApprovalRequestSigners 3 · ApprovalSignatureTransactions 2
 --    ZoneReturnRequests 3 · MarkupSets 2 · FileNotes 3
 --    Discussions 3 · DiscussionMessages 6 · MessageMentions 3 · MessageAttachments 3

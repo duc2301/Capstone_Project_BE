@@ -46,6 +46,7 @@ namespace Infrastructure.Configurations
             services.AddScoped<IFolderPermissionService, FolderPermissionService>();
             services.AddScoped<IFileZoneResolverService, FileZoneResolverService>();
             services.AddScoped<IFileItemService, FileItemService>();
+            services.AddScoped<IFileLinkService, FileLinkService>();
             services.AddScoped<IApprovalService, ApprovalService>();
             services.AddScoped<IFileSignaturePositionService, FileSignaturePositionService>();
             services.AddScoped<IPdfSignatureService, PdfSignatureService>();
