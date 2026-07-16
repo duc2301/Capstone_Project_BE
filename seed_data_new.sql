@@ -356,16 +356,19 @@ INSERT INTO "FolderPermissions" ("Id","FolderId","ProjectParticipantId","CanView
 --     Tên file trong folder có quy ước ĐÚNG CHUẨN đã khai báo (khớp FileNamingMetadata).
 --     CurrentVersionId/SignedVersionId: cột scalar KHÔNG FK — trỏ FileVersionStates an toàn.
 --     Warnning/WarnningMessage: f2..0004 bị cảnh báo tên sai quy ước.
+--     Description: tóm tắt AI sinh sau upload (worker NameMatchContentBackgroundService).
+--       CHỈ file trích được chữ mới có (FileTextExtractorService: pdf/doc/docx/txt/md);
+--       ifc/xlsx/dwg/ảnh -> NULL (không trích được text). f2..0001 để mô tả dài demo "Xem thêm".
 --     Tệp liên quan: xem 17a) FILE LINKS bên dưới (phải chèn SAU vì có FK về FileItems).
 -- ============================================================================
-INSERT INTO "FileItems" ("Id","FolderId","Name","FileType","Status","RequiresSignature","IsSigned","CurrentVersionId","SignedVersionId","Warnning","WarnningMessage","CreatedByAccountId","CreatedAt","UpdatedAt") VALUES
-('f2000000-0000-0000-0000-000000000001','f0000000-0000-0000-0000-000000000005','RIV-BIM-TA-01-DR-ARC-001.pdf',0,1,true,false,'f3000000-0000-0000-0000-000000000001',NULL,false,NULL,'a0000000-0000-0000-0000-000000000003','2026-02-05 08:00:00+07',NULL),
-('f2000000-0000-0000-0000-000000000002','f0000000-0000-0000-0000-000000000005','RIV-BIM-TA-ZZ-M3-ARC-001.ifc',1,2,false,false,'f3000000-0000-0000-0000-000000000003',NULL,false,NULL,'a0000000-0000-0000-0000-000000000003','2026-02-05 08:10:00+07','2026-02-20 10:00:00+07'),
-('f2000000-0000-0000-0000-000000000003','f0000000-0000-0000-0000-000000000006','RIV-TSN-XX-ZZ-CA-STR-001.xlsx',4,0,false,false,'f3000000-0000-0000-0000-000000000004',NULL,false,NULL,'a0000000-0000-0000-0000-000000000004','2026-02-06 08:00:00+07',NULL),
-('f2000000-0000-0000-0000-000000000004','f0000000-0000-0000-0000-000000000008','Coord-Drawing.dwg',3,3,false,false,'f3000000-0000-0000-0000-000000000005',NULL,true,'Tên file không theo quy ước đặt tên; bản vẽ đã bị từ chối phê duyệt.','a0000000-0000-0000-0000-000000000003','2026-02-07 08:00:00+07',NULL),
-('f2000000-0000-0000-0000-000000000005','f0000000-0000-0000-0000-000000000009','Published-Set.pdf',0,2,true,true,'f3000000-0000-0000-0000-000000000006','f3000000-0000-0000-0000-000000000006',false,NULL,'a0000000-0000-0000-0000-000000000002','2026-02-08 08:00:00+07',NULL),
-('f2000000-0000-0000-0000-000000000006','f0000000-0000-0000-0000-000000000005','RIV-BIM-TB-00-DR-ARC-002.pdf',0,0,false,false,'f3000000-0000-0000-0000-000000000007',NULL,false,NULL,'a0000000-0000-0000-0000-000000000004','2026-03-01 08:00:00+07',NULL),
-('f2000000-0000-0000-0000-000000000007','f0000000-0000-0000-0000-000000000026','CCL_STR_DR_001.pdf',0,0,false,false,'f3000000-0000-0000-0000-000000000008',NULL,false,NULL,'a0000000-0000-0000-0000-000000000003','2026-03-02 08:00:00+07',NULL);
+INSERT INTO "FileItems" ("Id","FolderId","Name","FileType","Status","RequiresSignature","IsSigned","CurrentVersionId","SignedVersionId","Warnning","WarnningMessage","Description","CreatedByAccountId","CreatedAt","UpdatedAt") VALUES
+('f2000000-0000-0000-0000-000000000001','f0000000-0000-0000-0000-000000000005','RIV-BIM-TA-01-DR-ARC-001.pdf',0,1,true,false,'f3000000-0000-0000-0000-000000000001',NULL,false,NULL,'Bản vẽ mặt bằng kiến trúc tầng điển hình Tháp A: bố trí căn hộ, lõi thang, hành lang và hệ lưới cột chính; kèm ghi chú cao độ và ký hiệu vật liệu hoàn thiện.','a0000000-0000-0000-0000-000000000003','2026-02-05 08:00:00+07',NULL),
+('f2000000-0000-0000-0000-000000000002','f0000000-0000-0000-0000-000000000005','RIV-BIM-TA-ZZ-M3-ARC-001.ifc',1,2,false,false,'f3000000-0000-0000-0000-000000000003',NULL,false,NULL,NULL,'a0000000-0000-0000-0000-000000000003','2026-02-05 08:10:00+07','2026-02-20 10:00:00+07'),
+('f2000000-0000-0000-0000-000000000003','f0000000-0000-0000-0000-000000000006','RIV-TSN-XX-ZZ-CA-STR-001.xlsx',4,0,false,false,'f3000000-0000-0000-0000-000000000004',NULL,false,NULL,NULL,'a0000000-0000-0000-0000-000000000004','2026-02-06 08:00:00+07',NULL),
+('f2000000-0000-0000-0000-000000000004','f0000000-0000-0000-0000-000000000008','Coord-Drawing.dwg',3,3,false,false,'f3000000-0000-0000-0000-000000000005',NULL,true,'Tên file không theo quy ước đặt tên; bản vẽ đã bị từ chối phê duyệt.',NULL,'a0000000-0000-0000-0000-000000000003','2026-02-07 08:00:00+07',NULL),
+('f2000000-0000-0000-0000-000000000005','f0000000-0000-0000-0000-000000000009','Published-Set.pdf',0,2,true,true,'f3000000-0000-0000-0000-000000000006','f3000000-0000-0000-0000-000000000006',false,NULL,'Hồ sơ thiết kế phát hành đã ký số, tổng hợp bản vẽ kiến trúc và kết cấu phần thân dùng cho thi công.','a0000000-0000-0000-0000-000000000002','2026-02-08 08:00:00+07',NULL),
+('f2000000-0000-0000-0000-000000000006','f0000000-0000-0000-0000-000000000005','RIV-BIM-TB-00-DR-ARC-002.pdf',0,0,false,false,'f3000000-0000-0000-0000-000000000007',NULL,false,NULL,'Bản vẽ mặt đứng kiến trúc Tháp B, thể hiện phân chia tầng và vật liệu ốp mặt ngoài.','a0000000-0000-0000-0000-000000000004','2026-03-01 08:00:00+07',NULL),
+('f2000000-0000-0000-0000-000000000007','f0000000-0000-0000-0000-000000000026','CCL_STR_DR_001.pdf',0,0,false,false,'f3000000-0000-0000-0000-000000000008',NULL,false,NULL,'Bản vẽ kết cấu nhịp thép cầu vượt Cát Lái: sơ đồ dầm chủ, chi tiết liên kết và bảng thống kê thép.','a0000000-0000-0000-0000-000000000003','2026-03-02 08:00:00+07',NULL);
 
 -- ============================================================================
 -- 17a) FILE LINKS — "tệp liên quan", quan hệ HAI CHIỀU giữa 2 FileItem.
