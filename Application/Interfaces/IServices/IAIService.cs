@@ -1,13 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
 namespace Application.Interfaces.IServices
 {
     public interface IAIService
     {
-        Task<FileNameCheckResult> CheckNameMatchesContentAsync(Guid fileItemId, CancellationToken ct = default);
-
-        record FileNameCheckResult(bool Matches, double Confidence, string? Reason);
+        // Đọc nội dung file -> tóm tắt tiếng Việt cho người dùng đọc nhanh.
+        // Trả null khi không tóm tắt được (không trích được chữ / AI lỗi) — advisory, không chặn flow.
+        Task<string?> SummarizeContentAsync(Guid fileItemId, CancellationToken ct = default);
     }
 }

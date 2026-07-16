@@ -14,12 +14,12 @@ namespace Capstone_Project.Controllers
             _ai = ai;
         }
 
-        // Test: kiểm tra tên file có khớp nội dung file không.
-        // GET /api/ai/check-name/{fileItemId}
-        [HttpGet("check-name/{fileItemId:guid}")]
-        public async Task<IActionResult> CheckName(Guid fileItemId, CancellationToken ct)
+        // Test: tóm tắt nội dung file (bình thường worker tự chạy sau upload).
+        // GET /api/ai/summarize/{fileItemId}
+        [HttpGet("summarize/{fileItemId:guid}")]
+        public async Task<IActionResult> Summarize(Guid fileItemId, CancellationToken ct)
         {
-            var result = await _ai.CheckNameMatchesContentAsync(fileItemId, ct);
+            var result = await _ai.SummarizeContentAsync(fileItemId, ct);
             return Ok(result);
         }
     }
