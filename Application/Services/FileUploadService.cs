@@ -36,8 +36,7 @@ namespace Application.Services
         private readonly INameMatchContentBackgroundService _nameMatchContentBackgroundService;
         private readonly IFileVersionService _fileVersionService;
 
-        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INamingConventionService naming, INameMatchContentBackgroundService nameMatchContentBackgroundService)
-        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService)
+        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INamingConventionService naming, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService)
         {
             _unitOfWork = unitOfWork;
             _storage = storage;
@@ -128,13 +127,11 @@ namespace Application.Services
                     UpdatedAt = now
                 };
                 await _unitOfWork.Repository<FileItem>().CreateAsync(fileItem);
-                await _unitOfWork.Repository<FileVersion>().CreateAsync(v1);
+                // Naming convention: lưu breakdown từng segment của tên — chỉ khi tài liệu MỚI
+                // (upload thay thế trùng tên = cùng bộ giá trị, metadata giữ nguyên).
+                // Không SaveChanges ở đây: commit chung 1 lần ở cuối flow.
                 if (naming.HasNamingConvention)
                     await _naming.StageFileNamingMetadataAsync(fileItem.Id, naming);
-                // Cổng kiểm LOI (advisory): file .ifc -> tạo bản ghi Pending để FE hiện "đang kiểm".
-                if (dto.FileType == FileType.Ifc)
-                    await _unitOfWork.Repository<FileVersionLoiCheck>().CreateAsync(NewLoiPending(v1.Id, now));
-                await _unitOfWork.CommitAsync();
                 // FileItem đang tracked (Added) nên versioning service nhìn thấy ngay qua cùng DbContext.
                 version = await _fileVersionService.CreateInitialVersionAsync(fileItem.Id, fileData);
             }
