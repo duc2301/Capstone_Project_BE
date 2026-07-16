@@ -23,14 +23,22 @@ namespace Application.Services
         private readonly ILogger<ApprovalService> _logger;
         private readonly IIngestBackgroundService _documentIngestBackgroundService;
         private readonly IFileVersionService _fileVersionService;
+        private readonly INotificationService _notification;
 
-        public ApprovalService(IUnitOfWork unitOfWork, IFileZoneResolverService zoneResolver, ILogger<ApprovalService> logger, IIngestBackgroundService documentIngestBackgroundService, IFileVersionService fileVersionService)
+        public ApprovalService(
+            IUnitOfWork unitOfWork,
+            IFileZoneResolverService zoneResolver,
+            ILogger<ApprovalService> logger,
+            IIngestBackgroundService documentIngestBackgroundService,
+            IFileVersionService fileVersionService,
+            INotificationService notification)
         {
             _unitOfWork = unitOfWork;
             _zoneResolver = zoneResolver;
             _logger = logger;
             _documentIngestBackgroundService = documentIngestBackgroundService;
             _fileVersionService = fileVersionService;
+            _notification = notification;
         }
 
         #region API chính
@@ -94,6 +102,18 @@ namespace Application.Services
             foreach (var signer in signers)
                 await _unitOfWork.Repository<ApprovalRequestSigner>().CreateAsync(signer);
             await _unitOfWork.CommitAsync();
+
+            var leaderIds = (await GetActiveTeamLeaderAccountIdsAsync(teamGroupIds))
+                .Where(id => id != actor)
+                .ToList();
+            if (leaderIds.Count > 0)
+            {
+                await _notification.NotifyManyAsync(
+                    leaderIds,
+                    $"\"{fileItem.Name}\" cần bạn phê duyệt (chuyển từ {_zoneResolver.FormatZone(folder.Area)} sang {_zoneResolver.FormatZone(targetZone)}).",
+                    linkType: "Approval",
+                    linkId: request.Id.ToString());
+            }
 
             return await BuildResponseAsync(request, fileItem);
         }
@@ -170,6 +190,15 @@ namespace Application.Services
             if (request.TargetZone == CdeArea.Published)
                 _documentIngestBackgroundService.Enqueue(fileItem.Id);
 
+            if (request.RequestedBy != actor)
+            {
+                await _notification.NotifyAsync(
+                    request.RequestedBy,
+                    $"\"{fileItem.Name}\" đã được duyệt và chuyển sang {_zoneResolver.FormatZone(request.TargetZone)}.",
+                    linkType: "Approval",
+                    linkId: request.Id.ToString());
+            }
+
             return await BuildResponseAsync(request, fileItem);
         }
 
@@ -211,6 +240,16 @@ namespace Application.Services
             fileItem.UpdatedAt = now;
 
             await _unitOfWork.CommitAsync();
+
+            if (request.RequestedBy != actor)
+            {
+                await _notification.NotifyAsync(
+                    request.RequestedBy,
+                    $"\"{fileItem.Name}\" bị từ chối duyệt: {reason}",
+                    linkType: "Approval",
+                    linkId: request.Id.ToString());
+            }
+
             return await BuildResponseAsync(request, fileItem);
         }
 
@@ -394,6 +433,16 @@ namespace Application.Services
                          && m.Role == GroupMemberRole.Leader
                          && m.Status == GroupMemberStatus.Active))
                 .Any();
+
+        /// <summary>Lấy AccountId của tất cả Team Leader active thuộc các group cho trước (dùng để báo có file cần duyệt).</summary>
+        private async Task<IReadOnlyCollection<Guid>> GetActiveTeamLeaderAccountIdsAsync(IReadOnlyCollection<Guid> groupIds)
+            => (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                    m => groupIds.Contains(m.GroupId)
+                         && m.Role == GroupMemberRole.Leader
+                         && m.Status == GroupMemberStatus.Active))
+                .Select(m => m.AccountId)
+                .Distinct()
+                .ToList();
 
         /// <summary>
         /// Kiểm tra actor có quyền xem approval request không.

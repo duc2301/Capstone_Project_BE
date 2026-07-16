@@ -132,6 +132,15 @@ namespace Application.Services
             await _discussionService.CreateForScopeAsync(
                 DiscussionScopeType.Issue, entity.Id, entity.ProjectId, entity.Title, actorId);
 
+            if (entity.AssignedToAccountId.HasValue && entity.AssignedToAccountId.Value != actorId)
+            {
+                await _notification.NotifyAsync(
+                    entity.AssignedToAccountId.Value,
+                    $"Bạn được gán issue \"{entity.Title}\".",
+                    linkType: "Issue",
+                    linkId: entity.Id.ToString());
+            }
+
             return _mapper.Map<IssueResponseDTO>(entity);
         }
 
@@ -172,7 +181,33 @@ namespace Application.Services
                 await _unitOfWork.CommitAsync();
             }
 
+            var recipientIds = (await GetIssueParticipantAccountIdsAsync(issue))
+                .Where(id => id != actorId)
+                .ToList();
+            if (recipientIds.Count > 0)
+            {
+                await _notification.NotifyManyAsync(
+                    recipientIds,
+                    $"Issue \"{issue.Title}\" đã được đánh dấu giải quyết.",
+                    linkType: "Issue",
+                    linkId: issue.Id.ToString());
+            }
+
             return _mapper.Map<IssueResponseDTO>(issue);
+        }
+
+        /// <summary>Creator + assignee + toan bo participants (IssueMention) cua 1 issue.</summary>
+        private async Task<IReadOnlyCollection<Guid>> GetIssueParticipantAccountIdsAsync(Issue issue)
+        {
+            var ids = new HashSet<Guid>();
+            if (issue.RaisedByAccountId.HasValue) ids.Add(issue.RaisedByAccountId.Value);
+            if (issue.AssignedToAccountId.HasValue) ids.Add(issue.AssignedToAccountId.Value);
+
+            var mentionIds = (await _unitOfWork.Repository<IssueMention>().FindAsync(m => m.IssueId == issue.Id))
+                .Select(m => m.MentionedAccountId);
+            ids.UnionWith(mentionIds);
+
+            return ids;
         }
 
         public async Task<IEnumerable<Guid>> GetParticipantsAsync(Guid issueId)

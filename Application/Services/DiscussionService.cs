@@ -209,6 +209,22 @@ namespace Application.Services
                     linkId: discussionId.ToString());
             }
 
+            if (discussion.ScopeType == DiscussionScopeType.Issue && discussion.ScopeId.HasValue)
+            {
+                var alreadyNotified = mentionedIds.Append(actorId).ToHashSet();
+                var replyRecipientIds = (await GetIssueParticipantAccountIdsAsync(discussion.ScopeId.Value))
+                    .Where(id => !alreadyNotified.Contains(id))
+                    .ToList();
+                if (replyRecipientIds.Count > 0)
+                {
+                    await _notification.NotifyManyAsync(
+                        replyRecipientIds,
+                        $"Có tin nhắn mới trong thảo luận \"{discussion.Title}\".",
+                        linkType: "Discussion",
+                        linkId: discussionId.ToString());
+                }
+            }
+
             var accountNames = await ResolveAccountNamesAsync(
                 mentionedIds.Append(actorId).ToHashSet());
 
@@ -233,6 +249,24 @@ namespace Application.Services
 
             throw new ApiExceptionResponse(
                 "Only the issue creator, assignee, or added participants can post in this discussion.", 403);
+        }
+
+        /// <summary>Creator + assignee + toan bo participants (IssueMention) cua 1 issue - dung de bao reply thuong.</summary>
+        private async Task<IReadOnlyCollection<Guid>> GetIssueParticipantAccountIdsAsync(Guid issueId)
+        {
+            var issue = await _unitOfWork.Repository<Issue>().GetByIdAsync(issueId);
+            if (issue == null)
+                return Array.Empty<Guid>();
+
+            var ids = new HashSet<Guid>();
+            if (issue.RaisedByAccountId.HasValue) ids.Add(issue.RaisedByAccountId.Value);
+            if (issue.AssignedToAccountId.HasValue) ids.Add(issue.AssignedToAccountId.Value);
+
+            var mentionIds = (await _unitOfWork.Repository<IssueMention>().FindAsync(m => m.IssueId == issueId))
+                .Select(m => m.MentionedAccountId);
+            ids.UnionWith(mentionIds);
+
+            return ids;
         }
 
         private async Task<IReadOnlyDictionary<Guid, string>> ResolveAccountNamesAsync(IEnumerable<Guid> accountIds)
