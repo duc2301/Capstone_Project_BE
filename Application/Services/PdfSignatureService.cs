@@ -71,7 +71,7 @@ namespace Application.Services
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 400);
 
-            var currentVersion = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value)
+            var currentVersion = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
 
             var isPdf = fileItem.FileType == FileType.Pdf;
@@ -156,40 +156,40 @@ namespace Application.Services
                 && (signers.Count == 0 || signers.Any(s => s.Status != ApprovalRequestSignerStatus.Signed)))
                 return ApiResponse.Fail("All required digital signers must sign before generating signed PDF.");
 
-            var stampSigners = await BuildStampSignersAsync(approval.Id);
-            if (stampSigners.Count == 0)
-            {
-                var fallbackAccount = transaction.SignedBy.HasValue
-                    ? await _unitOfWork.Repository<Account>().GetByIdAsync(transaction.SignedBy.Value)
-                    : null;
-                stampSigners = new[]
-                {
-                    new SignerStampInfo(
-                        fallbackAccount?.UserName ?? transaction.SignedBy?.ToString() ?? actor.ToString(),
-                        transaction.SignedAt ?? DateTime.UtcNow,
-                        transaction.CertificateSerial)
-                };
-            }
+            //var stampSigners = await BuildStampSignersAsync(approval.Id);
+            //if (stampSigners.Count == 0)
+            //{
+            //    var fallbackAccount = transaction.SignedBy.HasValue
+            //        ? await _unitOfWork.Repository<Account>().GetByIdAsync(transaction.SignedBy.Value)
+            //        : null;
+            //    stampSigners = new[]
+            //    {
+            //        new SignerStampInfo(
+            //            fallbackAccount?.UserName ?? transaction.SignedBy?.ToString() ?? actor.ToString(),
+            //            transaction.SignedAt ?? DateTime.UtcNow,
+            //            transaction.CertificateSerial)
+            //    };
+            //}
 
-            if (!fileItem.CurrentVersionId.HasValue)
-                return ApiResponse.Fail("File has no content version.");
+            //if (!fileItem.CurrentVersionId.HasValue)
+            //    return ApiResponse.Fail("File has no content version.");
 
-            var currentVersion = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value);
-            if (currentVersion == null || currentVersion.StoragePath == null)
-                return ApiResponse.Fail("Current version not found.");
+            //var currentVersion = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value);
+            //if (currentVersion == null || currentVersion.StoragePath == null)
+            //    return ApiResponse.Fail("Current version not found.");
 
-            var isPdf = fileItem.FileType == FileType.Pdf;
-            var isWord = IsWordFormat(currentVersion.Format);
-            var isExcel = IsExcelFormat(currentVersion.Format);
-            var isCad2D = fileItem.FileType == FileType.Cad && IsCad2DFormat(currentVersion.Format);
-            if (!isPdf && !isWord && !isExcel && !isCad2D)
-                return ApiResponse.Fail("Only PDF, Word, Excel and 2D CAD (DWG/DWGX) files support visual signature.");
+            //var isPdf = fileItem.FileType == FileType.Pdf;
+            //var isWord = IsWordFormat(currentVersion.Format);
+            //var isExcel = IsExcelFormat(currentVersion.Format);
+            //var isCad2D = fileItem.FileType == FileType.Cad && IsCad2DFormat(currentVersion.Format);
+            //if (!isPdf && !isWord && !isExcel && !isCad2D)
+            //    return ApiResponse.Fail("Only PDF, Word, Excel and 2D CAD (DWG/DWGX) files support visual signature.");
 
-            var position = (await _unitOfWork.Repository<FileSignaturePosition>().FindAsync(
-                    p => p.FileItemId == fileItem.Id))
-                .FirstOrDefault();
-            if (position == null)
-                return ApiResponse.Fail("Signature position must be set before signing.");
+            //var position = (await _unitOfWork.Repository<FileSignaturePosition>().FindAsync(
+            //        p => p.FileItemId == fileItem.Id))
+            //    .FirstOrDefault();
+            //if (position == null)
+            //    return ApiResponse.Fail("Signature position must be set before signing.");
 
             FileVersionState signedVersion;
             try
