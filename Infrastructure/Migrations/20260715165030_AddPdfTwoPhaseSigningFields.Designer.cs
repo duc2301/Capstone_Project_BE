@@ -3,6 +3,7 @@ using System;
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Pgvector;
@@ -12,9 +13,11 @@ using Pgvector;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    partial class CDESystemDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260715165030_AddPdfTwoPhaseSigningFields")]
+    partial class AddPdfTwoPhaseSigningFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -410,14 +413,8 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime?>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Currency")
-                        .HasColumnType("text");
-
                     b.Property<string>("Description")
                         .HasColumnType("text");
-
-                    b.Property<Guid?>("DocumentFolderId")
-                        .HasColumnType("uuid");
 
                     b.Property<DateTime?>("EndDate")
                         .HasColumnType("timestamp with time zone");
@@ -429,26 +426,14 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("Notes")
-                        .HasColumnType("text");
-
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
-
-                    b.Property<string>("ScopeDescription")
-                        .HasColumnType("text");
 
                     b.Property<DateTime?>("StartDate")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
-
-                    b.Property<decimal?>("TaxRate")
-                        .HasColumnType("numeric");
-
-                    b.Property<string>("WorkTypes")
-                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
@@ -941,63 +926,7 @@ namespace Infrastructure.Migrations
                     b.ToTable("FileSignaturePositions");
                 });
 
-            modelBuilder.Entity("Domain.Entities.FileVersionLoiCheck", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("CheckedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("ConformantElements")
-                        .HasColumnType("integer");
-
-                    b.Property<double>("CoveragePercent")
-                        .HasColumnType("double precision");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("ElementsWithUnknownType")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Error")
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("FileVersionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("MissingSummaryJson")
-                        .HasColumnType("text");
-
-                    b.Property<string>("ParserUsed")
-                        .HasColumnType("text");
-
-                    b.Property<string>("SchemaName")
-                        .HasColumnType("text");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("TotalElements")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Verdict")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FileVersionId")
-                        .IsUnique();
-
-                    b.ToTable("FileVersionLoiChecks");
-                });
-
-            modelBuilder.Entity("Domain.Entities.FileVersionState", b =>
+            modelBuilder.Entity("Domain.Entities.FileVersion", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -1009,27 +938,15 @@ namespace Infrastructure.Migrations
                     b.Property<string>("Checksum")
                         .HasColumnType("text");
 
-                    b.Property<DateTime?>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("DisplayVersion")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<Guid>("FileItemId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("FileName")
-                        .HasColumnType("text");
-
-                    b.Property<long?>("FileSizeBytes")
+                    b.Property<long>("FileSizeBytes")
                         .HasColumnType("bigint");
 
                     b.Property<string>("Format")
+                        .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<bool>("IsCurrent")
-                        .HasColumnType("boolean");
 
                     b.Property<bool>("IsHidden")
                         .HasColumnType("boolean");
@@ -1040,29 +957,24 @@ namespace Infrastructure.Migrations
                     b.Property<string>("PreviewStoragePath")
                         .HasColumnType("text");
 
-                    b.Property<int>("PublishedRevision")
-                        .HasColumnType("integer");
-
                     b.Property<DateTime?>("SignedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid?>("SignedBy")
                         .HasColumnType("uuid");
 
-                    b.Property<int>("Stage")
-                        .HasColumnType("integer");
-
                     b.Property<string>("StoragePath")
+                        .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("UploadedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid?>("UploadedByAccountId")
                         .HasColumnType("uuid");
+
+                    b.Property<int>("VersionNumber")
+                        .HasColumnType("integer");
 
                     b.Property<string>("ViewerError")
                         .HasColumnType("text");
@@ -1076,21 +988,11 @@ namespace Infrastructure.Migrations
                     b.Property<string>("ViewerUrn")
                         .HasColumnType("text");
 
-                    b.Property<int>("WorkingRevision")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("WorkingVersion")
-                        .HasColumnType("integer");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("FileItemId")
-                        .IsUnique()
-                        .HasFilter("\"IsCurrent\" = TRUE");
+                    b.HasIndex("FileItemId");
 
-                    b.HasIndex("FileItemId", "IsCurrent");
-
-                    b.ToTable("FileVersionStates");
+                    b.ToTable("FileVersions");
                 });
 
             modelBuilder.Entity("Domain.Entities.Folder", b =>
@@ -1111,9 +1013,6 @@ namespace Infrastructure.Migrations
                     b.Property<bool>("IsTemplate")
                         .HasColumnType("boolean");
 
-                    b.Property<Guid?>("MirrorSourceFolderId")
-                        .HasColumnType("uuid");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
@@ -1131,8 +1030,6 @@ namespace Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("NamingConventionId");
 
                     b.HasIndex("ParentFolderId");
 
@@ -1387,71 +1284,6 @@ namespace Infrastructure.Migrations
                     b.ToTable("IssueMentions");
                 });
 
-            modelBuilder.Entity("Domain.Entities.LoiFieldAlias", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("AliasNormalized")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("FieldNameNormalized")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AliasNormalized");
-
-                    b.HasIndex("FieldNameNormalized", "AliasNormalized")
-                        .IsUnique();
-
-                    b.ToTable("LoiFieldAliases");
-                });
-
-            modelBuilder.Entity("Domain.Entities.LoiRequirement", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ComponentCode")
-                        .HasColumnType("text");
-
-                    b.Property<string>("ComponentName")
-                        .HasColumnType("text");
-
-                    b.Property<int>("Discipline")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("FieldName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("FieldNameNormalized")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsCommon")
-                        .HasColumnType("boolean");
-
-                    b.Property<int>("ParamGroup")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("Stage")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Discipline", "ComponentCode");
-
-                    b.HasIndex("Discipline", "IsCommon");
-
-                    b.ToTable("LoiRequirements");
-                });
-
             modelBuilder.Entity("Domain.Entities.MarkupSet", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1559,22 +1391,19 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<Guid>("FolderId")
+                        .HasColumnType("uuid");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ProjectId");
+                    b.HasIndex("FolderId")
+                        .IsUnique();
 
                     b.ToTable("NamingConventions");
                 });
@@ -1892,9 +1721,6 @@ namespace Infrastructure.Migrations
                     b.Property<Guid>("ContractPackageId")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime?>("ContractSignDate")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<DateTime?>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -2105,9 +1931,6 @@ namespace Infrastructure.Migrations
 
                     b.Property<int>("FromZone")
                         .HasColumnType("integer");
-
-                    b.Property<Guid?>("IssueId")
-                        .HasColumnType("uuid");
 
                     b.Property<string>("Reason")
                         .IsRequired()
@@ -2377,7 +2200,7 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Domain.Entities.FileNote", b =>
                 {
-                    b.HasOne("Domain.Entities.FileVersionState", "FileVersion")
+                    b.HasOne("Domain.Entities.FileVersion", "FileVersion")
                         .WithMany()
                         .HasForeignKey("FileVersionId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -2423,21 +2246,10 @@ namespace Infrastructure.Migrations
                     b.Navigation("FileItem");
                 });
 
-            modelBuilder.Entity("Domain.Entities.FileVersionLoiCheck", b =>
-                {
-                    b.HasOne("Domain.Entities.FileVersionState", "FileVersion")
-                        .WithMany()
-                        .HasForeignKey("FileVersionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("FileVersion");
-                });
-
-            modelBuilder.Entity("Domain.Entities.FileVersionState", b =>
+            modelBuilder.Entity("Domain.Entities.FileVersion", b =>
                 {
                     b.HasOne("Domain.Entities.FileItem", "FileItem")
-                        .WithMany()
+                        .WithMany("Versions")
                         .HasForeignKey("FileItemId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -2447,11 +2259,6 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Domain.Entities.Folder", b =>
                 {
-                    b.HasOne("Domain.Entities.NamingConvention", "NamingConvention")
-                        .WithMany("Folders")
-                        .HasForeignKey("NamingConventionId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("Domain.Entities.Folder", "ParentFolder")
                         .WithMany("ChildFolders")
                         .HasForeignKey("ParentFolderId")
@@ -2462,8 +2269,6 @@ namespace Infrastructure.Migrations
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("NamingConvention");
 
                     b.Navigation("ParentFolder");
 
@@ -2587,7 +2392,7 @@ namespace Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("Domain.Entities.FileVersionState", "FileVersion")
+                    b.HasOne("Domain.Entities.FileVersion", "FileVersion")
                         .WithMany()
                         .HasForeignKey("FileVersionId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -2622,13 +2427,13 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Domain.Entities.NamingConvention", b =>
                 {
-                    b.HasOne("Domain.Entities.Project", "Project")
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
+                    b.HasOne("Domain.Entities.Folder", "Folder")
+                        .WithOne("NamingConvention")
+                        .HasForeignKey("Domain.Entities.NamingConvention", "FolderId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Project");
+                    b.Navigation("Folder");
                 });
 
             modelBuilder.Entity("Domain.Entities.NamingConventionField", b =>
@@ -2822,6 +2627,8 @@ namespace Infrastructure.Migrations
                     b.Navigation("NamingMetadata");
 
                     b.Navigation("Permissions");
+
+                    b.Navigation("Versions");
                 });
 
             modelBuilder.Entity("Domain.Entities.FileRelation", b =>
@@ -2834,6 +2641,8 @@ namespace Infrastructure.Migrations
                     b.Navigation("ChildFolders");
 
                     b.Navigation("FileItems");
+
+                    b.Navigation("NamingConvention");
 
                     b.Navigation("Permissions");
                 });
@@ -2858,8 +2667,6 @@ namespace Infrastructure.Migrations
             modelBuilder.Entity("Domain.Entities.NamingConvention", b =>
                 {
                     b.Navigation("Fields");
-
-                    b.Navigation("Folders");
                 });
 
             modelBuilder.Entity("Domain.Entities.NamingConventionField", b =>

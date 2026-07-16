@@ -2,6 +2,8 @@
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
+using Application.Interfaces.IUnitOfWork;
+using Domain.Entities;
 using Pgvector;
 
 namespace Application.Services
@@ -10,11 +12,13 @@ namespace Application.Services
     {
         private readonly IEmbeddingService _embeddingService;
         private readonly IDocumentSearchRepository _searchSematicRepo;
+        private readonly IUnitOfWork _unitOfWork;
 
-        public SemanticSearchService(IEmbeddingService embeddingService, IDocumentSearchRepository searchSematicRepo)
+        public SemanticSearchService(IEmbeddingService embeddingService, IDocumentSearchRepository searchSematicRepo, IUnitOfWork unitOfWork)
         {
             _embeddingService = embeddingService;
             _searchSematicRepo = searchSematicRepo;
+            _unitOfWork = unitOfWork;
         }
 
         private const int CandidateK = 40;      
@@ -30,7 +34,7 @@ namespace Application.Services
             var qVec = new Vector(await _embeddingService.EmbedAsync(BuildQuery(query), ct));
             var hits = await _searchSematicRepo.SearchByVectorAsync(projectId, qVec, CandidateK, ct);
 
-            return hits
+            var results = hits
                 .Where(h => h.Distance <= MaxDistance)
                 .GroupBy(h => h.FileItemId)
                 .Select(g =>
@@ -48,6 +52,20 @@ namespace Application.Services
                 .OrderByDescending(r => r.Similarity)
                 .Take(MaxFiles)
                 .ToList();
+
+            if (results.Count == 0) return results;
+
+            // Document không giữ FolderId -> lấy từ FileItem để FE mở đúng trang xem chi tiết.
+            var fileIds = results.Select(r => r.FileItemId).ToList();
+            var folderByFileId = (await _unitOfWork.Repository<FileItem>()
+                    .FindAsync(f => fileIds.Contains(f.Id)))
+                .ToDictionary(f => f.Id, f => f.FolderId);
+
+            foreach (var r in results)
+                if (folderByFileId.TryGetValue(r.FileItemId, out var folderId))
+                    r.FolderId = folderId;
+
+            return results;
         }
 
         // qwen3-embedding: câu QUERY cần "instruct", còn DOCUMENT thì KHÔNG (bất đối xứng có chủ đích)
