@@ -498,7 +498,7 @@ namespace Application.Services
             if (!fileItem.CurrentVersionId.HasValue)
                 return false;
 
-            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value);
+            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value);
             var format = (version?.Format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
             return format is "doc" or "docx" or "xls" or "xlsx" or "dwg" or "dwgx";
         }

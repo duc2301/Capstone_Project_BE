@@ -37,7 +37,7 @@ namespace Application.Services.Loi
             if (fileItem.CurrentVersionId is null)
                 throw new ApiExceptionResponse("File has no content version.", 404);
 
-            var version = await _uow.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value)
+            var version = await _uow.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
             if (!string.Equals(version.Format, "ifc", StringComparison.OrdinalIgnoreCase))
                 throw new ApiExceptionResponse("Chỉ kiểm LOI cho file .ifc.", 400);

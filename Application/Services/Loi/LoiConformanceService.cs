@@ -27,8 +27,8 @@ namespace Application.Services.Loi
 
         public async Task CheckAndSaveAsync(Guid fileVersionId, CancellationToken ct = default)
         {
-            var version = await _uow.Repository<FileVersion>().GetByIdAsync(fileVersionId);
-            if (version is null) return;
+            var version = await _uow.Repository<FileVersionState>().GetByIdAsync(fileVersionId);
+            if (version is null || version.StoragePath is null) return;
 
             var check = (await _uow.Repository<FileVersionLoiCheck>()
                 .FindAsync(c => c.FileVersionId == fileVersionId)).FirstOrDefault();
@@ -51,7 +51,7 @@ namespace Application.Services.Loi
                 var aliases = (await _uow.Repository<LoiFieldAlias>().GetAllAsync()).ToList();
 
                 IfcLoiModel model;
-                await using (var stream = await _storage.OpenReadAsync(version.StoragePath, ct))
+                await using (var stream = await _storage.OpenReadAsync(version.StoragePath!, ct))
                     model = await _extractor.ExtractAsync(stream, ct);
 
                 var result = LoiEvaluator.Evaluate(model, requirements, aliases);
@@ -86,7 +86,7 @@ namespace Application.Services.Loi
             }
         }
 
-        private async Task NotifyUploaderAsync(FileVersion version, LoiEvalResult result)
+        private async Task NotifyUploaderAsync(FileVersionState version, LoiEvalResult result)
         {
             try
             {

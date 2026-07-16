@@ -19,6 +19,7 @@ namespace Application.Interfaces.IServices
 
         // Phase 2 + bookkeeping: nhung chu ky that (tu prepared data + signature VNPT tra ve) vao PDF,
         // tao FileVersion moi va danh dau FileItem da ky.
+        // Stamp chu ky truc quan vao PDF goc, tao version moi (FileVersionState) va danh dau FileItem da ky.
         // Goi tu VnptSmartCaService (khi transaction chuyen Signed) hoac truc tiep tu API generate-signed-pdf.
         Task<ApiResponse> GenerateSignedPdfAsync(Guid approvalId, Guid actor);
 

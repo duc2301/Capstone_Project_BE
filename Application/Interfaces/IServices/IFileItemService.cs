@@ -12,7 +12,6 @@ namespace Application.Interfaces.IServices
         Task DeleteAsync(Guid id);
 
         Task<IEnumerable<FileListItemDTO>> GetByFolderAsync(Guid folderId, Guid actorId);
-        Task<IEnumerable<FileVersionResponseDTO>> GetVersionsAsync(Guid fileItemId, Guid actorId);
         Task<TransferZoneResponseDTO> TransferZoneAsync(Guid fileItemId, TransferZoneRequestDTO dto, Guid actorId);
     }
 }

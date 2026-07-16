@@ -22,13 +22,15 @@ namespace Application.Services
         private readonly IFileZoneResolverService _zoneResolver;
         private readonly ILogger<ApprovalService> _logger;
         private readonly IIngestBackgroundService _documentIngestBackgroundService;
+        private readonly IFileVersionService _fileVersionService;
 
-        public ApprovalService(IUnitOfWork unitOfWork, IFileZoneResolverService zoneResolver, ILogger<ApprovalService> logger, IIngestBackgroundService documentIngestBackgroundService)
+        public ApprovalService(IUnitOfWork unitOfWork, IFileZoneResolverService zoneResolver, ILogger<ApprovalService> logger, IIngestBackgroundService documentIngestBackgroundService, IFileVersionService fileVersionService)
         {
             _unitOfWork = unitOfWork;
             _zoneResolver = zoneResolver;
             _logger = logger;
             _documentIngestBackgroundService = documentIngestBackgroundService;
+            _fileVersionService = fileVersionService;
         }
 
         #region API chính
@@ -159,6 +161,9 @@ namespace Application.Services
             fileItem.UpdatedAt = now;
 
             await MoveApprovedFileToTargetZoneAsync(fileItem, folder, request.TargetZone, now);
+
+            // Versioning: vào SHARED -> P{rev+1}.01, vào PUBLISHED -> C{pubRev+1} (dòng state mới).
+            await ApplyZoneVersioningAsync(fileItem, request.TargetZone);
 
             await _unitOfWork.CommitAsync();
 
@@ -457,6 +462,27 @@ namespace Application.Services
 
             fileItem.FolderId = targetFolder.Id;
             fileItem.UpdatedAt = now;
+        }
+
+        /// <summary>
+        /// Gọi FileVersionService khi file đổi zone thành công:
+        /// vào SHARED -> WorkingRevision +1; vào PUBLISHED -> PublishedRevision +1 (C{rev}).
+        /// File chưa có version state (chưa upload nội dung) hoặc vào Archived -> không đổi version.
+        /// </summary>
+        private async Task ApplyZoneVersioningAsync(FileItem fileItem, CdeArea targetZone)
+        {
+            if (!fileItem.CurrentVersionId.HasValue)
+                return;
+
+            var result = targetZone switch
+            {
+                CdeArea.Shared => await _fileVersionService.GetNextSharedVersionAsync(fileItem.Id),
+                CdeArea.Published => await _fileVersionService.GetNextPublishedVersionAsync(fileItem.Id),
+                _ => null
+            };
+
+            if (result != null)
+                fileItem.CurrentVersionId = result.VersionStateId;
         }
 
         private static CdeArea GetNextApprovalZone(CdeArea currentZone)
