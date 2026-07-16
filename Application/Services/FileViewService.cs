@@ -58,7 +58,7 @@ namespace Application.Services
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
 
-            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value)
+            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
 
             var format = version.Format ?? string.Empty;
@@ -68,7 +68,7 @@ namespace Application.Services
             return fileItem.FileType switch
             {
                 FileType.Ifc or FileType.Cad => await BuildModelAsync(version, fileName, format),
-                FileType.Pdf or FileType.Image => await BuildInlineAsync(version.StoragePath, ext, fileName, format, ct),
+                FileType.Pdf or FileType.Image => await BuildInlineAsync(version.StoragePath!, ext, fileName, format, ct),
                 FileType.Office => await BuildOfficeAsync(fileItem, version, ext, fileName, format, ct),
                 _ => Download(fileName, format),
             };
@@ -79,7 +79,7 @@ namespace Application.Services
         //  Pending/Processing -> trả trạng thái + tiến độ để FE hiện "đang xử lý" và poll lại.
         //  Failed -> FE báo lỗi + cho dịch lại (RetranslateAsync).
         //  None   -> file cũ (trước khi có dịch nền) hoặc chưa có job -> fallback: đẩy vào hàng đợi ngay.
-        private async Task<FileViewInfoDTO> BuildModelAsync(FileVersion version, string fileName, string format)
+        private async Task<FileViewInfoDTO> BuildModelAsync(FileVersionState version, string fileName, string format)
         {
             var needsEnqueue = version.ViewerStatus == ModelViewerStatus.None
                 || (version.ViewerStatus == ModelViewerStatus.Ready && string.IsNullOrWhiteSpace(version.ViewerUrn));
@@ -117,7 +117,7 @@ namespace Application.Services
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
 
-            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value)
+            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
 
             version.ViewerStatus = ModelViewerStatus.Pending;
@@ -147,10 +147,10 @@ namespace Application.Services
 
         // ---- Office: txt/csv xem text; doc/xls/ppt convert sang PDF rồi inline ----
         private async Task<FileViewInfoDTO> BuildOfficeAsync(
-            FileItem fileItem, FileVersion version, string ext, string fileName, string format, CancellationToken ct)
+            FileItem fileItem, FileVersionState version, string ext, string fileName, string format, CancellationToken ct)
         {
             if (TextExts.Contains(ext))
-                return await BuildInlineAsync(version.StoragePath, ext, fileName, format, ct);
+                return await BuildInlineAsync(version.StoragePath!, ext, fileName, format, ct);
 
             var previewPath = await EnsureOfficePdfPathAsync(fileItem, version, ext, ct);
             if (string.IsNullOrWhiteSpace(previewPath))
@@ -172,7 +172,7 @@ namespace Application.Services
 
         // Đảm bảo có bản PDF của file Office (convert + cache PreviewStoragePath 1 lần). null nếu không convert được.
         private async Task<string?> EnsureOfficePdfPathAsync(
-            FileItem fileItem, FileVersion version, string ext, CancellationToken ct)
+            FileItem fileItem, FileVersionState version, string ext, CancellationToken ct)
         {
             if (!_officeConverter.CanConvert(ext))
                 return null;
@@ -185,7 +185,7 @@ namespace Application.Services
 
             try
             {
-                await using var source = await _storage.OpenReadAsync(version.StoragePath, ct);
+                await using var source = await _storage.OpenReadAsync(version.StoragePath!, ct);
                 await using var pdf = await _officeConverter.ConvertToPdfAsync(source, ext, ct);
                 var stored = await _storage.SaveAsync(pdf, folder.ProjectId, folder.Id, ".pdf", ct);
 
@@ -212,7 +212,7 @@ namespace Application.Services
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
 
-            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value)
+            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
 
             var format = version.Format ?? string.Empty;
@@ -221,7 +221,7 @@ namespace Application.Services
             string storagePath;
             if (fileItem.FileType == FileType.Pdf)
             {
-                storagePath = version.StoragePath;
+                storagePath = version.StoragePath!;
             }
             else if (fileItem.FileType == FileType.Office && !TextExts.Contains(ext))
             {

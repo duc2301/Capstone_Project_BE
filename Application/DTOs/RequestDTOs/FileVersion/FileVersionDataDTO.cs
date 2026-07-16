@@ -14,5 +14,11 @@ namespace Application.DTOs.RequestDTOs.FileVersion
 
         // Model IFC/CAD cần dịch APS ngay khi upload -> Pending; còn lại None (dịch on-demand).
         public ModelViewerStatus ViewerStatus { get; set; } = ModelViewerStatus.None;
+
+        // Chữ ký trực quan — dùng khi PdfSignatureService tạo version cho bản PDF đã ký
+        public bool IsSigned { get; set; }
+        public DateTime? SignedAt { get; set; }
+        public Guid? SignedBy { get; set; }
+        public string? CertificateSerial { get; set; }
     }
 }

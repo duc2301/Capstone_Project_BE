@@ -69,7 +69,7 @@ namespace Application.Services
                 Area = folder.Area,
                 FileName = fileItem.Name,
                 Format = version.Format,
-                Revision = version.VersionNumber.ToString(),
+                Revision = version.DisplayVersion,
                 ContentHash = contentHash,
                 Discipline = null,            // để sau, chưa có nguồn
                 Status = DocumentIngestStatus.Pending

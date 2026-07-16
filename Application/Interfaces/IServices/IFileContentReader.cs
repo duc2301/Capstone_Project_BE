@@ -9,6 +9,6 @@ namespace Application.Interfaces.IServices
     {
         Task<ExtractedFile?> LoadTextAsync(Guid fileItemId, CancellationToken ct = default);
 
-        public record ExtractedFile(FileItem Item, FileVersion Version, string Text);
+        public record ExtractedFile(FileItem Item, FileVersionState Version, string Text);
     }
 }

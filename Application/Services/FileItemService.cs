@@ -129,7 +129,7 @@ namespace Application.Services
             if (files.Count == 0) return Enumerable.Empty<FileListItemDTO>();
 
             var fileIds = files.Select(f => f.Id).ToList();
-            var versionsById = (await _unitOfWork.Repository<FileVersion>()
+            var versionsById = (await _unitOfWork.Repository<FileVersionState>()
                     .FindAsync(v => fileIds.Contains(v.FileItemId)))
                 .ToDictionary(v => v.Id);
             var accounts = (await _unitOfWork.Repository<Account>().GetAllAsync())
@@ -144,7 +144,7 @@ namespace Application.Services
 
             return files.Select(f =>
             {
-                FileVersion? cur = f.CurrentVersionId.HasValue && versionsById.TryGetValue(f.CurrentVersionId.Value, out var v) ? v : null;
+                FileVersionState? cur = f.CurrentVersionId.HasValue && versionsById.TryGetValue(f.CurrentVersionId.Value, out var v) ? v : null;
                 var returnRequest = ResolveVisibleReturnRequest(f, returnRequestsByFileId);
                 return new FileListItemDTO
                 {
@@ -156,7 +156,8 @@ namespace Application.Services
                     ReturnRequestStatus = returnRequest?.Status,
                     ReturnTargetZone = returnRequest == null ? null : _zoneResolver.FormatZone(returnRequest.TargetZone),
                     CurrentVersionId = f.CurrentVersionId,
-                    CurrentVersionNumber = cur?.VersionNumber ?? 0,
+                    CurrentVersionNumber = cur?.WorkingVersion ?? 0,
+                    DisplayVersion = cur?.DisplayVersion,
                     SizeBytes = cur?.FileSizeBytes ?? 0,
                     Format = cur?.Format,
                     CreatedByAccountId = f.CreatedByAccountId,

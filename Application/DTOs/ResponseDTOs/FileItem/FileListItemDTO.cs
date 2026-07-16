@@ -15,6 +15,8 @@ namespace Application.DTOs.ResponseDTOs.FileItem
 
         public Guid? CurrentVersionId { get; set; }
         public int CurrentVersionNumber { get; set; }
+        // Chuỗi version theo hệ mới, vd "P01.02" / "C01"
+        public string? DisplayVersion { get; set; }
         public long SizeBytes { get; set; }
         public string? Format { get; set; }
 

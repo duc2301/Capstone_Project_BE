@@ -178,6 +178,10 @@ namespace Application.Services
             snapshot.UploadedByAccountId = fileData?.UploadedByAccountId;
             snapshot.UploadedAt = snapshot.CreatedAt;
             snapshot.ViewerStatus = fileData?.ViewerStatus ?? ModelViewerStatus.None;
+            snapshot.IsSigned = fileData?.IsSigned ?? false;
+            snapshot.SignedAt = fileData?.SignedAt;
+            snapshot.SignedBy = fileData?.SignedBy;
+            snapshot.CertificateSerial = fileData?.CertificateSerial;
             return snapshot;
         }
 

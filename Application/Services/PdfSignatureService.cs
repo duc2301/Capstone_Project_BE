@@ -1,4 +1,5 @@
 using Application.DTOs.ApiResponseDTO;
+using Application.DTOs.RequestDTOs.FileVersion;
 using Application.DTOs.ResponseDTOs.FileItem;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
@@ -28,6 +29,7 @@ namespace Application.Services
         private readonly IFolderPermissionService _permission;
         private readonly IOfficeToPdfConverter _officeConverter;
         private readonly ICadToPdfConverter _cadConverter;
+        private readonly IFileVersionService _fileVersionService;
         private readonly ILogger<PdfSignatureService> _logger;
 
         public PdfSignatureService(
@@ -36,6 +38,7 @@ namespace Application.Services
             IFolderPermissionService permission,
             IOfficeToPdfConverter officeConverter,
             ICadToPdfConverter cadConverter,
+            IFileVersionService fileVersionService,
             ILogger<PdfSignatureService> logger)
         {
             _unitOfWork = unitOfWork;
@@ -43,6 +46,7 @@ namespace Application.Services
             _permission = permission;
             _officeConverter = officeConverter;
             _cadConverter = cadConverter;
+            _fileVersionService = fileVersionService;
             _logger = logger;
         }
 
@@ -59,7 +63,7 @@ namespace Application.Services
             // Idempotent: neu file da ky xong (vd goi lai sau khi zone da chuyen sang Shared), tra luon ket qua cu.
             if (fileItem.IsSigned && fileItem.SignedVersionId.HasValue)
             {
-                var existingVersion = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.SignedVersionId.Value);
+                var existingVersion = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.SignedVersionId.Value);
                 if (existingVersion != null)
                 {
                     var existingTransaction = await GetLatestSignedTransactionAsync(fileItem.Id, approvalId);
@@ -107,8 +111,8 @@ namespace Application.Services
             if (!fileItem.CurrentVersionId.HasValue)
                 return ApiResponse.Fail("File has no content version.");
 
-            var currentVersion = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value);
-            if (currentVersion == null)
+            var currentVersion = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value);
+            if (currentVersion == null || currentVersion.StoragePath == null)
                 return ApiResponse.Fail("Current version not found.");
 
             var isPdf = fileItem.FileType == FileType.Pdf;
@@ -124,7 +128,7 @@ namespace Application.Services
             if (position == null)
                 return ApiResponse.Fail("Signature position must be set before signing.");
 
-            FileVersion signedVersion;
+            FileVersionState signedVersion;
             try
             {
                 var signedBy = transaction.SignedBy ?? actor;
@@ -141,25 +145,25 @@ namespace Application.Services
 
                 var now = DateTime.UtcNow;
 
-                signedVersion = new FileVersion
-                {
-                    Id = Guid.NewGuid(),
-                    FileItemId = fileItem.Id,
-                    VersionNumber = currentVersion.VersionNumber + 1,
-                    StoragePath = stored.RelativePath,
-                    FileSizeBytes = stored.SizeBytes,
-                    Format = signedFormat,
-                    Checksum = stored.Checksum,
-                    IsHidden = false,
-                    UploadedByAccountId = actor,
-                    UploadedAt = now,
-                    IsSigned = true,
-                    SignedAt = signedAt,
-                    SignedBy = signedBy,
-                    CertificateSerial = transaction.CertificateSerial
-                };
+                // Bản đã ký = version thay thế (WorkingVersion +1) qua FileVersionService,
+                // kèm metadata chữ ký — không tự ghi bảng version nữa.
+                var versionResult = await _fileVersionService.GetNextUploadVersionAsync(
+                    fileItem.FolderId, fileItem.Name,
+                    new FileVersionDataDTO
+                    {
+                        StoragePath = stored.RelativePath,
+                        FileSizeBytes = stored.SizeBytes,
+                        Format = signedFormat,
+                        Checksum = stored.Checksum,
+                        UploadedByAccountId = actor,
+                        IsSigned = true,
+                        SignedAt = signedAt,
+                        SignedBy = signedBy,
+                        CertificateSerial = transaction.CertificateSerial
+                    });
 
-                await _unitOfWork.Repository<FileVersion>().CreateAsync(signedVersion);
+                signedVersion = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(versionResult.VersionStateId!.Value)
+                    ?? throw new InvalidOperationException("Signed version state not found after creation.");
 
                 fileItem.SignedVersionId = signedVersion.Id;
                 fileItem.CurrentVersionId = signedVersion.Id;
@@ -199,7 +203,7 @@ namespace Application.Services
             if (!fileItem.SignedVersionId.HasValue)
                 return ApiResponse.Fail("Signed file not available.");
 
-            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.SignedVersionId.Value);
+            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.SignedVersionId.Value);
             if (version == null)
                 return ApiResponse.Fail("Signed version not found.");
 
@@ -249,13 +253,13 @@ namespace Application.Services
 
         private async Task<SignedFileInfoResponseDTO> BuildSignedFileInfoAsync(
             FileItem fileItem,
-            FileVersion signedVersion,
+            FileVersionState signedVersion,
             ApprovalSignatureTransaction? transaction)
         {
             var signerAccount = signedVersion.SignedBy.HasValue
                 ? await _unitOfWork.Repository<Account>().GetByIdAsync(signedVersion.SignedBy.Value)
                 : null;
-            var url = await _storage.GetPresignedUrlAsync(signedVersion.StoragePath, 60);
+            var url = await _storage.GetPresignedUrlAsync(signedVersion.StoragePath!, 60);
 
             return new SignedFileInfoResponseDTO
             {
@@ -263,7 +267,7 @@ namespace Application.Services
                 FileItemId = fileItem.Id,
                 FileName = $"{fileItem.Name}_signed.{NormalizeSignedFormat(signedVersion.Format)}",
                 SignedVersionId = signedVersion.Id,
-                VersionNumber = signedVersion.VersionNumber,
+                VersionNumber = signedVersion.WorkingVersion,
                 StoragePath = signedVersion.StoragePath,
                 Url = url,
                 SignedAt = signedVersion.SignedAt,
@@ -283,7 +287,7 @@ namespace Application.Services
         }
 
         private async Task<byte[]> StampOfficeAsConvertedPdfAsync(
-            FileVersion currentVersion,
+            FileVersionState currentVersion,
             FileSignaturePosition position,
             IReadOnlyList<SignerStampInfo> signers)
         {
@@ -294,8 +298,8 @@ namespace Application.Services
             }
             else if (IsCad2DFormat(currentVersion.Format))
             {
-                var ext = "." + currentVersion.Format.Trim().TrimStart('.').ToLowerInvariant();
-                await using var source = await _storage.OpenReadAsync(currentVersion.StoragePath);
+                var ext = "." + NormalizeSignedFormat(currentVersion.Format);
+                await using var source = await _storage.OpenReadAsync(currentVersion.StoragePath!);
                 await using var converted = await _cadConverter.ConvertToPdfAsync(source, ext);
                 pdfStream = new MemoryStream();
                 await converted.CopyToAsync(pdfStream);
@@ -303,8 +307,8 @@ namespace Application.Services
             }
             else
             {
-                var ext = "." + currentVersion.Format.Trim().TrimStart('.').ToLowerInvariant();
-                await using var source = await _storage.OpenReadAsync(currentVersion.StoragePath);
+                var ext = "." + NormalizeSignedFormat(currentVersion.Format);
+                await using var source = await _storage.OpenReadAsync(currentVersion.StoragePath!);
                 await using var converted = await _officeConverter.ConvertToPdfAsync(source, ext);
                 pdfStream = new MemoryStream();
                 await converted.CopyToAsync(pdfStream);
