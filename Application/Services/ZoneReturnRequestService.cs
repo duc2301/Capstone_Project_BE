@@ -15,13 +15,16 @@ namespace Application.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IFileZoneResolverService _zoneResolver;
+        private readonly IFileVersionService _fileVersionService;
 
         public ZoneReturnRequestService(
             IUnitOfWork unitOfWork,
-            IFileZoneResolverService zoneResolver)
+            IFileZoneResolverService zoneResolver,
+            IFileVersionService fileVersionService)
         {
             _unitOfWork = unitOfWork;
             _zoneResolver = zoneResolver;
+            _fileVersionService = fileVersionService;
         }
 
         public async Task<ApiResponse> CreateAsync(Guid fileItemId, CreateZoneReturnRequestDTO dto, Guid actorId)
@@ -145,6 +148,18 @@ namespace Application.Services
             request.Status = ZoneReturnRequestStatus.Approved;
             request.ApprovedBy = actorId;
             request.DecidedAt = now;
+
+            // Versioning: quay về WIP từ tài liệu đã publish (C{rev}) -> P{WorkingRevision}.01,
+            // PublishedRevision bảo toàn. Quay về từ Shared: version giữ nguyên.
+            if (fileItem.CurrentVersionId.HasValue)
+            {
+                var currentVersion = await _fileVersionService.GetCurrentVersionAsync(fileItem.Id);
+                if (currentVersion?.Stage == VersionStage.Published)
+                {
+                    var result = await _fileVersionService.GetReturnToWipVersionAsync(fileItem.Id);
+                    fileItem.CurrentVersionId = result.VersionStateId;
+                }
+            }
 
             await _unitOfWork.CommitAsync();
 

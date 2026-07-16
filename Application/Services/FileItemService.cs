@@ -17,6 +17,7 @@ namespace Application.Services
         private readonly IFolderPermissionService _permission;
         private readonly IFileZoneResolverService _zoneResolver;
         private readonly IIssueService _issueService;
+        private readonly IFileVersionService _fileVersionService;
         private readonly IMapper _mapper;
 
         public FileItemService(
@@ -24,12 +25,14 @@ namespace Application.Services
             IFolderPermissionService permission,
             IFileZoneResolverService zoneResolver,
             IIssueService issueService,
+            IFileVersionService fileVersionService,
             IMapper mapper)
         {
             _unitOfWork = unitOfWork;
             _permission = permission;
             _zoneResolver = zoneResolver;
             _issueService = issueService;
+            _fileVersionService = fileVersionService;
             _mapper = mapper;
         }
 
@@ -104,6 +107,18 @@ namespace Application.Services
 
             fileItem.FolderId = targetFolder.Id;
             fileItem.UpdatedAt = now;
+
+            // Versioning: quay về WIP từ tài liệu đã publish (C{rev}) -> P{WorkingRevision}.01,
+            // PublishedRevision bảo toàn. Shared -> WIP hay Published -> Archived: version giữ nguyên.
+            if (targetZone == CdeArea.Wip && fileItem.CurrentVersionId.HasValue)
+            {
+                var currentVersion = await _fileVersionService.GetCurrentVersionAsync(fileItem.Id);
+                if (currentVersion?.Stage == VersionStage.Published)
+                {
+                    var result = await _fileVersionService.GetReturnToWipVersionAsync(fileItem.Id);
+                    fileItem.CurrentVersionId = result.VersionStateId;
+                }
+            }
 
             await _unitOfWork.CommitAsync();
 
