@@ -23,6 +23,7 @@ namespace Application.Services
         private readonly IFileZoneResolverService _zoneResolver;
         private readonly IDiscussionService _discussionService;
         private readonly INotificationService _notification;
+        private readonly IIssueBroadcaster _issueBroadcaster;
         private readonly IFileStorageService _storage;
 
         public IssueService(
@@ -31,6 +32,7 @@ namespace Application.Services
             IFileZoneResolverService zoneResolver,
             IDiscussionService discussionService,
             INotificationService notification,
+            IIssueBroadcaster issueBroadcaster,
             IFileStorageService storage)
         {
             _unitOfWork = unitOfWork;
@@ -38,6 +40,7 @@ namespace Application.Services
             _zoneResolver = zoneResolver;
             _discussionService = discussionService;
             _notification = notification;
+            _issueBroadcaster = issueBroadcaster;
             _storage = storage;
         }
 
@@ -141,7 +144,12 @@ namespace Application.Services
                     linkId: entity.Id.ToString());
             }
 
-            return _mapper.Map<IssueResponseDTO>(entity);
+            var result = _mapper.Map<IssueResponseDTO>(entity);
+
+            if (entity.LinkedFileItemId.HasValue)
+                await _issueBroadcaster.IssueCreatedAsync(entity.LinkedFileItemId.Value, result);
+
+            return result;
         }
 
         public async Task<IssueResponseDTO> UpdateAsync(Guid id, UpdateIssueDTO dto)
@@ -193,7 +201,12 @@ namespace Application.Services
                     linkId: issue.Id.ToString());
             }
 
-            return _mapper.Map<IssueResponseDTO>(issue);
+            var result = _mapper.Map<IssueResponseDTO>(issue);
+
+            if (issue.LinkedFileItemId.HasValue)
+                await _issueBroadcaster.IssueUpdatedAsync(issue.LinkedFileItemId.Value, result);
+
+            return result;
         }
 
         /// <summary>Creator + assignee + toan bo participants (IssueMention) cua 1 issue.</summary>

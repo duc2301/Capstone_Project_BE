@@ -36,6 +36,7 @@ namespace Application.Services
         private readonly IApprovalService _approvalService;
         private readonly IFileStorageService _storage;
         private readonly INotificationService _notification;
+        private readonly IApprovalRealtimeNotifier _approvalRealtime;
         private readonly VnptSmartCaOptions _options;
         private readonly ILogger<VnptSmartCaService> _logger;
 
@@ -51,6 +52,7 @@ namespace Application.Services
             IApprovalService approvalService,
             IFileStorageService storage,
             INotificationService notification,
+            IApprovalRealtimeNotifier approvalRealtime,
             IOptions<VnptSmartCaOptions> options,
             ILogger<VnptSmartCaService> logger)
         {
@@ -60,6 +62,7 @@ namespace Application.Services
             _approvalService = approvalService;
             _storage = storage;
             _notification = notification;
+            _approvalRealtime = approvalRealtime;
             _options = options.Value;
             _logger = logger;
         }
@@ -453,6 +456,11 @@ namespace Application.Services
         /// </summary>
         private async Task NotifyRemainingSignersAsync(Guid approvalId, ApprovalRequest approval, FileItem fileItem)
         {
+            var snapshot = await _approvalService.GetSnapshotAsync(approvalId);
+            var stakeholderIds = await _approvalService.GetStakeholderAccountIdsAsync(approvalId);
+            foreach (var accId in stakeholderIds)
+                await _approvalRealtime.ApprovalChangedAsync(accId, snapshot);
+
             var pendingSigners = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
                     s => s.ApprovalRequestId == approval.Id && s.Status != ApprovalRequestSignerStatus.Signed))
                 .ToList();

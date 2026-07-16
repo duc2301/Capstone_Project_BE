@@ -38,6 +38,8 @@ builder.Services.AddSignalR();
 builder.Services.AddSingleton<IUserIdProvider, NameIdentifierUserIdProvider>();
 builder.Services.AddScoped<INotificationPusher, SignalRNotificationPusher>();
 builder.Services.AddScoped<IMarkupBroadcaster, SignalRMarkupBroadcaster>();
+builder.Services.AddScoped<IApprovalRealtimeNotifier, SignalRApprovalNotifier>();
+builder.Services.AddScoped<IIssueBroadcaster, SignalRIssueBroadcaster>();
 
 // CORS — withCredentials cần cho SignalR
 builder.Services.AddCors(options =>
