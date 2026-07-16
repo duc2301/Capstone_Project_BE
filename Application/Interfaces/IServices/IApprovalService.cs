@@ -32,5 +32,11 @@ namespace Application.Interfaces.IServices
 
         // Bắt buộc actor là Team Leader active của team phụ trách file (ném 403 nếu không phải).
         Task RequireTeamLeaderAsync(Guid fileItemId, Guid actorId);
+
+        // Snapshot DTO hiện tại của 1 approval request, không check quyền — dùng nội bộ để broadcast realtime.
+        Task<ApprovalRequestResponseDTO> GetSnapshotAsync(Guid approvalId);
+
+        // Tất cả account có thể đang xem/quan tâm approval này (requester, team leader, signer) — dùng để broadcast realtime.
+        Task<IReadOnlyCollection<Guid>> GetStakeholderAccountIdsAsync(Guid approvalId);
     }
 }

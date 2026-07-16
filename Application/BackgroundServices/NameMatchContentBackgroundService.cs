@@ -31,26 +31,18 @@ namespace Application.BackgroundServices
                 {
                     using var scope = _serviceScopeFactory.CreateScope();
                     var ai = scope.ServiceProvider.GetRequiredService<IAIService>();
-                    var notifier = scope.ServiceProvider.GetRequiredService<INotificationService>();
                     var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
-                    var result = await ai.CheckNameMatchesContentAsync(fileItemId, stoppingToken);
+                    // Tóm tắt nội dung file -> lưu vào FileItem.Description cho người dùng đọc nhanh.
+                    // Không notification: tóm tắt là thông tin hỗ trợ, không phải cảnh báo.
+                    var summary = await ai.SummarizeContentAsync(fileItemId, stoppingToken);
+                    if (summary is null) continue; // không trích được chữ / AI lỗi -> giữ nguyên
 
                     var file = await uow.Repository<FileItem>().GetByIdAsync(fileItemId);
                     if (file is null) continue;
-                    
-                    file.Warnning = !result.Matches;
-                    file.WarnningMessage = result.Matches ? null : result.Reason;
-                    await uow.CommitAsync();
 
-                    // Chỉ báo khi nghi lệch tên (advisory) — không spam khi khớp.
-                    if (!result.Matches && file.CreatedByAccountId is Guid uploader)
-                        await notifier.NotifyAsync(
-                            uploader,
-                            $"Tên file \"{file.Name}\" có thể không khớp nội dung: {result.Reason}",
-                            senderName: "AI Checker",
-                            linkType: "FileItem",
-                            linkId: fileItemId.ToString());
+                    file.Description = summary;
+                    await uow.CommitAsync();
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -58,7 +50,7 @@ namespace Application.BackgroundServices
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(ex.Message + "Name match content failed for FileItem {Id}.");
+                    Console.WriteLine($"Summarize content failed for FileItem {fileItemId}: {ex.Message}");
                 }
             }
         }
