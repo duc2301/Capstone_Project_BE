@@ -181,6 +181,7 @@ namespace Application.Services
                     UpdatedAt = f.UpdatedAt,
                     Warnning = f.Warnning,
                     WarnningMessage = f.WarnningMessage,
+                    Description = f.Description,
                     HasOpenIssue = openIssueFileIds.Contains(f.Id),
                 };
             }).ToList();

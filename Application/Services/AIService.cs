@@ -1,141 +1,94 @@
-﻿using Application.DTOs.ResponseDTOs.Notification;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
-using Application.Interfaces.IUnitOfWork;
 using Application.Options;
-using Domain.Entities;
 using Microsoft.Extensions.Options;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
-using static Application.Interfaces.IServices.IAIService;
 
 namespace Application.Services
 {
     public class AIService : IAIService
     {
         private readonly IFileContentReader _fileReader;
-        private readonly IFileItemService _fileService;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IOptions<OllamaOptions> _options;
-        public AIService(IFileContentReader fileReader, IFileItemService fileService, IHttpClientFactory httpClientFactory, IOptions<OllamaOptions> options)
+
+        public AIService(IFileContentReader fileReader, IHttpClientFactory httpClientFactory, IOptions<OllamaOptions> options)
         {
             _fileReader = fileReader;
-            _fileService = fileService;
             _httpClientFactory = httpClientFactory;
             _options = options;
         }
 
-
-        public async Task<FileNameCheckResult> CheckNameMatchesContentAsync(Guid fileItemId, CancellationToken ct = default)
+        public async Task<string?> SummarizeContentAsync(Guid fileItemId, CancellationToken ct = default)
         {
             var extractedFile = await _fileReader.LoadTextAsync(fileItemId, ct);
             if (extractedFile == null)
-            {
                 throw new ApiExceptionResponse("File not found or could not be read");
-            }
 
-            var fileName = extractedFile.Item.Name;
             var content = extractedFile.Text;
-
             if (string.IsNullOrWhiteSpace(content))
-                return new FileNameCheckResult(true, 0, "Không đọc được nội dung file (có thể PDF scan) — bỏ qua kiểm tra.");
+                return null; // PDF scan / không trích được chữ -> không có gì để tóm tắt
 
+            // Cắt bớt: đủ nắm ý chính, tránh treo Ollama CPU (generate ~10s/call).
+            const int MaxContentChars = 6000;
+            var sample = content.Length > MaxContentChars ? content[..MaxContentChars] : content;
 
-
-            // Implement your logic to check if the file name matches the content
             try
             {
                 var client = _httpClientFactory.CreateClient();
-                //client.Timeout = TimeSpan.FromMinutes(5);
                 var url = $"{_options.Value.BaseUrl.TrimEnd('/')}/api/generate";
-
-                //const int MaxContentChars = 40000;
-                //var sample = content.Length > MaxContentChars ? content[..MaxContentChars] : content;
 
                 var payload = new GenerateRequest(
                     _options.Value.ChatModel,
-                    CheckNameMatchesContentPromt(fileName, content),
+                    SummarizeContentPrompt(extractedFile.Item.Name, sample),
                     Stream: false,
                     Think: false,
                     Format: new
                     {
                         type = "object",
-                        properties = new
-                        {
-                            match = new { type = "boolean" },
-                            confidence = new { type = "number" },
-                            reason = new { type = "string" }
-                        },
-                        required = new[] { "match", "confidence", "reason" }
+                        properties = new { summary = new { type = "string" } },
+                        required = new[] { "summary" }
                     },
-                    Options: new GenerateOptions(0.2, 400));
+                    Options: new GenerateOptions(0.3, 500));
 
                 var response = await client.PostAsync(url,
                     new StringContent(JsonSerializer.Serialize(payload, JsonOpts), Encoding.UTF8, "application/json"),
                     ct);
 
                 if (!response.IsSuccessStatusCode)
-                    return new FileNameCheckResult(true, 0, "Không gọi được AI để kiểm tra.");
+                    return null; // advisory: AI lỗi thì bỏ qua, không chặn flow
 
                 var envelope = await response.Content.ReadFromJsonAsync<GenerateResponse>(JsonOpts, ct);
-                //var raw = envelope?.Response ?? "";
-                ////raw = Regex.Replace(raw, "<think>.*?</think>", "", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-                ////raw = Regex.Replace(raw, "<think>.*$", "", RegexOptions.Singleline | RegexOptions.IgnoreCase).Trim();
-
-                //// model hay thêm chữ quanh JSON -> lấy khối { ... }
-                //var json = ExtractJsonObject(raw);
-                //if (json is null)
-                //    return new FileNameCheckResult(true, 0, "AI trả về không đúng định dạng — bỏ qua.");
-
-                var parsed = JsonSerializer.Deserialize<NameCheckJson>(envelope?.Response ?? "", JsonOpts);
-                if (parsed is null)
-                    return new FileNameCheckResult(true, 0, "AI trả về rỗng — bỏ qua.");
-
-                // AIService chỉ CHECK và trả kết quả. Việc lưu cờ Warnning + tạo/gửi notification
-                // do NameMatchContentBackgroundService (worker) đảm nhiệm -> tránh trùng lặp & tránh tạo notification hỏng.
-                return new FileNameCheckResult(parsed.Match, parsed.Confidence, parsed.Reason);
+                var parsed = JsonSerializer.Deserialize<SummaryJson>(envelope?.Response ?? "", JsonOpts);
+                var summary = parsed?.Summary?.Trim();
+                return string.IsNullOrWhiteSpace(summary) ? null : summary;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return new FileNameCheckResult(true, 0, $"Lỗi [{ex.GetType().Name}]: {ex.Message}");
+                return null;
             }
         }
 
-
-
-        private static string CheckNameMatchesContentPromt(string fileName, string content) =>
-            "Bạn kiểm tra xem TÊN FILE có mô tả đúng tài liệu bên trong không (phát hiện file đặt tên sai/nhầm).\n" +
+        private static string SummarizeContentPrompt(string fileName, string content) =>
+            "Bạn tóm tắt tài liệu xây dựng cho người dùng đọc nhanh.\n" +
             $"Tên file: {fileName}\n" +
             "Trích nội dung (có thể lỗi khoảng cách/định dạng do trích xuất PDF — bỏ qua các lỗi đó):\n" +
             $"{content}\n\n" +
-            "Cách đánh giá (làm đúng thứ tự):\n" +
-            "1) Nội dung là LOẠI tài liệu gì (hợp đồng, bản vẽ/thuyết minh thiết kế, quy định/thông tư, đề nghị tuyển dụng, báo cáo, biên bản…) và về CHỦ ĐỀ gì?\n" +
-            "2) Tên file tuyên bố đây là loại tài liệu gì, chủ đề gì?\n" +
-            "3) match=true nếu tên mô tả đúng hoặc gần đúng LOẠI + CHỦ ĐỀ của nội dung — chấp nhận viết tắt, tên thiếu chi tiết, hoặc tên chỉ nêu một phần/căn cứ trực tiếp của nội dung.\n" +
-            "4) match=false nếu tên tuyên bố LOẠI TÀI LIỆU KHÁC hoặc CHỦ ĐỀ KHÁC với nội dung (vd: tên là hồ sơ thiết kế nhưng nội dung là đề nghị tuyển dụng; tên là quy định PCCC nhưng nội dung là hợp đồng). 'Cùng công ty' hay 'cùng dự án' KHÔNG đủ để coi là khớp.\n" +
-            "KHÔNG đánh giá chất lượng/độ đầy đủ của tài liệu. KHÔNG bắt lỗi chính tả, in hoa, xuống dòng.\n" +
-            "reason: 1-2 câu tiếng Việt nêu nội dung là loại tài liệu gì và vì sao khớp/không khớp. confidence = độ chắc chắn về kết luận (0..1).";
+            "Yêu cầu summary (TIẾNG VIỆT, 1-3 câu, tối đa ~40 từ):\n" +
+            "1) Câu đầu: Bỏ mấy câu rườm rà, mở đầu (Đây là, file này là,.... Kiểu 'File thiết kế', File quy định, File hợp đồng ). (hợp đồng, bản vẽ/thuyết minh, thông tư/quy định, báo cáo, biên bản...) về CHỦ ĐỀ gì.\n" +
+            "2) Các câu sau: Câu miêu tả ngắn để người dùng đọc nhanh và vẫn nắm gọn nội dung chính.\n" +
+            "KHÔNG bịa thông tin không có trong trích đoạn. KHÔNG nhận xét chất lượng tài liệu.";
 
-
-        private static readonly JsonSerializerOptions JsonOpts = new() 
-        { 
+        private static readonly JsonSerializerOptions JsonOpts = new()
+        {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             NumberHandling = JsonNumberHandling.AllowReadingFromString
         };
 
-        private record NameCheckJson(
-            [property: JsonPropertyName("match")] bool Match,
-            [property: JsonPropertyName("confidence")] double Confidence,
-            [property: JsonPropertyName("reason")] string? Reason);
-
-        private static string? ExtractJsonObject(string s)
-        {
-            int a = s.IndexOf('{'); int b = s.LastIndexOf('}');
-            return (a >= 0 && b > a) ? s.Substring(a, b - a + 1) : null;
-        }
+        private record SummaryJson([property: JsonPropertyName("summary")] string? Summary);
 
         private record GenerateRequest(string Model, string Prompt, bool Stream, bool Think, object Format, GenerateOptions Options);
         private record GenerateOptions(

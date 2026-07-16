@@ -22,6 +22,9 @@ namespace Application.DTOs.ResponseDTOs.FileItem
         public bool? Warnning { get; set; }
         public string? WarnningMessage { get; set; }
 
+        // Tóm tắt nội dung do AI sinh sau upload (null = chưa tóm tắt / không trích được chữ).
+        public string? Description { get; set; }
+
         /// <summary>File dang co it nhat 1 Issue chua Closed (Open/InProgress/Answered).</summary>
         public bool HasOpenIssue { get; set; }
     }
