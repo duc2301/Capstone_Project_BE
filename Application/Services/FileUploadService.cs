@@ -32,16 +32,18 @@ namespace Application.Services
         private readonly IModelTranslationQueue _translationQueue;
         private readonly ILoiCheckQueue _loiCheckQueue;
         private readonly IMapper _mapper;
+        private readonly INamingConventionService _naming;
         private readonly INameMatchContentBackgroundService _nameMatchContentBackgroundService;
         private readonly IFileVersionService _fileVersionService;
 
-        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService)
+        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INamingConventionService naming, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService)
         {
             _unitOfWork = unitOfWork;
             _storage = storage;
             _translationQueue = translationQueue;
             _loiCheckQueue = loiCheckQueue;
             _mapper = mapper;
+            _naming = naming;
             _nameMatchContentBackgroundService = nameMatchContentBackgroundService;
             _fileVersionService = fileVersionService;
         }
@@ -64,6 +66,9 @@ namespace Application.Services
                 ? Path.GetFileNameWithoutExtension(originalFileName)
                 : dto.Name.Trim();
             var ext = Path.GetExtension(originalFileName);
+            var naming = await _naming.GenerateFileNameAsync(dto.FolderId, dto.NamingSelections, originalFileName, ct);
+            if (naming.HasNamingConvention)
+                name = naming.FileNameWithoutExtension;
 
             // ③ Kiểm tra tên file (rule mặc định: không rỗng, không ký tự cấm, có đuôi).
             ValidateName(name);
@@ -122,6 +127,11 @@ namespace Application.Services
                     UpdatedAt = now
                 };
                 await _unitOfWork.Repository<FileItem>().CreateAsync(fileItem);
+                // Naming convention: lưu breakdown từng segment của tên — chỉ khi tài liệu MỚI
+                // (upload thay thế trùng tên = cùng bộ giá trị, metadata giữ nguyên).
+                // Không SaveChanges ở đây: commit chung 1 lần ở cuối flow.
+                if (naming.HasNamingConvention)
+                    await _naming.StageFileNamingMetadataAsync(fileItem.Id, naming);
                 // FileItem đang tracked (Added) nên versioning service nhìn thấy ngay qua cùng DbContext.
                 version = await _fileVersionService.CreateInitialVersionAsync(fileItem.Id, fileData);
             }

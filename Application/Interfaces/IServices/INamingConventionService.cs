@@ -41,5 +41,8 @@ namespace Application.Interfaces.IServices
         // Stage các dòng FileNamingMetadata cho file vừa tạo (KHÔNG SaveChanges —
         // upload flow commit chung trong transaction của nó).
         Task StageFileNamingMetadataAsync(Guid fileItemId, FileNameGenerationResultDTO generation);
+
+        NamingConventionImportPreviewDTO ParseImportFile(Stream stream);
+        byte[] GenerateImportTemplate();
     }
 }

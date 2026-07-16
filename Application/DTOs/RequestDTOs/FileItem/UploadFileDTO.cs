@@ -15,5 +15,7 @@ namespace Application.DTOs.RequestDTOs.FileItem
         // Tên logic của tài liệu (không kèm đuôi). Bỏ trống -> lấy theo tên file gốc.
         [StringLength(200)]
         public string? Name { get; set; }
+
+        public string? NamingSelections { get; set; }
     }
 }
