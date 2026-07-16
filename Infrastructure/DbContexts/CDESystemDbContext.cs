@@ -40,7 +40,6 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<Folder> Folders { get; set; }
         public virtual DbSet<FolderPermission> FolderPermissions { get; set; }
         public virtual DbSet<FileItem> FileItems { get; set; }
-        public virtual DbSet<FileVersion> FileVersions { get; set; }
         public virtual DbSet<MarkupSet> MarkupSets { get; set; }
         public virtual DbSet<FileNote> FileNotes { get; set; }
         public virtual DbSet<FilePermission> FilePermissions { get; set; }

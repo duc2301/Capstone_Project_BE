@@ -145,7 +145,6 @@ namespace Application.Services
                 WorkingVersion = s.WorkingVersion,
                 PublishedRevision = s.PublishedRevision,
                 DisplayVersion = s.DisplayVersion,
-                FileVersionId = s.FileVersionId,
                 FileName = s.FileName,
                 StoragePath = s.StoragePath,
                 FileSizeBytes = s.FileSizeBytes,
@@ -192,7 +191,6 @@ namespace Application.Services
             VersionStage stage, int workingRevision, int workingVersion, int publishedRevision)
         {
             var snapshot = NewSnapshot(current.FileItemId, stage, workingRevision, workingVersion, publishedRevision);
-            snapshot.FileVersionId = current.FileVersionId;
             snapshot.FileName = current.FileName;
             snapshot.StoragePath = current.StoragePath;
             snapshot.FileSizeBytes = current.FileSizeBytes;

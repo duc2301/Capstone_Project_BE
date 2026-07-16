@@ -16,7 +16,6 @@ namespace Application.DTOs.ResponseDTOs.FileVersion
         public string DisplayVersion { get; set; } = null!;
 
         // Snapshot dữ liệu file tại thời điểm version này
-        public Guid? FileVersionId { get; set; }
         public string? FileName { get; set; }
         public string? StoragePath { get; set; }
         public long? FileSizeBytes { get; set; }

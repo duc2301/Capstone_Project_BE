@@ -81,7 +81,6 @@ namespace Application.Mapping
             // --- Module C/D/E/F ---
             Crud<Folder, CreateFolderDTO, UpdateFolderDTO, FolderResponseDTO>();
             Crud<FileItem, CreateFileItemDTO, UpdateFileItemDTO, FileItemResponseDTO>();
-            CreateMap<FileVersion, FileVersionResponseDTO>();
             Crud<Discussion, CreateDiscussionDTO, UpdateDiscussionDTO, DiscussionResponseDTO>();
             Crud<Issue, CreateIssueDTO, UpdateIssueDTO, IssueResponseDTO>();
 

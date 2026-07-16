@@ -2,7 +2,7 @@ using Domain.Enum.File;
 
 namespace Domain.Entities
 {
-    // Bản ghi version HOÀN CHỈNH của tài liệu — thay thế bảng FileVersions cũ (đang gỡ dần).
+    // Bản ghi version HOÀN CHỈNH của tài liệu (bảng FileVersions cũ đã gỡ bỏ).
     // Append-only: mỗi lần đổi version (upload/shared/publish/về WIP) INSERT 1 dòng mới,
     // KHÔNG update đè. Dòng IsCurrent = true là version hiện hành (đúng 1 dòng / FileItem).
     // Mỗi dòng vừa giữ số version (P/C) vừa giữ dữ liệu file vật lý + viewer + chữ ký của version đó.
@@ -32,9 +32,6 @@ namespace Domain.Entities
         public string DisplayVersion { get; set; } = null!;
 
         // --- Dữ liệu file vật lý của version này ---
-        // FileVersionId: tham chiếu tạm sang bảng FileVersions cũ trong giai đoạn chuyển đổi —
-        // sẽ bị xóa cùng bảng cũ ở bước cuối.
-        public Guid? FileVersionId { get; set; }
         public string? FileName { get; set; }
         public string? StoragePath { get; set; }
         public long? FileSizeBytes { get; set; }

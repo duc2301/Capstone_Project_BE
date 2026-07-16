@@ -20,7 +20,7 @@ namespace Application.Services
 {
     /// <summary>
     /// Stamp chu ky truc quan "Đã ký số" vao ban PDF/Word/Excel goc sau khi VNPT SmartCA da ky thanh cong,
-    /// tao FileVersion moi cho ban da ky va giu nguyen ban goc.
+    /// tao version moi (FileVersionState, qua FileVersionService) cho ban da ky va giu nguyen ban goc trong lich su.
     /// </summary>
     public class PdfSignatureService : IPdfSignatureService
     {

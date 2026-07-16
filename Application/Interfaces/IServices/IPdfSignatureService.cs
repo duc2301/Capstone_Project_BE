@@ -6,7 +6,7 @@ namespace Application.Interfaces.IServices
     // va phuc vu tai ve ban PDF da ky.
     public interface IPdfSignatureService
     {
-        // Stamp chu ky truc quan vao PDF goc, tao FileVersion moi va danh dau FileItem da ky.
+        // Stamp chu ky truc quan vao PDF goc, tao version moi (FileVersionState) va danh dau FileItem da ky.
         // Goi tu VnptSmartCaService (khi transaction chuyen Signed) hoac truc tiep tu API generate-signed-pdf.
         Task<ApiResponse> GenerateSignedPdfAsync(Guid approvalId, Guid actor);
 
