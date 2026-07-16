@@ -4,6 +4,11 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
+using Domain.Enum.Account;
+using Domain.Enum.Group;
+using Domain.Enum.Permission;
+using Domain.Enum.Project;
+using Syncfusion.XlsIO;
 using System.Text.Json;
 
 namespace Application.Services
@@ -308,7 +313,7 @@ namespace Application.Services
         // Gán folder
         // =========================================================
 
-        public async Task<NamingConventionResponseDTO> AssignFoldersAsync(Guid conventionId, AssignFoldersDTO dto)
+        public async Task<NamingConventionResponseDTO> AssignFoldersAsync(Guid conventionId, AssignFoldersDTO dto, Guid actor, string? actorRole)
         {
             var convention = await _unitOfWork.NamingConventionRepository.GetByIdAsync(conventionId)
                 ?? throw new ApiExceptionResponse("Naming convention not found.", 404);
@@ -324,6 +329,10 @@ namespace Application.Services
             if (outsideProject.Count > 0)
                 throw new ApiExceptionResponse(
                     $"Folder(s) do not belong to the naming convention's project: {string.Join(", ", outsideProject.Select(f => f.Name))}.", 400);
+
+            // Chỉ check các folder được yêu cầu trực tiếp — cây con mở rộng hưởng quyền từ gốc được gán.
+            foreach (var folder in folders)
+                await RequireFolderNamingAuthorityAsync(folder.Id, actor, actorRole);
 
             var targets = folders;
             if (dto.ApplyToSubfolders)
@@ -363,10 +372,12 @@ namespace Application.Services
             return await GetByIdAsync(conventionId);
         }
 
-        public async Task UnassignFolderAsync(Guid folderId)
+        public async Task UnassignFolderAsync(Guid folderId, Guid actor, string? actorRole)
         {
             var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
                 ?? throw new ApiExceptionResponse("Folder not found.", 404);
+
+            await RequireFolderNamingAuthorityAsync(folderId, actor, actorRole);
 
             folder.NamingConventionId = null;
             folder.UpdatedAt = DateTime.UtcNow;
@@ -691,5 +702,323 @@ namespace Application.Services
             OrderIndex = value.OrderIndex,
             IsActive = value.IsActive
         };
+
+        private const int MaxImportFields = 30;
+        private const int MaxValuesPerField = 500;
+        private static readonly string[] TemplateHeaders =
+            { "FieldCode", "FieldName", "FieldDescription", "ValueCode", "ValueName", "ValueDescription" };
+
+        public NamingConventionImportPreviewDTO ParseImportFile(Stream stream)
+        {
+            var engine = new ExcelEngine();
+            IWorkbook workbook;
+            try
+            {
+                workbook = engine.Excel.Workbooks.Open(stream, ExcelOpenType.Automatic);
+            }
+            catch (Exception)
+            {
+
+                throw new ApiExceptionResponse("Không đọc được file. Hãy dùng file .xlsx theo template mẫu.", 400);
+            }
+
+            var ws = workbook.Worksheets[0];
+
+            for (int collum = 1; collum <= TemplateHeaders.Length; collum++)
+            {
+                var header = ws.Range[1, collum].DisplayText?.Trim();
+                if (!string.Equals(header, TemplateHeaders[collum -1 ], StringComparison.OrdinalIgnoreCase))
+                    throw new ApiExceptionResponse(
+                $"File không đúng template (cột {collum} phải là '{TemplateHeaders[collum - 1]}'). Hãy tải template mẫu và điền theo.", 400);
+            }
+
+            var result = new NamingConventionImportPreviewDTO();
+            var fieldsByCode = new Dictionary<string, ImportedNamingFieldDTO>(StringComparer.OrdinalIgnoreCase);
+            var valueCodesByField = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+            int lastRow = ws.UsedRange.LastRow;
+            for (int row = 2; row <= lastRow; row++)
+            {
+                var fieldCode = ws.Range[row, 1].DisplayText?.Trim();
+                var fieldName = ws.Range[row, 2].DisplayText?.Trim();
+                var fieldDescription = ws.Range[row, 3].DisplayText?.Trim();
+                var valueCode = ws.Range[row, 4].DisplayText?.Trim();
+                var valueName = ws.Range[row, 5].DisplayText?.Trim();
+                var valueDescription = ws.Range[row, 6].DisplayText?.Trim();
+
+                if (string.IsNullOrEmpty(fieldCode) && string.IsNullOrEmpty(valueCode))
+                    continue;
+
+                if (string.IsNullOrEmpty(fieldCode) || string.IsNullOrEmpty(valueCode))
+                {
+                    result.Warnings.Add($"Dòng {row}: thiếu FieldCode hoặc ValueCode — đã bỏ qua.");
+                    continue;
+                }
+
+                if (!fieldsByCode.TryGetValue(fieldCode, out var field))
+                {
+                    if (fieldsByCode.Count >= MaxImportFields)
+                        throw new ApiExceptionResponse($"File vượt quá {MaxImportFields} field.", 400);
+
+                    field = new ImportedNamingFieldDTO
+                    {
+                        Code = fieldCode,
+                        DisplayName = string.IsNullOrEmpty(fieldName) ? fieldCode : fieldName,
+                        Description = string.IsNullOrEmpty(fieldDescription) ? null : fieldDescription,
+                        OrderIndex = fieldsByCode.Count
+                    };
+
+                    if (string.IsNullOrEmpty(fieldName))
+                        result.Warnings.Add($"Dòng {row}: field '{fieldCode}' thiếu FieldName — tạm dùng chính code.");
+
+                    fieldsByCode.Add(fieldCode, field);
+                    valueCodesByField.Add(fieldCode, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+                    result.Fields.Add(field);
+                }
+
+                if (!valueCodesByField[fieldCode].Add(valueCode))
+                {
+                    result.Warnings.Add($"Dòng {row}: value '{valueCode}' trùng trong field '{fieldCode}' — đã bỏ qua.");
+                    continue;
+                }
+
+                if (field.Values.Count >= MaxValuesPerField)
+                    throw new ApiExceptionResponse($"Field '{fieldCode}' vượt quá {MaxValuesPerField} giá trị.", 400);
+
+                field.Values.Add(new ImportedNamingValueDTO
+                {
+                    Code = valueCode,
+                    DisplayName = string.IsNullOrEmpty(valueName) ? valueCode : valueName,
+                    Description = string.IsNullOrEmpty(valueDescription) ? null : valueDescription,
+                    OrderIndex = field.Values.Count
+                });
+            }
+
+            if (result.Fields.Count == 0)
+                throw new ApiExceptionResponse("File không có dữ liệu field/value hợp lệ nào.", 400);
+
+            return result;
+        }
+
+        public byte[] GenerateImportTemplate()
+        {
+            using var engine = new ExcelEngine();
+            engine.Excel.DefaultVersion = ExcelVersion.Excel2016;
+            var wb = engine.Excel.Workbooks.Create(1);
+            var ws = wb.Worksheets[0];
+            ws.Name = "NamingFields";
+
+            for (int collum = 1; collum <= TemplateHeaders.Length; collum++)
+                ws[1, collum].Text = TemplateHeaders[collum - 1];
+
+            ws["A1:F1"].CellStyle.Font.Bold = true;
+
+            // Bộ trường chuẩn ISO 19650 (mã theo phụ lục quốc gia UK — BS EN ISO 19650-2).
+            // Thứ tự trường = thứ tự xuất hiện trong tên file: PROJ-ORIG-VOL-LEV-TYPE-ROLE.
+            // Admin sửa trực tiếp trên file hoặc ở bước preview: thay giá trị ví dụ (PROJ/ORIG),
+            // thêm bớt tầng/khối theo dự án. Required/Khóa giá trị cấu hình ở UI sau khi import.
+            string[,] sample =
+            {
+                { "PROJ", "Project",       "Mã dự án — thay bằng mã thật rồi khóa giá trị ở UI", "P01", "Dự án mẫu",                 "Ví dụ — sửa theo dự án" },
+
+                { "ORIG", "Originator",    "Đơn vị tạo tài liệu",                                "ABC", "Công ty ABC",               "Ví dụ — thay bằng đơn vị thật" },
+                { "ORIG", "",              "",                                                   "XYZ", "Nhà thầu XYZ",              "Ví dụ" },
+                { "ORIG", "",              "",                                                   "TVG", "Tư vấn giám sát",           "Ví dụ" },
+
+                { "VOL",  "Volume/System", "Khối tích / hệ thống",                               "ZZ",  "Toàn bộ khối tích",         "Áp dụng cho mọi khối/hệ" },
+                { "VOL",  "",              "",                                                   "XX",  "Không áp dụng",             "" },
+                { "VOL",  "",              "",                                                   "01",  "Khối/Hệ thống 01",          "Ví dụ — đặt theo dự án" },
+                { "VOL",  "",              "",                                                   "02",  "Khối/Hệ thống 02",          "Ví dụ — đặt theo dự án" },
+
+                { "LEV",  "Level/Location","Tầng / vị trí",                                      "ZZ",  "Nhiều tầng",                "" },
+                { "LEV",  "",              "",                                                   "XX",  "Không áp dụng",             "" },
+                { "LEV",  "",              "",                                                   "00",  "Tầng trệt / mặt bằng chung","" },
+                { "LEV",  "",              "",                                                   "01",  "Tầng 1",                    "" },
+                { "LEV",  "",              "",                                                   "02",  "Tầng 2",                    "" },
+                { "LEV",  "",              "",                                                   "B1",  "Tầng hầm 1",                "" },
+                { "LEV",  "",              "",                                                   "M1",  "Tầng lửng 1",               "" },
+                { "LEV",  "",              "",                                                   "RF",  "Mái",                       "" },
+
+                { "TYPE", "Document Type", "Loại tài liệu",                                      "DR",  "Bản vẽ 2D",                 "Drawing" },
+                { "TYPE", "",              "",                                                   "M2",  "Mô hình 2D",                "2D model" },
+                { "TYPE", "",              "",                                                   "M3",  "Mô hình 3D",                "3D model" },
+                { "TYPE", "",              "",                                                   "CM",  "Mô hình tổng hợp",          "Combined model" },
+                { "TYPE", "",              "",                                                   "CR",  "Báo cáo xung đột",          "Clash report" },
+                { "TYPE", "",              "",                                                   "VS",  "Diễn họa / phối cảnh",      "Visualization" },
+                { "TYPE", "",              "",                                                   "SP",  "Chỉ dẫn kỹ thuật",          "Specification" },
+                { "TYPE", "",              "",                                                   "RP",  "Báo cáo",                   "Report" },
+                { "TYPE", "",              "",                                                   "CA",  "Bản tính",                  "Calculations" },
+                { "TYPE", "",              "",                                                   "SH",  "Bảng thống kê",             "Schedule" },
+                { "TYPE", "",              "",                                                   "BQ",  "Bảng khối lượng",           "Bill of quantities" },
+                { "TYPE", "",              "",                                                   "CP",  "Kế hoạch chi phí",          "Cost plan" },
+                { "TYPE", "",              "",                                                   "CO",  "Văn bản trao đổi",          "Correspondence" },
+                { "TYPE", "",              "",                                                   "MI",  "Biên bản họp",              "Minutes" },
+                { "TYPE", "",              "",                                                   "MS",  "Biện pháp thi công",        "Method statement" },
+                { "TYPE", "",              "",                                                   "PR",  "Tiến độ",                   "Programme" },
+                { "TYPE", "",              "",                                                   "RI",  "Yêu cầu cung cấp thông tin","Request for information" },
+                { "TYPE", "",              "",                                                   "SU",  "Khảo sát",                  "Survey" },
+                { "TYPE", "",              "",                                                   "HS",  "An toàn & sức khỏe",        "Health and safety" },
+
+                { "ROLE", "Role",          "Vai trò / bộ môn",                                   "A",   "Kiến trúc",                 "Architect" },
+                { "ROLE", "",              "",                                                   "C",   "Kỹ sư hạ tầng",             "Civil engineer" },
+                { "ROLE", "",              "",                                                   "D",   "Thoát nước / giao thông",   "Drainage, highways engineer" },
+                { "ROLE", "",              "",                                                   "E",   "Kỹ sư điện",                "Electrical engineer" },
+                { "ROLE", "",              "",                                                   "G",   "Trắc đạc",                  "Land surveyor" },
+                { "ROLE", "",              "",                                                   "I",   "Thiết kế nội thất",         "Interior designer" },
+                { "ROLE", "",              "",                                                   "K",   "Chủ đầu tư",                "Client" },
+                { "ROLE", "",              "",                                                   "L",   "Kiến trúc cảnh quan",       "Landscape architect" },
+                { "ROLE", "",              "",                                                   "M",   "Kỹ sư cơ / HVAC",           "Mechanical engineer" },
+                { "ROLE", "",              "",                                                   "P",   "Cấp thoát nước công trình", "Public health engineer" },
+                { "ROLE", "",              "",                                                   "Q",   "Dự toán",                   "Quantity surveyor" },
+                { "ROLE", "",              "",                                                   "S",   "Kỹ sư kết cấu",             "Structural engineer" },
+                { "ROLE", "",              "",                                                   "W",   "Nhà thầu thi công",         "Contractor" },
+                { "ROLE", "",              "",                                                   "X",   "Thầu phụ",                  "Subcontractor" },
+                { "ROLE", "",              "",                                                   "Y",   "Thiết kế chuyên ngành",     "Specialist designer" },
+                { "ROLE", "",              "",                                                   "Z",   "Nhiều bộ môn",              "General / multiple" },
+            };
+            for (int i = 0; i < sample.GetLength(0); i++)
+                for (int j = 0; j < sample.GetLength(1); j++)
+                    ws[i + 2, j + 1].Text = sample[i, j];
+
+            ws.UsedRange.AutofitColumns();
+
+            using var ms = new MemoryStream();
+            wb.SaveAs(ms);
+            return ms.ToArray();
+        }
+
+        public async Task<NamingConventionResponseDTO> CloneForFolderAsync(Guid conventionId, Guid folderId, Guid actor, string? actorRole)
+        {
+            var source = await _unitOfWork.NamingConventionRepository.GetWithDetailsAsync(conventionId)
+                ?? throw new ApiExceptionResponse("Naming convention not found.", 404);
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
+                ?? throw new ApiExceptionResponse("Folder not found.", 404);
+            if (folder.ProjectId != source.ProjectId)
+                throw new ApiExceptionResponse("Folder does not belong to the naming convention's project.", 400);
+
+            await RequireFolderNamingAuthorityAsync(folderId, actor, actorRole);
+
+            var now = DateTime.UtcNow;
+            var clone = new NamingConvention
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = source.ProjectId,
+                Name = $"{source.Name} – {folder.Name}",
+                Delimiter = source.Delimiter,
+                IsActive = true,
+                CreatedById = actor,
+                CreatedAt = now
+            };
+
+            foreach (var f in source.Fields.OrderBy(f => f.OrderIndex))
+            {
+                var newField = new NamingConventionField
+                {
+                    Id = Guid.NewGuid(),
+                    NamingConventionId = clone.Id,
+                    Code = f.Code,
+                    DisplayName = f.DisplayName,
+                    Description = f.Description,
+                    OrderIndex = f.OrderIndex,
+                    IsRequired = f.IsRequired,
+                    IsLocked = f.IsLocked,
+                    MinLength = f.MinLength,
+                    MaxLength = f.MaxLength,
+                    FieldType = f.FieldType,
+                    CreatedById = actor,
+                    CreatedAt = now
+                };
+
+                foreach (var v in f.AllowedValues.OrderBy(v => v.OrderIndex))
+                {
+                    var newValue = new NamingConventionFieldValue
+                    {
+                        Id = Guid.NewGuid(),
+                        NamingConventionFieldId = newField.Id,
+                        Code = v.Code,
+                        DisplayName = v.DisplayName,
+                        Description = v.Description,
+                        OrderIndex = v.OrderIndex,
+                        IsActive = v.IsActive,
+                        CreatedById = actor,
+                        CreatedAt = now
+                    };
+                    newField.AllowedValues.Add(newValue);
+
+                    // Giữ nguyên khóa: map value bị khóa của bản gốc sang value tương ứng của bản clone.
+                    if (f.LockedValue != null && f.LockedValue.NamingConventionFieldValueId == v.Id)
+                    {
+                        newField.LockedValue = new NamingConventionLockedValue
+                        {
+                            Id = Guid.NewGuid(),
+                            NamingConventionFieldId = newField.Id,
+                            NamingConventionFieldValueId = newValue.Id,
+                            IsActive = true,
+                            CreatedById = actor,
+                            CreatedAt = now
+                        };
+                    }
+                }
+                clone.Fields.Add(newField);
+            }
+
+            await _unitOfWork.NamingConventionRepository.CreateAsync(clone);
+
+            // Gán bản riêng cho folder ngay trong cùng transaction.
+            folder.NamingConventionId = clone.Id;
+            folder.UpdatedAt = now;
+            await _unitOfWork.CommitAsync();
+
+            return await GetByIdAsync(clone.Id);
+        }
+
+
+
+        private async Task RequireFolderNamingAuthorityAsync(Guid folderId, Guid actor, string? actorRole)
+        {
+            if (actorRole == AccountRole.Admin.ToString())
+                return;
+
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
+                ?? throw new ApiExceptionResponse("Folder not found.", 404);
+
+            var participants = (await _unitOfWork.Repository<ProjectParticipant>().FindAsync(
+                    p => p.ProjectId == folder.ProjectId && p.Status == ProjectParticipantStatus.Active))
+                .ToDictionary(p => p.Id, p => p.GroupId);
+
+            // Folder + toàn bộ tổ tiên (quyền cấp trên phủ xuống cây con).
+            var allFolders = (await _unitOfWork.Repository<Folder>().FindAsync(
+                    f => f.ProjectId == folder.ProjectId))
+                .ToDictionary(f => f.Id);
+            var folderIds = new HashSet<Guid>();
+            var current = folder;
+            while (folderIds.Add(current.Id) && current.ParentFolderId.HasValue
+                   && allFolders.TryGetValue(current.ParentFolderId.Value, out var parent))
+                current = parent;
+
+            var groupIds = new HashSet<Guid>();
+            var acls = await _unitOfWork.Repository<FolderPermission>().FindAsync(
+                p => folderIds.Contains(p.FolderId)
+                     && p.ProjectParticipantId.HasValue
+                     && p.Status == PermissionStatus.Active   // ⚠ check lại tên value trong enum PermissionStatus của bạn
+                     && p.CanEdit);
+            foreach (var acl in acls)
+                if (participants.TryGetValue(acl.ProjectParticipantId!.Value, out var groupId))
+                    groupIds.Add(groupId);
+
+            // Chưa cấu hình ACL nào -> fallback mọi group active của project (nhất quán ApprovalService).
+            if (groupIds.Count == 0)
+                groupIds = participants.Values.ToHashSet();
+
+            var isLeader = (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                    m => groupIds.Contains(m.GroupId)
+                         && m.AccountId == actor
+                         && m.Role == GroupMemberRole.Leader
+                         && m.Status == GroupMemberStatus.Active))
+                .Any();
+            if (!isLeader)
+                throw new ApiExceptionResponse(
+                    "Chỉ Leader của nhóm phụ trách thư mục mới được thay đổi quy tắc đặt tên cho thư mục này.", 403);
+        }
     }
 }

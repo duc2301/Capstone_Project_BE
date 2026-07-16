@@ -26,8 +26,9 @@ namespace Application.Interfaces.IServices
         Task<NamingConventionResponseDTO> RemoveLockedValueAsync(Guid fieldId);
 
         // --- Gán folder ---
-        Task<NamingConventionResponseDTO> AssignFoldersAsync(Guid conventionId, AssignFoldersDTO dto);
-        Task UnassignFolderAsync(Guid folderId);
+        // Chỉ Leader của group phụ trách folder (hoặc Admin hệ thống) được gán/gỡ/tùy chỉnh.
+        Task<NamingConventionResponseDTO> AssignFoldersAsync(Guid conventionId, AssignFoldersDTO dto, Guid actor, string? actorRole);
+        Task UnassignFolderAsync(Guid folderId, Guid actor, string? actorRole);
 
         // --- Upload flow ---
         // Payload cho dialog upload: convention đang áp cho folder (hoặc HasNamingConvention = false).
@@ -41,5 +42,9 @@ namespace Application.Interfaces.IServices
         // Stage các dòng FileNamingMetadata cho file vừa tạo (KHÔNG SaveChanges —
         // upload flow commit chung trong transaction của nó).
         Task StageFileNamingMetadataAsync(Guid fileItemId, FileNameGenerationResultDTO generation);
+
+        NamingConventionImportPreviewDTO ParseImportFile(Stream stream);
+        byte[] GenerateImportTemplate();
+        Task<NamingConventionResponseDTO> CloneForFolderAsync(Guid conventionId, Guid folderId, Guid actor, string? actorRole);
     }
 }
