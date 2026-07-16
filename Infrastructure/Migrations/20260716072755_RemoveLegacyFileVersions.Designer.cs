@@ -3,6 +3,7 @@ using System;
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Pgvector;
@@ -12,9 +13,11 @@ using Pgvector;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    partial class CDESystemDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260716072755_RemoveLegacyFileVersions")]
+    partial class RemoveLegacyFileVersions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -171,17 +174,8 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("DigestBase64")
-                        .HasColumnType("text");
-
                     b.Property<Guid>("FileItemId")
                         .HasColumnType("uuid");
-
-                    b.Property<string>("HashAlgorithm")
-                        .HasColumnType("text");
-
-                    b.Property<string>("PreparedPdfStoragePath")
-                        .HasColumnType("text");
 
                     b.Property<string>("RawRequest")
                         .HasColumnType("text");
@@ -192,20 +186,11 @@ namespace Infrastructure.Migrations
                     b.Property<string>("Sad")
                         .HasColumnType("text");
 
-                    b.Property<string>("SignatureValueBase64")
-                        .HasColumnType("text");
-
                     b.Property<DateTime?>("SignedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("SignedAttributesBase64")
-                        .HasColumnType("text");
-
                     b.Property<Guid?>("SignedBy")
                         .HasColumnType("uuid");
-
-                    b.Property<string>("SignerCertificateBase64")
-                        .HasColumnType("text");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");

@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -8,6 +7,7 @@ using Application.DTOs.ResponseDTOs.SmartCA;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Application.Options;
+using Application.Services.Signing;
 using Domain.Entities;
 using Domain.Enum.Account;
 using Domain.Enum.Cde;
@@ -28,18 +28,13 @@ namespace Application.Services
     {
         private const string GetCertificatePath = "v1/credentials/get_certificate";
         private const string SignPath = "v1/signatures/sign";
-
-        // Neu app SmartCA tren dien thoai loi ngay o buoc ket noi module ky (vd "Ket noi toi module ky so
-        // khong on dinh") thi user chua kip Xac nhan/Tu choi tren app -> phia VNPT khong bao gio chuyen
-        // trang thai khoi WaitingConfirm, giao dich se ket treo mai mai va chan khong cho tao yeu cau ky
-        // moi (xem hasPendingTransaction o SendSignRequestAsync). Tu dong coi la Expired sau khoang thoi
-        // gian hop ly de nguoi dung duoc bao va ky lai duoc.
         private static readonly TimeSpan WaitingConfirmTimeout = TimeSpan.FromMinutes(5);
 
         private readonly IUnitOfWork _unitOfWork;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IPdfSignatureService _pdfSignatureService;
         private readonly IApprovalService _approvalService;
+        private readonly IFileStorageService _storage;
         private readonly VnptSmartCaOptions _options;
         private readonly ILogger<VnptSmartCaService> _logger;
 
@@ -53,6 +48,7 @@ namespace Application.Services
             IHttpClientFactory httpClientFactory,
             IPdfSignatureService pdfSignatureService,
             IApprovalService approvalService,
+            IFileStorageService storage,
             IOptions<VnptSmartCaOptions> options,
             ILogger<VnptSmartCaService> logger)
         {
@@ -60,6 +56,7 @@ namespace Application.Services
             _httpClientFactory = httpClientFactory;
             _pdfSignatureService = pdfSignatureService;
             _approvalService = approvalService;
+            _storage = storage;
             _options = options.Value;
             _logger = logger;
         }
@@ -79,21 +76,45 @@ namespace Application.Services
             if (string.IsNullOrWhiteSpace(request.UserId))
                 return ApiResponse.Fail("VNPT SmartCA user id is required.");
 
+            var (certificates, external) = await FetchCertificatesFromVnptAsync(request.UserId, request.SerialNumber);
+            if (certificates == null)
+                return BuildExternalFailResponse(external!);
+
+            return ApiResponse.Success("Certificates retrieved", certificates);
+        }
+
+        /// <summary>
+        /// Goi lai API get_certificate cua VNPT (dung chung logic voi GetCertificatesAsync) de lay
+        /// certificate bytes (DER base64) cua nguoi ky truoc khi chuan bi PDF ky 2 pha. Tra ve null neu
+        /// khong lay duoc DER bytes (fail som, ro rang, thay vi de PDF ky xong roi moi phat hien thieu cert).
+        /// </summary>
+        private async Task<CertificateDto?> FetchSignerCertificateAsync(string userId, string serialNumber)
+        {
+            var (certificates, _) = await FetchCertificatesFromVnptAsync(userId, serialNumber);
+            return certificates?.FirstOrDefault(c =>
+                string.Equals(c.SerialNumber, serialNumber, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(c.CertificateDataBase64))
+                ?? certificates?.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c.CertificateDataBase64));
+        }
+
+        private async Task<(IReadOnlyCollection<CertificateDto>? Certificates, ExternalSmartCaResponse? External)> FetchCertificatesFromVnptAsync(
+            string userId,
+            string? serialNumber)
+        {
             var payload = new
             {
                 sp_id = _options.SpId,
                 sp_password = _options.SpPassword,
-                user_id = request.UserId,
-                serial_number = request.SerialNumber,
+                user_id = userId,
+                serial_number = serialNumber,
                 transaction_id = GenerateSmartCaTransactionId()
             };
 
             var external = await PostJsonAsync(GetCertificatePath, payload);
             if (!external.IsBusinessSuccess)
-                return BuildExternalFailResponse(external);
+                return (null, external);
 
-            var certificates = ParseCertificates(external.RawResponse);
-            return ApiResponse.Success("Certificates retrieved", certificates);
+            return (ParseCertificates(external.RawResponse), null);
         }
 
         /// <summary>
@@ -114,19 +135,59 @@ namespace Application.Services
                 return ApiResponse.Fail("UserId and certificate serial are required.");
             }
 
-            var hasPendingTransaction = (await _unitOfWork.Repository<ApprovalSignatureTransaction>().FindAsync(
+            var pendingTransactions = (await _unitOfWork.Repository<ApprovalSignatureTransaction>().FindAsync(
                     t => t.ApprovalRequestId == approvalId
                          && t.SignedBy == currentUserId
                          && t.Status == SignatureTransactionStatus.WaitingConfirm))
-                .Any();
-            if (hasPendingTransaction)
+                .ToList();
+            var staleCutoff = DateTime.UtcNow - WaitingConfirmTimeout;
+            var stillPending = false;
+            foreach (var pending in pendingTransactions)
+            {
+                if (pending.CreatedAt <= staleCutoff)
+                {
+                    pending.Status = SignatureTransactionStatus.Expired;
+                    pending.UpdatedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    stillPending = true;
+                }
+            }
+            if (pendingTransactions.Any(t => t.Status == SignatureTransactionStatus.Expired))
+                await _unitOfWork.CommitAsync();
+            if (stillPending)
                 return ApiResponse.Fail("A signing transaction is already waiting for confirmation.");
 
             var context = validation.Context!;
             var transactionId = GenerateSmartCaTransactionId();
-            var dataToBeSigned = ComputeDataToBeSigned(context.FileItem, context.ApprovalRequest, transactionId);
             var fileType = Path.GetExtension(context.FileItem.Name).TrimStart('.').ToLowerInvariant();
             if (string.IsNullOrWhiteSpace(fileType)) fileType = "pdf";
+
+            var signerCertificate = await FetchSignerCertificateAsync(request.UserId, request.CertificateSerial);
+            if (signerCertificate == null || string.IsNullOrWhiteSpace(signerCertificate.CertificateDataBase64))
+            {
+                return ApiResponse.Fail(
+                    "Could not retrieve signer certificate data from VNPT SmartCA (required to embed a real digital signature).");
+            }
+            var signerCertDer = Convert.FromBase64String(signerCertificate.CertificateDataBase64);
+
+            PdfExternalSignatureHelper.PreparedSignature prepared;
+            try
+            {
+                prepared = await _pdfSignatureService.PrepareSignatureAsync(
+                    approvalId, currentUserId, request.CertificateSerial, signerCertDer, transactionId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to prepare PDF for external signature (approval {ApprovalId})", approvalId);
+                return ApiResponse.Fail($"Failed to prepare file for signing: {ex.Message}");
+            }
+
+            using var preparedStream = new MemoryStream(prepared.PreparedPdfBytes);
+            var storedPrepared = await _storage.SaveAsync(preparedStream, context.Folder.ProjectId, context.FileItem.FolderId, ".pdf");
+
+            var dataToBeSigned = Convert.ToHexString(prepared.HashToSign).ToLowerInvariant();
 
             var payload = new
             {
@@ -165,7 +226,12 @@ namespace Application.Services
                 CreatedAt = now,
                 UpdatedAt = now,
                 RawRequest = external.SafeRawRequest,
-                RawResponse = external.RawResponse
+                RawResponse = external.RawResponse,
+                PreparedPdfStoragePath = storedPrepared.RelativePath,
+                DigestBase64 = Convert.ToBase64String(prepared.DocumentDigest),
+                SignedAttributesBase64 = Convert.ToBase64String(prepared.SignedAttributes),
+                SignerCertificateBase64 = Convert.ToBase64String(signerCertDer),
+                HashAlgorithm = "SHA-256"
             };
 
             await _unitOfWork.Repository<ApprovalSignatureTransaction>().CreateAsync(transaction);
@@ -213,6 +279,8 @@ namespace Application.Services
             transaction.UpdatedAt = now;
 
             var signatureValue = ExtractSignatureValue(external.RawResponse);
+            if (!string.IsNullOrWhiteSpace(signatureValue))
+                transaction.SignatureValueBase64 = signatureValue;
             var newStatus = signatureValue != null
                 ? SignatureTransactionStatus.Signed
                 : ExtractStatus(external.RawResponse);
@@ -430,7 +498,7 @@ namespace Application.Services
             if (!fileItem.CurrentVersionId.HasValue)
                 return false;
 
-            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value);
+            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value);
             var format = (version?.Format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
             return format is "doc" or "docx" or "xls" or "xlsx" or "dwg" or "dwgx";
         }
@@ -584,19 +652,6 @@ namespace Application.Services
             return client;
         }
 
-        /// <summary>
-        /// Tao hash dai dien noi dung can ky tu thong tin file, approval va transaction.
-        /// </summary>
-        private static string ComputeDataToBeSigned(
-            FileItem fileItem,
-            ApprovalRequest approvalRequest,
-            string transactionId)
-        {
-            var raw = $"{fileItem.Id}{fileItem.Name}{approvalRequest.Id}{transactionId}";
-            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
-            return Convert.ToHexString(hash).ToLowerInvariant();
-        }
-
         private static string GenerateSmartCaTransactionId()
             => $"SP_CA_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
 
@@ -667,8 +722,40 @@ namespace Application.Services
                 Issuer = GetString(element, "issuer", "Issuer", "issuerDN", "issuer_dn"),
                 ValidFrom = GetDateTime(element, "cert_valid_from", "validFrom", "ValidFrom", "valid_from", "notBefore", "not_before"),
                 ValidTo = GetDateTime(element, "cert_valid_to", "validTo", "ValidTo", "valid_to", "notAfter", "not_after"),
-                Status = GetString(element, "cert_status_code", "cert_status", "status", "Status")
+                Status = GetString(element, "cert_status_code", "cert_status", "status", "Status"),
+                CertificateDataBase64 = GetString(
+                    element,
+                    "cert_data",
+                    "certData",
+                    "certificate",
+                    "certificate_data",
+                    "cert_value",
+                    "certValue",
+                    "x509_certificate",
+                    "x509Certificate",
+                    "signing_certificate",
+                    "user_certificate"),
+                ChainCertificateDataBase64 = GetStringArray(element, "cert_chain", "certChain", "chain", "ca_chain", "caChain")
             };
+
+        /// <summary>Lay mang chuoi tu 1 trong cac ten field co the co (VNPT co the tra chain duoi dang array).</summary>
+        private static IReadOnlyList<string>? GetStringArray(JsonElement element, params string[] names)
+        {
+            if (!TryFindProperty(element, out var value, names) || value.ValueKind != JsonValueKind.Array)
+                return null;
+
+            var result = new List<string>();
+            foreach (var item in value.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String)
+                {
+                    var text = item.GetString();
+                    if (!string.IsNullOrWhiteSpace(text))
+                        result.Add(text);
+                }
+            }
+            return result.Count > 0 ? result : null;
+        }
 
         /// <summary>
         /// Xac dinh thanh cong nghiep vu tu body VNPT, khong chi dua vao HTTP status.
@@ -728,16 +815,33 @@ namespace Application.Services
 
                     if (statusElement.ValueKind == JsonValueKind.String)
                     {
-                        return Normalize(statusElement.GetString()) switch
+                        var fromStatus = Normalize(statusElement.GetString()) switch
                         {
                             "created" => SignatureTransactionStatus.Created,
                             "waitingconfirm" or "waiting" or "pending" => SignatureTransactionStatus.WaitingConfirm,
                             "signed" or "success" or "completed" => SignatureTransactionStatus.Signed,
                             "failed" or "fail" or "error" or "rejected" => SignatureTransactionStatus.Failed,
                             "expired" => SignatureTransactionStatus.Expired,
-                            _ => null
+                            _ => (SignatureTransactionStatus?)null
                         };
+                        if (fromStatus != null)
+                            return fromStatus;
                     }
+                }
+
+                // VNPT bao nguoi ky tu choi tren dien thoai qua field "message" (vd {"message":"REJECTED"}),
+                // KHONG co field "status" rieng trong truong hop nay -> phai kiem tra ca message.
+                if (TryFindProperty(root, out var messageElement, "message", "Message")
+                    && messageElement.ValueKind == JsonValueKind.String)
+                {
+                    var rejected = Normalize(messageElement.GetString()) switch
+                    {
+                        "rejected" or "reject" or "denied" or "deny" or "declined" or "decline"
+                            or "cancelled" or "canceled" or "cancel" or "usercancelled" or "userrejected" => SignatureTransactionStatus.Failed,
+                        _ => (SignatureTransactionStatus?)null
+                    };
+                    if (rejected != null)
+                        return rejected;
                 }
             }
             catch (JsonException)
@@ -978,9 +1082,6 @@ namespace Application.Services
                 SignedAt = transaction.SignedAt,
                 Status = transaction.Status
             };
-
-        // Cac kieu duoi day chi la implementation detail noi bo cua service nay (khong bao gio serialize
-        // tra ve API) -> khong thuoc ve DTOs/ResponseDTOs (noi chi danh cho hop dong API thuc su).
 
         /// <summary>Ngu canh da xac thuc cua 1 thao tac ky SmartCA: approval/file/folder/signer lien quan.</summary>
         private sealed record SigningContext(

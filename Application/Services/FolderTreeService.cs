@@ -3,6 +3,7 @@ using Application.DTOs.ResponseDTOs.Folder;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
+using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using Domain.Entities;
 using Domain.Enum.Cde;
@@ -12,11 +13,13 @@ namespace Application.Services
     public class FolderTreeService : IFolderTreeService
     {
         private readonly IFolderTreeRepository _folderTreeRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
 
-        public FolderTreeService(IFolderTreeRepository folderTreeRepository, IMapper mapper)
+        public FolderTreeService(IFolderTreeRepository folderTreeRepository, IUnitOfWork unitOfWork, IMapper mapper)
         {
             _folderTreeRepository = folderTreeRepository;
+            _unitOfWork = unitOfWork;
             _mapper = mapper;
         }
 
@@ -110,7 +113,7 @@ namespace Application.Services
             }
 
             var files = await _folderTreeRepository.GetFilesByFolderIdAsync(folderId);
-            return _mapper.Map<List<FileItemResponseDTO>>(files);
+            return await EnrichWithVersionInfoAsync(_mapper.Map<List<FileItemResponseDTO>>(files));
         }
 
         // get folder contents (subfolders + files) for a given folder, with permission checks
@@ -159,8 +162,50 @@ namespace Application.Services
             {
                 Id = folderId,
                 Subfolders = subfolders,
-                Files = _mapper.Map<List<FileItemResponseDTO>>(files)
+                Files = await EnrichWithVersionInfoAsync(_mapper.Map<List<FileItemResponseDTO>>(files))
             };
+        }
+
+        // Gộp thông tin version hiện hành (DisplayVersion "P01.02"/"C01") + email người upload
+        // vào danh sách file — batch 2 query, không query từng file.
+        private async Task<List<FileItemResponseDTO>> EnrichWithVersionInfoAsync(List<FileItemResponseDTO> files)
+        {
+            var versionIds = files
+                .Where(f => f.CurrentVersionId.HasValue)
+                .Select(f => f.CurrentVersionId!.Value)
+                .Distinct()
+                .ToList();
+            if (versionIds.Count == 0) return files;
+
+            var versionsById = (await _unitOfWork.Repository<FileVersionState>()
+                    .FindAsync(v => versionIds.Contains(v.Id)))
+                .ToDictionary(v => v.Id);
+
+            var uploaderIds = versionsById.Values
+                .Where(v => v.UploadedByAccountId.HasValue)
+                .Select(v => v.UploadedByAccountId!.Value)
+                .Distinct()
+                .ToList();
+            var emailsByAccountId = uploaderIds.Count == 0
+                ? new Dictionary<Guid, string>()
+                : (await _unitOfWork.Repository<Account>().FindAsync(a => uploaderIds.Contains(a.Id)))
+                    .ToDictionary(a => a.Id, a => a.Email);
+
+            foreach (var file in files)
+            {
+                if (!file.CurrentVersionId.HasValue
+                    || !versionsById.TryGetValue(file.CurrentVersionId.Value, out var version))
+                    continue;
+
+                file.DisplayVersion = version.DisplayVersion;
+                file.FileSizeBytes = version.FileSizeBytes;
+                file.UploaderEmail = version.UploadedByAccountId.HasValue
+                    && emailsByAccountId.TryGetValue(version.UploadedByAccountId.Value, out var email)
+                    ? email
+                    : null;
+            }
+
+            return files;
         }
 
         // Tìm tổ tiên gần nhất còn hiển thị của folder (đi ngược ParentFolderId trên toàn bộ

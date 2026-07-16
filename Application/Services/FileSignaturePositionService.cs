@@ -51,7 +51,7 @@ namespace Application.Services
                 throw new ApiExceptionResponse("Only PDF, Word, Excel and 2D CAD (DWG/DWGX) files support visual signature.", 400);
 
             var (pageCount, _, pageWidth, pageHeight) = isPdf
-                ? await ReadPdfPageInfoAsync(version.StoragePath, dto.PageNumber)
+                ? await ReadPdfPageInfoAsync(version.StoragePath!, dto.PageNumber)
                 : await ReadOfficePreviewPageInfoAsync(fileItem, version, dto.PageNumber);
 
             if (dto.PageNumber < 1 || dto.PageNumber > pageCount)
@@ -115,13 +115,13 @@ namespace Application.Services
                 throw new ApiExceptionResponse("Only PDF, Word, Excel and 2D CAD (DWG/DWGX) files support visual signature.", 400);
 
             var (pageCount, resolvedPageNumber, pageWidth, pageHeight) = isPdf
-                ? await ReadPdfPageInfoAsync(version.StoragePath, pageNumber)
+                ? await ReadPdfPageInfoAsync(version.StoragePath!, pageNumber)
                 : await ReadOfficePreviewPageInfoAsync(fileItem, version, pageNumber);
 
             var previewUrl = !string.IsNullOrWhiteSpace(version.PreviewStoragePath)
                 ? await _storage.GetPresignedUrlAsync(version.PreviewStoragePath, 60)
                 : isPdf
-                    ? await _storage.GetPresignedUrlAsync(version.StoragePath, 60)
+                    ? await _storage.GetPresignedUrlAsync(version.StoragePath!, 60)
                     : null;
 
             return new PdfPageInfoResponseDTO
@@ -135,12 +135,12 @@ namespace Application.Services
             };
         }
 
-        private async Task<FileVersion> GetCurrentVersionAsync(FileItem fileItem)
+        private async Task<FileVersionState> GetCurrentVersionAsync(FileItem fileItem)
         {
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
 
-            return await _unitOfWork.Repository<FileVersion>().GetByIdAsync(fileItem.CurrentVersionId.Value)
+            return await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
         }
 
@@ -160,7 +160,7 @@ namespace Application.Services
             return (pageCount, targetPage, size.GetWidth(), size.GetHeight());
         }
 
-        private async Task<(int PageCount, int PageNumber, float PageWidth, float PageHeight)> ReadOfficePreviewPageInfoAsync(FileItem fileItem, FileVersion version, int pageNumber)
+        private async Task<(int PageCount, int PageNumber, float PageWidth, float PageHeight)> ReadOfficePreviewPageInfoAsync(FileItem fileItem, FileVersionState version, int pageNumber)
         {
             Stream pdfStream;
             if (!string.IsNullOrWhiteSpace(version.PreviewStoragePath))
@@ -175,7 +175,7 @@ namespace Application.Services
                 // (2) luc stamp thuc su dung LAI dung ban PDF nay thay vi goi ConvertAPI lan nua (co the
                 // ra ket qua khac nhau giua 2 lan goi, gay lech vi tri chu ky).
                 var ext = "." + (version.Format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
-                await using var source = await _storage.OpenReadAsync(version.StoragePath);
+                await using var source = await _storage.OpenReadAsync(version.StoragePath!);
                 await using var converted = await _cadConverter.ConvertToPdfAsync(source, ext);
 
                 var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
@@ -189,7 +189,7 @@ namespace Application.Services
             else
             {
                 var ext = "." + (version.Format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
-                await using var source = await _storage.OpenReadAsync(version.StoragePath);
+                await using var source = await _storage.OpenReadAsync(version.StoragePath!);
                 pdfStream = await _officeConverter.ConvertToPdfAsync(source, ext);
             }
 

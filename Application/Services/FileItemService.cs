@@ -17,6 +17,7 @@ namespace Application.Services
         private readonly IFolderPermissionService _permission;
         private readonly IFileZoneResolverService _zoneResolver;
         private readonly IIssueService _issueService;
+        private readonly IFileVersionService _fileVersionService;
         private readonly IMapper _mapper;
 
         public FileItemService(
@@ -24,12 +25,14 @@ namespace Application.Services
             IFolderPermissionService permission,
             IFileZoneResolverService zoneResolver,
             IIssueService issueService,
+            IFileVersionService fileVersionService,
             IMapper mapper)
         {
             _unitOfWork = unitOfWork;
             _permission = permission;
             _zoneResolver = zoneResolver;
             _issueService = issueService;
+            _fileVersionService = fileVersionService;
             _mapper = mapper;
         }
 
@@ -105,6 +108,18 @@ namespace Application.Services
             fileItem.FolderId = targetFolder.Id;
             fileItem.UpdatedAt = now;
 
+            // Versioning: quay về WIP từ tài liệu đã publish (C{rev}) -> P{WorkingRevision}.01,
+            // PublishedRevision bảo toàn. Shared -> WIP hay Published -> Archived: version giữ nguyên.
+            if (targetZone == CdeArea.Wip && fileItem.CurrentVersionId.HasValue)
+            {
+                var currentVersion = await _fileVersionService.GetCurrentVersionAsync(fileItem.Id);
+                if (currentVersion?.Stage == VersionStage.Published)
+                {
+                    var result = await _fileVersionService.GetReturnToWipVersionAsync(fileItem.Id);
+                    fileItem.CurrentVersionId = result.VersionStateId;
+                }
+            }
+
             await _unitOfWork.CommitAsync();
 
             return new TransferZoneResponseDTO
@@ -129,7 +144,7 @@ namespace Application.Services
             if (files.Count == 0) return Enumerable.Empty<FileListItemDTO>();
 
             var fileIds = files.Select(f => f.Id).ToList();
-            var versionsById = (await _unitOfWork.Repository<FileVersion>()
+            var versionsById = (await _unitOfWork.Repository<FileVersionState>()
                     .FindAsync(v => fileIds.Contains(v.FileItemId)))
                 .ToDictionary(v => v.Id);
             var accounts = (await _unitOfWork.Repository<Account>().GetAllAsync())
@@ -144,7 +159,7 @@ namespace Application.Services
 
             return files.Select(f =>
             {
-                FileVersion? cur = f.CurrentVersionId.HasValue && versionsById.TryGetValue(f.CurrentVersionId.Value, out var v) ? v : null;
+                FileVersionState? cur = f.CurrentVersionId.HasValue && versionsById.TryGetValue(f.CurrentVersionId.Value, out var v) ? v : null;
                 var returnRequest = ResolveVisibleReturnRequest(f, returnRequestsByFileId);
                 return new FileListItemDTO
                 {
@@ -156,7 +171,8 @@ namespace Application.Services
                     ReturnRequestStatus = returnRequest?.Status,
                     ReturnTargetZone = returnRequest == null ? null : _zoneResolver.FormatZone(returnRequest.TargetZone),
                     CurrentVersionId = f.CurrentVersionId,
-                    CurrentVersionNumber = cur?.VersionNumber ?? 0,
+                    CurrentVersionNumber = cur?.WorkingVersion ?? 0,
+                    DisplayVersion = cur?.DisplayVersion,
                     SizeBytes = cur?.FileSizeBytes ?? 0,
                     Format = cur?.Format,
                     CreatedByAccountId = f.CreatedByAccountId,
@@ -181,26 +197,6 @@ namespace Application.Services
                 request.Status == ZoneReturnRequestStatus.Pending
                 || !fileItem.UpdatedAt.HasValue
                 || (request.DecidedAt ?? request.CreatedAt) >= fileItem.UpdatedAt.Value);
-        }
-
-        public async Task<IEnumerable<FileVersionResponseDTO>> GetVersionsAsync(Guid fileItemId, Guid actorId)
-        {
-            var file = await GetFileItemAsync(fileItemId);
-            //await _permission.RequireAsync(actorId, file.FolderId, FolderAction.View);
-
-            var accounts = (await _unitOfWork.Repository<Account>().GetAllAsync())
-                .ToDictionary(a => a.Id);
-
-            return (await _unitOfWork.Repository<FileVersion>()
-                    .FindAsync(v => v.FileItemId == fileItemId))
-                .OrderByDescending(v => v.VersionNumber)
-                .Select(v =>
-                {
-                    var dto = _mapper.Map<FileVersionResponseDTO>(v);
-                    dto.UploadedByName = v.UploadedByAccountId.HasValue && accounts.TryGetValue(v.UploadedByAccountId.Value, out var a) ? a.UserName : null;
-                    return dto;
-                })
-                .ToList();
         }
 
         private async Task<FileItem> GetFileItemAsync(Guid fileItemId)

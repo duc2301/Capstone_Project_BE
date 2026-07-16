@@ -5,6 +5,8 @@ namespace Application.DTOs.ResponseDTOs.FileItem
         public Guid Id { get; set; }
         public Guid FileItemId { get; set; }
         public int VersionNumber { get; set; }
+        // Chuỗi version theo hệ mới, vd "P01.02" / "C01" (null với dữ liệu từ hệ cũ)
+        public string? DisplayVersion { get; set; }
         public string StoragePath { get; set; } = null!;
         public long FileSizeBytes { get; set; }
         public string Format { get; set; } = null!;

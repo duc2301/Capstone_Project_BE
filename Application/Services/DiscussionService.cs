@@ -159,7 +159,7 @@ namespace Application.Services
                 {
                     if (!a.FileVersionId.HasValue)
                         throw new ApiExceptionResponse("FileVersionId is required for File attachment.", 400);
-                    _ = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(a.FileVersionId.Value)
+                    _ = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(a.FileVersionId.Value)
                         ?? throw new ApiExceptionResponse("File version not found.", 404);
                 }
                 else if (a.Type == MessageAttachmentType.CitedFolder)

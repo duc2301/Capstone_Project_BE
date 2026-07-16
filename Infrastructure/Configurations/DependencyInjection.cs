@@ -59,6 +59,9 @@ namespace Infrastructure.Configurations
             else
                 services.AddSingleton<IFileStorageService, LocalFileStorageService>();
             services.AddScoped<IFileUploadService, FileUploadService>();
+            // File Versioning: tính P{Rev}.{Ver} / C{PubRev} tập trung 1 chỗ — Upload/Publish chỉ gọi vào
+            // (FileVersionRepository truy cập qua IUnitOfWork.FileVersionRepository, giống FolderPermission)
+            services.AddScoped<IFileVersionService, FileVersionService>();
             // Naming convention: cấu hình quy ước đặt tên file + sinh tên khi upload
             services.AddScoped<INamingConventionService, NamingConventionService>();
             services.AddSingleton<IOfficeToPdfConverter, SyncfusionOfficeToPdfConverter>();

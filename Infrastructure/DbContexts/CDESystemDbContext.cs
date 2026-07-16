@@ -40,7 +40,6 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<Folder> Folders { get; set; }
         public virtual DbSet<FolderPermission> FolderPermissions { get; set; }
         public virtual DbSet<FileItem> FileItems { get; set; }
-        public virtual DbSet<FileVersion> FileVersions { get; set; }
         public virtual DbSet<MarkupSet> MarkupSets { get; set; }
         public virtual DbSet<FileNote> FileNotes { get; set; }
         public virtual DbSet<FilePermission> FilePermissions { get; set; }
@@ -86,6 +85,9 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<FileNamingMetadata> FileNamingMetadata { get; set; }
         
         public virtual DbSet<FileRelation> FileRelations { get; set; }
+
+        // --- File Versioning (trạng thái version hiện hành của tài liệu) ---
+        public virtual DbSet<FileVersionState> FileVersionStates { get; set; }
 
         public virtual DbSet<LoiRequirement> LoiRequirements { get; set; }
         public virtual DbSet<LoiFieldAlias> LoiFieldAliases { get; set; }
@@ -459,6 +461,24 @@ namespace Infrastructure.DbContexts
             {
                 b.HasIndex(x => x.AliasNormalized);
                 b.HasIndex(x => new { x.FieldNameNormalized, x.AliasNormalized }).IsUnique();
+            });
+
+            // Lịch sử versioning: nhiều dòng / FileItem (append-only), mỗi dòng snapshot 1 version.
+            // WithMany() rỗng để không phải thêm navigation vào FileItem (không đụng entity cũ).
+            modelBuilder.Entity<FileVersionState>(b =>
+            {
+                // Tra cứu trạng thái hiện hành / duyệt lịch sử theo tài liệu
+                b.HasIndex(x => new { x.FileItemId, x.IsCurrent });
+
+                // Ràng buộc toàn vẹn: mỗi FileItem chỉ có đúng 1 dòng IsCurrent = true (partial unique index)
+                b.HasIndex(x => x.FileItemId)
+                    .IsUnique()
+                    .HasFilter("\"IsCurrent\" = TRUE");
+
+                b.HasOne(x => x.FileItem)
+                    .WithMany()
+                    .HasForeignKey(x => x.FileItemId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
         }
     }

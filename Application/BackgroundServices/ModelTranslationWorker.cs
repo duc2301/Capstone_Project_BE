@@ -52,9 +52,11 @@ namespace Application.BackgroundServices
                 using var scope = _scopeFactory.CreateScope();
                 var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
-                var unfinished = (await uow.Repository<FileVersion>()
-                    .FindAsync(v => v.ViewerStatus == ModelViewerStatus.Pending
-                                 || v.ViewerStatus == ModelViewerStatus.Processing)).ToList();
+                // Chỉ quét dòng version hiện hành — dòng lịch sử không cần dịch lại.
+                var unfinished = (await uow.Repository<FileVersionState>()
+                    .FindAsync(v => v.IsCurrent
+                                && (v.ViewerStatus == ModelViewerStatus.Pending
+                                 || v.ViewerStatus == ModelViewerStatus.Processing))).ToList();
 
                 foreach (var v in unfinished)
                 {
@@ -81,13 +83,13 @@ namespace Application.BackgroundServices
             var viewer = scope.ServiceProvider.GetRequiredService<IViewerService>();
             var storage = scope.ServiceProvider.GetRequiredService<IFileStorageService>();
 
-            FileVersion? version = null;
+            FileVersionState? version = null;
             try
             {
-                version = await uow.Repository<FileVersion>().GetByIdAsync(fileVersionId);
+                version = await uow.Repository<FileVersionState>().GetByIdAsync(fileVersionId);
                 if (version == null)
                 {
-                    _logger.LogWarning("Model translation skipped: FileVersion {Id} not found.", fileVersionId);
+                    _logger.LogWarning("Model translation skipped: FileVersionState {Id} not found.", fileVersionId);
                     return;
                 }
 
@@ -105,9 +107,9 @@ namespace Application.BackgroundServices
                 var fileName = $"{baseName}.{version.Format}";
 
                 string urn;
-                await using (var stream = await storage.OpenReadAsync(version.StoragePath, ct))
+                await using (var stream = await storage.OpenReadAsync(version.StoragePath!, ct))
                 {
-                    var translated = await viewer.UploadAndTranslateAsync(stream, fileName, version.FileSizeBytes, ct);
+                    var translated = await viewer.UploadAndTranslateAsync(stream, fileName, version.FileSizeBytes ?? 0, ct);
                     urn = translated.Urn;
                 }
 
@@ -139,7 +141,7 @@ namespace Application.BackgroundServices
         }
 
         private static async Task PollUntilDoneAsync(
-            IUnitOfWork uow, IViewerService viewer, FileVersion version, string urn, CancellationToken ct)
+            IUnitOfWork uow, IViewerService viewer, FileVersionState version, string urn, CancellationToken ct)
         {
             while (!ct.IsCancellationRequested)
             {
