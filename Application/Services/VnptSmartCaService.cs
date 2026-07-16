@@ -35,6 +35,8 @@ namespace Application.Services
         private readonly IPdfSignatureService _pdfSignatureService;
         private readonly IApprovalService _approvalService;
         private readonly IFileStorageService _storage;
+        private readonly INotificationService _notification;
+        private readonly IApprovalRealtimeNotifier _approvalRealtime;
         private readonly VnptSmartCaOptions _options;
         private readonly ILogger<VnptSmartCaService> _logger;
 
@@ -49,6 +51,8 @@ namespace Application.Services
             IPdfSignatureService pdfSignatureService,
             IApprovalService approvalService,
             IFileStorageService storage,
+            INotificationService notification,
+            IApprovalRealtimeNotifier approvalRealtime,
             IOptions<VnptSmartCaOptions> options,
             ILogger<VnptSmartCaService> logger)
         {
@@ -57,6 +61,8 @@ namespace Application.Services
             _pdfSignatureService = pdfSignatureService;
             _approvalService = approvalService;
             _storage = storage;
+            _notification = notification;
+            _approvalRealtime = approvalRealtime;
             _options = options.Value;
             _logger = logger;
         }
@@ -326,6 +332,7 @@ namespace Application.Services
                 else
                 {
                     message = "Signer signed successfully. Waiting for remaining required signers.";
+                    await NotifyRemainingSignersAsync(approvalId, validation.Context!.ApprovalRequest, validation.Context.FileItem);
                 }
             }
             else if (transaction.Status == SignatureTransactionStatus.Signed
@@ -439,6 +446,52 @@ namespace Application.Services
                 .ToHashSet();
 
             return signers.FirstOrDefault(s => s.SignerGroupId.HasValue && activeGroupIds.Contains(s.SignerGroupId.Value));
+        }
+
+        /// <summary>
+        /// Bao cho cac signer con lai (chua ky) rang toi luot ho - ap dung khi approval can nhieu nguoi
+        /// ky (explicit signer) va 1 nguoi vua ky xong nhung chua du. Voi signer dang group (khong chi
+        /// dinh tai khoan cu the), bao cho toan bo active member cua group do (ai trong group cung ky
+        /// duoc, giong dung co che ResolveSignerAsync).
+        /// </summary>
+        private async Task NotifyRemainingSignersAsync(Guid approvalId, ApprovalRequest approval, FileItem fileItem)
+        {
+            var snapshot = await _approvalService.GetSnapshotAsync(approvalId);
+            var stakeholderIds = await _approvalService.GetStakeholderAccountIdsAsync(approvalId);
+            foreach (var accId in stakeholderIds)
+                await _approvalRealtime.ApprovalChangedAsync(accId, snapshot);
+
+            var pendingSigners = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
+                    s => s.ApprovalRequestId == approval.Id && s.Status != ApprovalRequestSignerStatus.Signed))
+                .ToList();
+            if (pendingSigners.Count == 0)
+                return;
+
+            var accountIds = pendingSigners
+                .Where(s => s.SignerAccountId.HasValue)
+                .Select(s => s.SignerAccountId!.Value)
+                .ToHashSet();
+
+            var pendingGroupIds = pendingSigners
+                .Where(s => s.SignerGroupId.HasValue)
+                .Select(s => s.SignerGroupId!.Value)
+                .ToHashSet();
+            if (pendingGroupIds.Count > 0)
+            {
+                var groupMemberIds = (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                        m => pendingGroupIds.Contains(m.GroupId) && m.Status == GroupMemberStatus.Active))
+                    .Select(m => m.AccountId);
+                accountIds.UnionWith(groupMemberIds);
+            }
+
+            if (accountIds.Count == 0)
+                return;
+
+            await _notification.NotifyManyAsync(
+                accountIds,
+                $"\"{fileItem.Name}\" đang chờ bạn ký số.",
+                linkType: "Approval",
+                linkId: approvalId.ToString());
         }
 
         private async Task<bool> AreRequiredSignersCompleteAsync(ApprovalRequest approval)
