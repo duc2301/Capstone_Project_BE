@@ -37,6 +37,10 @@ namespace Infrastructure.UnitOfWorks
         public INamingConventionRepository NamingConventionRepository =>
             _namingConventionRepository ??= new NamingConventionRepository(_context);
 
+        private IFileVersionRepository? _fileVersionRepository;
+        public IFileVersionRepository FileVersionRepository =>
+            _fileVersionRepository ??= new FileVersionRepository(_context);
+
         private IDocumentSearchRepository? _documentSearchRepository;
         public IDocumentSearchRepository DocumentSearchRepository =>
             _documentSearchRepository ??= new DocumentSearchRepository(_context);

@@ -24,11 +24,11 @@ namespace Application.Services
             var item = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId);
             if (item == null || item.CurrentVersionId is null) return null;
 
-            var version = await _unitOfWork.Repository<FileVersion>().GetByIdAsync(item.CurrentVersionId);
-            if (version == null) return null;
+            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(item.CurrentVersionId);
+            if (version == null || version.StoragePath == null) return null;
 
             await using var stream = await _storage.OpenReadAsync(version.StoragePath, ct);
-            var text = await _extractor.ExtractTextAsync(stream, version.Format, ct);
+            var text = await _extractor.ExtractTextAsync(stream, version.Format!, ct);
             text = SanitizeText(text);
 
             return new ExtractedFile(item, version, text);

@@ -16,7 +16,8 @@ namespace Domain.Entities
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
         public FileItem FileItem { get; set; } = null!;
-        public FileVersion FileVersion { get; set; } = null!;
+        // FK trỏ sang FileVersionStates (hệ versioning mới) — FileVersions cũ đang được gỡ bỏ
+        public FileVersionState FileVersion { get; set; } = null!;
         public ICollection<FileNote> Notes { get; set; } = new List<FileNote>();
     }
 }
