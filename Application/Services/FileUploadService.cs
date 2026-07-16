@@ -161,15 +161,16 @@ namespace Application.Services
             // Đã validate scope từ đầu flow (trước khi lưu file) nên tới đây chỉ tạo row, commit chung ở dưới.
             await StageRelatedFileLinksAsync(fileItem.Id, folder, dto, actor, isSystemAdmin);
 
-            // Cổng kiểm LOI (advisory): file .ifc -> tạo bản ghi Pending để FE hiện "đang kiểm".
-            if (dto.FileType == FileType.Ifc)
-                await _unitOfWork.Repository<FileVersionLoiCheck>().CreateAsync(NewLoiPending(version.VersionStateId!.Value, now));
+            // [TẠM TẮT] Cổng kiểm LOI (advisory) — chức năng chưa hoàn thiện. Mở lại cả khối này khi xong.
+            // if (dto.FileType == FileType.Ifc)
+            //     await _unitOfWork.Repository<FileVersionLoiCheck>().CreateAsync(NewLoiPending(version.VersionStateId!.Value, now));
             await _unitOfWork.CommitAsync();
 
             if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
                 _translationQueue.Enqueue(version.VersionStateId!.Value);
-            if (dto.FileType == FileType.Ifc)
-                _loiCheckQueue.Enqueue(version.VersionStateId!.Value);
+            // [TẠM TẮT] LOI check queue — mở lại khi chức năng hoàn thiện.
+            // if (dto.FileType == FileType.Ifc)
+            //     _loiCheckQueue.Enqueue(version.VersionStateId!.Value);
             _nameMatchContentBackgroundService.Enqueue(fileItem.Id);
 
             return new FileUploadResultDTO
