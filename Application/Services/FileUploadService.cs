@@ -2,6 +2,7 @@ using Application.DTOs.RequestDTOs.FileItem;
 using Application.DTOs.RequestDTOs.FileVersion;
 using Application.DTOs.ResponseDTOs.FileItem;
 using Application.DTOs.ResponseDTOs.FileVersion;
+using Application.DTOs.ResponseDTOs.NamingConvention;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IBackgroundServices;
 using Application.Interfaces.IServices;
@@ -66,7 +67,9 @@ namespace Application.Services
                 ? Path.GetFileNameWithoutExtension(originalFileName)
                 : dto.Name.Trim();
             var ext = Path.GetExtension(originalFileName);
-            var naming = await _naming.GenerateFileNameAsync(dto.FolderId, dto.NamingSelections, originalFileName, ct);
+            var naming = dto.BypassNamingConvention
+                ? new FileNameGenerationResultDTO { HasNamingConvention = false }
+                : await _naming.GenerateFileNameAsync(dto.FolderId, dto.NamingSelections, originalFileName, ct);
             if (naming.HasNamingConvention)
                 name = naming.FileNameWithoutExtension;
 

@@ -123,14 +123,15 @@ namespace Capstone_Project.Controllers
         [HttpPost("{id:guid}/folders")]
         public async Task<IActionResult> AssignFolders(Guid id, [FromBody] AssignFoldersDTO dto)
         {
-            return Ok(ApiResponse.Success("Folders assigned", await _service.AssignFoldersAsync(id, dto)));
+            return Ok(ApiResponse.Success("Folders assigned",
+                await _service.AssignFoldersAsync(id, dto, User.GetAccountId(), User.GetSystemRole())));
         }
 
         // Gỡ convention khỏi 1 folder (folder upload bình thường trở lại).
         [HttpDelete("folders/{folderId:guid}/assignment")]
         public async Task<IActionResult> UnassignFolder(Guid folderId)
         {
-            await _service.UnassignFolderAsync(folderId);
+            await _service.UnassignFolderAsync(folderId, User.GetAccountId(), User.GetSystemRole());
             return Ok(ApiResponse.Success("Folder unassigned"));
         }
 
@@ -148,7 +149,7 @@ namespace Capstone_Project.Controllers
         {
             return File(_service.GenerateImportTemplate(),
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "naming-convention-template.xlsx");
+                "naming-convention-template_ISO-19650.xlsx");
         }
 
         [HttpPost("import-preview")]
@@ -163,6 +164,13 @@ namespace Capstone_Project.Controllers
 
             using var stream = file.OpenReadStream();
             return Ok(ApiResponse.Success("Parsed successfully", _service.ParseImportFile(stream)));
+        }
+
+        [HttpPost("{id:guid}/clone-for-folder")]
+        public async Task<IActionResult> CloneForFolder(Guid id, [FromBody] CloneForFolderDTO dto)
+        {
+            var result = await _service.CloneForFolderAsync(id, dto.FolderId, User.GetAccountId(), User.GetSystemRole());
+            return Ok(ApiResponse.Success("Convention cloned for folder", result));
         }
     }
 }

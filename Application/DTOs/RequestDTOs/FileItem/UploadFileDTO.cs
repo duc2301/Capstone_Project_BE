@@ -17,5 +17,8 @@ namespace Application.DTOs.RequestDTOs.FileItem
         public string? Name { get; set; }
 
         public string? NamingSelections { get; set; }
+
+        public bool BypassNamingConvention { get; set; }
+
     }
 }
