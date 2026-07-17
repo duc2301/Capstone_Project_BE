@@ -66,7 +66,7 @@ namespace Application.Services
 
             await RequireGroupMemberAsync(actor, teamGroupIds);
             var targetZone = ResolveApprovalTargetZone(dto?.TargetZone, folder.Area);
-            await RequireSignatureRulesForTransitionAsync(dto, folder.Area, targetZone, teamGroupIds);
+            RequireSignatureRulesForTransition(dto, folder.Area, targetZone);
 
             var hasPendingRequest = (await _unitOfWork.Repository<ApprovalRequest>().FindAsync(
                     a => a.FileItemId == fileItem.Id && a.Status == ApprovalRequestStatus.Pending))
@@ -390,16 +390,10 @@ namespace Application.Services
             return parsed;
         }
 
-        /// <summary>
-        /// Shared -> Published bắt buộc ký số với ít nhất 2 signer, trong đó phải có ít nhất 1 signer
-        /// thuộc nhóm khác nhóm của actor — tránh trường hợp actor tự assign chính mình (hoặc chỉ toàn
-        /// người cùng team) rồi tự ký một mình hoàn tất duyệt.
-        /// </summary>
-        private async Task RequireSignatureRulesForTransitionAsync(
+        private static void RequireSignatureRulesForTransition(
             SubmitApprovalRequestDTO? dto,
             CdeArea currentZone,
-            CdeArea targetZone,
-            IReadOnlyCollection<Guid> teamGroupIds)
+            CdeArea targetZone)
         {
             if ((currentZone, targetZone) is not (CdeArea.Shared, CdeArea.Published))
                 return;
@@ -407,27 +401,10 @@ namespace Application.Services
             if (dto?.RequiresSignature != true)
                 throw new ApiExceptionResponse("Shared to Published approval requires digital signature.", 400);
 
-            var signerAccountIds = dto.SignerAccountIds.Where(id => id != Guid.Empty).Distinct().ToList();
-            var signerGroupIds = dto.SignerGroupIds.Where(id => id != Guid.Empty).Distinct().ToList();
-
-            if (signerAccountIds.Count + signerGroupIds.Count < 2)
-                throw new ApiExceptionResponse("Shared to Published approval requires at least 2 signers.", 400);
-
-            var hasOutsideGroupSigner = signerGroupIds.Any(id => !teamGroupIds.Contains(id));
-            if (!hasOutsideGroupSigner && signerAccountIds.Count > 0)
-            {
-                var sameTeamAccountIds = (await _unitOfWork.Repository<GroupMember>().FindAsync(
-                        m => teamGroupIds.Contains(m.GroupId)
-                             && signerAccountIds.Contains(m.AccountId)
-                             && m.Status == GroupMemberStatus.Active))
-                    .Select(m => m.AccountId)
-                    .ToHashSet();
-                hasOutsideGroupSigner = signerAccountIds.Any(id => !sameTeamAccountIds.Contains(id));
-            }
-
-            if (!hasOutsideGroupSigner)
-                throw new ApiExceptionResponse(
-                    "Shared to Published approval requires at least 1 signer from a different team.", 400);
+            var hasSignerAccounts = dto.SignerAccountIds.Any(id => id != Guid.Empty);
+            var hasSignerGroups = dto.SignerGroupIds.Any(id => id != Guid.Empty);
+            if (!hasSignerAccounts && !hasSignerGroups)
+                throw new ApiExceptionResponse("Shared to Published approval requires at least one signer.", 400);
         }
 
         private async Task<IReadOnlyCollection<ApprovalRequestSigner>> BuildApprovalSignersAsync(
