@@ -84,7 +84,7 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<NamingConventionLockedValue> NamingConventionLockedValues { get; set; }
         public virtual DbSet<FileNamingMetadata> FileNamingMetadata { get; set; }
         
-        public virtual DbSet<FileRelation> FileRelations { get; set; }
+        public virtual DbSet<FileLink> FileLinks { get; set; }
 
         // --- File Versioning (trạng thái version hiện hành của tài liệu) ---
         public virtual DbSet<FileVersionState> FileVersionStates { get; set; }
@@ -177,7 +177,27 @@ namespace Infrastructure.DbContexts
                 .IsUnique();
             });
 
-            
+            modelBuilder.Entity<FileLink>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+
+                entity.HasIndex(x => new { x.FileItemId, x.LinkedFileItemId })
+                    .IsUnique();
+
+                entity.HasIndex(x => x.LinkedFileItemId);
+            });
+
+            modelBuilder.Entity<FileLink>()
+                .HasOne(l => l.FileItem)
+                .WithMany()
+                .HasForeignKey(l => l.FileItemId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<FileLink>()
+                .HasOne(l => l.LinkedFileItem)
+                .WithMany()
+                .HasForeignKey(l => l.LinkedFileItemId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<BillItem>()
                 .HasOne(b => b.ParentBillItem)

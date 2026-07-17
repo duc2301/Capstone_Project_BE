@@ -26,5 +26,7 @@ namespace Application.Interfaces.IServices
             IReadOnlyCollection<Guid> teamGroupIds,
             IReadOnlyCollection<Folder> projectFolders,
             string notFoundMessage);
+
+        Folder? ResolveTeamFolder(Folder folder, IReadOnlyCollection<Folder> projectFolders);
     }
 }

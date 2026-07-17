@@ -90,6 +90,9 @@ namespace Application.Services
                 .ToList();
         }
 
+        public Folder? ResolveTeamFolder(Folder folder, IReadOnlyCollection<Folder> projectFolders)
+            => ResolveZoneTeamFolder(folder, projectFolders);
+
         public async Task RequireActiveTeamLeaderAsync(
             Guid actorId,
             IReadOnlyCollection<Guid> teamGroupIds,
