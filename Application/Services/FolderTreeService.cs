@@ -199,6 +199,7 @@ namespace Application.Services
 
                 file.DisplayVersion = version.DisplayVersion;
                 file.FileSizeBytes = version.FileSizeBytes;
+                file.Format = version.Format;
                 file.UploaderEmail = version.UploadedByAccountId.HasValue
                     && emailsByAccountId.TryGetValue(version.UploadedByAccountId.Value, out var email)
                     ? email
