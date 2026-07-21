@@ -4,6 +4,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IBackgroundServices;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
+using Application.Services.Signing;
 using Domain.Entities;
 using Domain.Enum.Cde;
 using Domain.Enum.File;
@@ -66,7 +67,8 @@ namespace Application.Services
 
             await RequireGroupMemberAsync(actor, teamGroupIds);
             var targetZone = ResolveApprovalTargetZone(dto?.TargetZone, folder.Area);
-            RequireSignatureRulesForTransition(dto, folder.Area, targetZone);
+            var isThreeDModelFile = await IsThreeDModelFileAsync(fileItem);
+            RequireSignatureRulesForTransition(dto, folder.Area, targetZone, isThreeDModelFile);
 
             var hasPendingRequest = (await _unitOfWork.Repository<ApprovalRequest>().FindAsync(
                     a => a.FileItemId == fileItem.Id && a.Status == ApprovalRequestStatus.Pending))
@@ -390,11 +392,18 @@ namespace Application.Services
             return parsed;
         }
 
+        // File 3D (IFC hoac CAD 3D nhu rvt/nwc/nwd/dgn) khong co duong ky so truc quan (xem
+        // PdfSignatureService/FileSignaturePositionService/VnptSmartCaService - chi PDF/Word/Excel/CAD 2D
+        // duoc phep ky) nen khong bat buoc ky khi chuyen vung Shared -> Published.
         private static void RequireSignatureRulesForTransition(
             SubmitApprovalRequestDTO? dto,
             CdeArea currentZone,
-            CdeArea targetZone)
+            CdeArea targetZone,
+            bool isThreeDModelFile)
         {
+            if (isThreeDModelFile)
+                return;
+
             if ((currentZone, targetZone) is not (CdeArea.Shared, CdeArea.Published))
                 return;
 
@@ -405,6 +414,19 @@ namespace Application.Services
             var hasSignerGroups = dto.SignerGroupIds.Any(id => id != Guid.Empty);
             if (!hasSignerAccounts && !hasSignerGroups)
                 throw new ApiExceptionResponse("Shared to Published approval requires at least one signer.", 400);
+        }
+
+        private async Task<bool> IsThreeDModelFileAsync(FileItem fileItem)
+        {
+            if (fileItem.FileType == FileType.Ifc)
+                return true;
+            if (fileItem.FileType != FileType.Cad)
+                return false;
+            if (!fileItem.CurrentVersionId.HasValue)
+                return false;
+
+            var currentVersion = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value);
+            return FileSignatureFormatRules.Is3DModelFile(fileItem.FileType, currentVersion?.Format);
         }
 
         private async Task<IReadOnlyCollection<ApprovalRequestSigner>> BuildApprovalSignersAsync(

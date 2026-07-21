@@ -552,8 +552,9 @@ namespace Application.Services
                 return false;
 
             var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value);
-            var format = (version?.Format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
-            return format is "doc" or "docx" or "xls" or "xlsx" or "dwg" or "dwgx";
+            return FileSignatureFormatRules.IsWordFormat(version?.Format)
+                   || FileSignatureFormatRules.IsExcelFormat(version?.Format)
+                   || (fileItem.FileType == FileType.Cad && FileSignatureFormatRules.IsCad2DFormat(version?.Format));
         }
 
         /// <summary>
