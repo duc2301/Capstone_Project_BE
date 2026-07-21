@@ -65,13 +65,18 @@ namespace Application.Services
             var ext = format.StartsWith('.') ? format.ToLowerInvariant() : "." + format.ToLowerInvariant();
             var fileName = $"{fileItem.Name}.{format}";
 
-            return fileItem.FileType switch
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
+                ?? throw new ApiExceptionResponse("File folder not found.", 404);
+
+            var info = fileItem.FileType switch
             {
                 FileType.Ifc or FileType.Cad => await BuildModelAsync(version, fileName, format),
                 FileType.Pdf or FileType.Image => await BuildInlineAsync(version.StoragePath!, ext, fileName, format, ct),
                 FileType.Office => await BuildOfficeAsync(fileItem, version, ext, fileName, format, ct),
                 _ => Download(fileName, format),
             };
+            info.Area = folder.Area;
+            return info;
         }
 
         // ---- Thiết kế (IFC/CAD): dịch APS chạy NỀN (ModelTranslationWorker). /view KHÔNG chặn -> chỉ phản ánh trạng thái.
