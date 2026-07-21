@@ -75,9 +75,9 @@ namespace Application.Services
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
 
             var isPdf = fileItem.FileType == FileType.Pdf;
-            var isWord = IsWordFormat(currentVersion.Format);
-            var isExcel = IsExcelFormat(currentVersion.Format);
-            var isCad2D = fileItem.FileType == FileType.Cad && IsCad2DFormat(currentVersion.Format);
+            var isWord = FileSignatureFormatRules.IsWordFormat(currentVersion.Format);
+            var isExcel = FileSignatureFormatRules.IsExcelFormat(currentVersion.Format);
+            var isCad2D = fileItem.FileType == FileType.Cad && FileSignatureFormatRules.IsCad2DFormat(currentVersion.Format);
             if (!isPdf && !isWord && !isExcel && !isCad2D)
                 throw new ApiExceptionResponse("Only PDF, Word, Excel and 2D CAD (DWG/DWGX) files support visual signature.", 400);
 
@@ -335,7 +335,7 @@ namespace Application.Services
             {
                 Id = signedVersion.Id,
                 FileItemId = fileItem.Id,
-                FileName = $"{fileItem.Name}_signed.{NormalizeSignedFormat(signedVersion.Format)}",
+                FileName = $"{fileItem.Name}_signed.{FileSignatureFormatRules.NormalizeFormat(signedVersion.Format)}",
                 SignedVersionId = signedVersion.Id,
                 VersionNumber = signedVersion.WorkingVersion,
                 StoragePath = signedVersion.StoragePath,
@@ -366,9 +366,9 @@ namespace Application.Services
             {
                 pdfStream = await OpenSeekableReadStreamAsync(currentVersion.PreviewStoragePath);
             }
-            else if (IsCad2DFormat(currentVersion.Format))
+            else if (FileSignatureFormatRules.IsCad2DFormat(currentVersion.Format))
             {
-                var ext = "." + NormalizeSignedFormat(currentVersion.Format);
+                var ext = "." + FileSignatureFormatRules.NormalizeFormat(currentVersion.Format);
                 await using var source = await _storage.OpenReadAsync(currentVersion.StoragePath!);
                 await using var converted = await _cadConverter.ConvertToPdfAsync(source, ext);
                 pdfStream = new MemoryStream();
@@ -377,7 +377,7 @@ namespace Application.Services
             }
             else
             {
-                var ext = "." + NormalizeSignedFormat(currentVersion.Format);
+                var ext = "." + FileSignatureFormatRules.NormalizeFormat(currentVersion.Format);
                 await using var source = await _storage.OpenReadAsync(currentVersion.StoragePath!);
                 await using var converted = await _officeConverter.ConvertToPdfAsync(source, ext);
                 pdfStream = new MemoryStream();
@@ -423,28 +423,12 @@ namespace Application.Services
             return buffer;
         }
 
-        private static bool IsWordFormat(string? format)
-            => NormalizeSignedFormat(format) is "doc" or "docx";
-
-        private static bool IsExcelFormat(string? format)
-            => NormalizeSignedFormat(format) is "xls" or "xlsx";
-
-        // Chi dwg/dwgx - ConvertAPI (dich vu dang dung de convert CAD 2D -> PDF) chi ho tro 2 dinh dang nay.
-        private static bool IsCad2DFormat(string? format)
-            => NormalizeSignedFormat(format) is "dwg" or "dwgx";
-
         // Cac timestamp trong he thong luu UTC (DateTime.UtcNow); Viet Nam khong co DST nen +7h co dinh la du,
         // khong can TimeZoneInfo (tranh phu thuoc ten timezone khac nhau giua Windows/Linux).
         private static DateTime ToVietnamTime(DateTime utc) => utc.AddHours(7);
 
         private static bool IsExplicitSignerApproval(ApprovalRequest approval)
             => approval.FromZone == CdeArea.Shared && approval.TargetZone == CdeArea.Published;
-
-        private static string NormalizeSignedFormat(string? format)
-        {
-            var normalized = (format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
-            return string.IsNullOrWhiteSpace(normalized) ? "pdf" : normalized;
-        }
 
         private static readonly Lazy<byte[]> _regularFontBytes = new(() => LoadEmbeddedFontBytes("NotoSans-Regular.ttf"));
         private static readonly Lazy<byte[]> _boldFontBytes = new(() => LoadEmbeddedFontBytes("NotoSans-Bold.ttf"));
