@@ -26,6 +26,11 @@ namespace Application.Interfaces.IServices
         // Published Revision được bảo toàn nội bộ.
         Task<FileVersionResult> GetReturnToWipVersionAsync(Guid fileItemId);
 
+        // Khôi phục 1 version cũ làm version hiện hành: tạo dòng state MỚI copy dữ liệu file của version
+        // được chọn, đánh số theo đúng luật "upload thay thế" (WorkingVersion +1) và cập nhật
+        // FileItem.CurrentVersionId. Tài liệu đang Published phải về WIP trước.
+        Task<FileVersionResult> RestoreVersionAsync(Guid fileItemId, Guid versionStateId);
+
         // Trạng thái version hiện hành (null nếu tài liệu chưa có state).
         Task<FileVersionResult?> GetCurrentVersionAsync(Guid fileItemId);
 
