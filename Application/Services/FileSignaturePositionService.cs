@@ -3,6 +3,7 @@ using Application.DTOs.ResponseDTOs.FileItem;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
+using Application.Services.Signing;
 using Domain.Entities;
 using Domain.Enum.Cde;
 using Domain.Enum.File;
@@ -44,9 +45,9 @@ namespace Application.Services
 
             var version = await GetCurrentVersionAsync(fileItem);
             var isPdf = fileItem.FileType == FileType.Pdf;
-            var isWord = IsWordFormat(version.Format);
-            var isExcel = IsExcelFormat(version.Format);
-            var isCad2D = fileItem.FileType == FileType.Cad && IsCad2DFormat(version.Format);
+            var isWord = FileSignatureFormatRules.IsWordFormat(version.Format);
+            var isExcel = FileSignatureFormatRules.IsExcelFormat(version.Format);
+            var isCad2D = fileItem.FileType == FileType.Cad && FileSignatureFormatRules.IsCad2DFormat(version.Format);
             if (!isPdf && !isWord && !isExcel && !isCad2D)
                 throw new ApiExceptionResponse("Only PDF, Word, Excel and 2D CAD (DWG/DWGX) files support visual signature.", 400);
 
@@ -108,9 +109,9 @@ namespace Application.Services
 
             var version = await GetCurrentVersionAsync(fileItem);
             var isPdf = fileItem.FileType == FileType.Pdf;
-            var isWord = IsWordFormat(version.Format);
-            var isExcel = IsExcelFormat(version.Format);
-            var isCad2D = fileItem.FileType == FileType.Cad && IsCad2DFormat(version.Format);
+            var isWord = FileSignatureFormatRules.IsWordFormat(version.Format);
+            var isExcel = FileSignatureFormatRules.IsExcelFormat(version.Format);
+            var isCad2D = fileItem.FileType == FileType.Cad && FileSignatureFormatRules.IsCad2DFormat(version.Format);
             if (!isPdf && !isWord && !isExcel && !isCad2D)
                 throw new ApiExceptionResponse("Only PDF, Word, Excel and 2D CAD (DWG/DWGX) files support visual signature.", 400);
 
@@ -167,7 +168,7 @@ namespace Application.Services
             {
                 pdfStream = await _storage.OpenReadAsync(version.PreviewStoragePath);
             }
-            else if (IsCad2DFormat(version.Format))
+            else if (FileSignatureFormatRules.IsCad2DFormat(version.Format))
             {
                 // Ban ve CAD 2D (dwg/dwgx) convert dong bo qua ConvertAPI (thay APS Model Derivative - da
                 // xac nhan thuc te KHONG xuat duoc PDF tu DWG voi tai khoan hien co).
@@ -209,24 +210,6 @@ namespace Application.Services
             }
         }
 
-        private static bool IsWordFormat(string? format)
-        {
-            var normalized = (format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
-            return normalized is "doc" or "docx";
-        }
-
-        private static bool IsExcelFormat(string? format)
-        {
-            var normalized = (format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
-            return normalized is "xls" or "xlsx";
-        }
-
-        // Chi dwg/dwgx - ConvertAPI (dich vu dang dung de convert CAD 2D -> PDF) chi ho tro 2 dinh dang nay.
-        private static bool IsCad2DFormat(string? format)
-        {
-            var normalized = (format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
-            return normalized is "dwg" or "dwgx";
-        }
 
         private static FileSignaturePositionResponseDTO Map(FileSignaturePosition position) => new()
         {

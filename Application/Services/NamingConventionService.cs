@@ -982,6 +982,11 @@ namespace Application.Services
             var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
                 ?? throw new ApiExceptionResponse("Folder not found.", 404);
 
+            // PM của dự án được toàn quyền chọn/áp bộ naming (ngang Admin trong phạm vi dự án).
+            var project = await _unitOfWork.Repository<Project>().GetByIdAsync(folder.ProjectId);
+            if (project?.ManagerAccountId == actor)
+                return;
+
             var participants = (await _unitOfWork.Repository<ProjectParticipant>().FindAsync(
                     p => p.ProjectId == folder.ProjectId && p.Status == ProjectParticipantStatus.Active))
                 .ToDictionary(p => p.Id, p => p.GroupId);
