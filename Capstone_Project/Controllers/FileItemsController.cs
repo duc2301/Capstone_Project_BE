@@ -3,6 +3,7 @@ using Application.DTOs.RequestDTOs.Approval;
 using Application.DTOs.RequestDTOs.FileItem;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
+using Capstone_Project.DataHandler.Validation;
 using Capstone_Project.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -20,6 +21,7 @@ namespace Capstone_Project.Controllers
         private readonly IFileViewService _view;
         private readonly IFileSignaturePositionService _signaturePosition;
         private readonly IPdfSignatureService _pdfSignature;
+        private readonly IFileLinkService _fileLink;
 
         public FileItemsController(
             IFileItemService service,
@@ -28,7 +30,8 @@ namespace Capstone_Project.Controllers
             IZoneReturnRequestService zoneReturnRequestService,
             IFileViewService view,
             IFileSignaturePositionService signaturePosition,
-            IPdfSignatureService pdfSignature)
+            IPdfSignatureService pdfSignature,
+            IFileLinkService fileLink)
         {
             _service = service;
             _upload = upload;
@@ -37,6 +40,7 @@ namespace Capstone_Project.Controllers
             _view = view;
             _signaturePosition = signaturePosition;
             _pdfSignature = pdfSignature;
+            _fileLink = fileLink;
         }
 
         // Luồng tải file lên (multipart/form-data): file + FolderId + FileType + (Name tùy chọn).
@@ -51,7 +55,7 @@ namespace Capstone_Project.Controllers
                 throw new ApiExceptionResponse("No file provided.", 400);
 
             await using var stream = file.OpenReadStream();
-            var result = await _upload.UploadAsync(dto, stream, file.FileName, User.GetAccountId(), ct);
+            var result = await _upload.UploadAsync(dto, stream, file.FileName, User.GetAccountId(), User.IsAdmin(), ct);
             return Ok(ApiResponse.Success("Uploaded successfully", result));
         }
 
@@ -142,6 +146,38 @@ namespace Capstone_Project.Controllers
         [HttpGet("{fileId:guid}/signed-file")]
         public async Task<IActionResult> GetSignedFile(Guid fileId)
             => Ok(await _pdfSignature.GetSignedFileInfoAsync(fileId, User.GetAccountId()));
+
+        [HttpGet("{id:guid}/related-files")]
+        public async Task<IActionResult> GetRelatedFiles(Guid id, CancellationToken ct)
+            => Ok(ApiResponse.Success(
+                "Related files retrieved",
+                await _fileLink.GetRelatedFilesAsync(id, User.GetAccountId(), User.IsAdmin(), ct)));
+
+        [HttpPost("{id:guid}/related-files")]
+        public async Task<IActionResult> AddRelatedFiles(Guid id, [FromBody] LinkRelatedFilesDTO dto, CancellationToken ct)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ValidationHandler.Handle(ModelState));
+
+            return Ok(ApiResponse.Success(
+                "Related files linked",
+                await _fileLink.AddLinksAsync(id, dto.RelatedFileItemIds, User.GetAccountId(), User.IsAdmin(), ct)));
+        }
+
+        [HttpDelete("{id:guid}/related-files/{linkedFileItemId:guid}")]
+        public async Task<IActionResult> RemoveRelatedFile(Guid id, Guid linkedFileItemId, CancellationToken ct)
+        {
+            await _fileLink.RemoveLinkAsync(id, linkedFileItemId, User.GetAccountId(), User.IsAdmin(), ct);
+            return Ok(ApiResponse.Success("Related file unlinked"));
+        }
+
+        [HttpGet("linkable")]
+        public async Task<IActionResult> GetLinkableFiles(
+            [FromQuery] Guid folderId, [FromQuery] Guid? excludeFileItemId, CancellationToken ct)
+            => Ok(ApiResponse.Success(
+                "Linkable files retrieved",
+                await _fileLink.GetLinkableFilesAsync(
+                    folderId, excludeFileItemId, User.GetAccountId(), User.IsAdmin(), ct)));
 
         // Danh sách file trong 1 folder (FE gọi khi mở/chọn folder).
         [HttpGet("by-folder/{folderId:guid}")]

@@ -4,6 +4,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IBackgroundServices;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
+using Application.Services.Signing;
 using Domain.Entities;
 using Domain.Enum.Cde;
 using Domain.Enum.File;
@@ -23,14 +24,25 @@ namespace Application.Services
         private readonly ILogger<ApprovalService> _logger;
         private readonly IIngestBackgroundService _documentIngestBackgroundService;
         private readonly IFileVersionService _fileVersionService;
+        private readonly INotificationService _notification;
+        private readonly IApprovalRealtimeNotifier _approvalRealtime;
 
-        public ApprovalService(IUnitOfWork unitOfWork, IFileZoneResolverService zoneResolver, ILogger<ApprovalService> logger, IIngestBackgroundService documentIngestBackgroundService, IFileVersionService fileVersionService)
+        public ApprovalService(
+            IUnitOfWork unitOfWork,
+            IFileZoneResolverService zoneResolver,
+            ILogger<ApprovalService> logger,
+            IIngestBackgroundService documentIngestBackgroundService,
+            IFileVersionService fileVersionService,
+            INotificationService notification,
+            IApprovalRealtimeNotifier approvalRealtime)
         {
             _unitOfWork = unitOfWork;
             _zoneResolver = zoneResolver;
             _logger = logger;
             _documentIngestBackgroundService = documentIngestBackgroundService;
             _fileVersionService = fileVersionService;
+            _notification = notification;
+            _approvalRealtime = approvalRealtime;
         }
 
         #region API chính
@@ -55,7 +67,8 @@ namespace Application.Services
 
             await RequireGroupMemberAsync(actor, teamGroupIds);
             var targetZone = ResolveApprovalTargetZone(dto?.TargetZone, folder.Area);
-            RequireSignatureRulesForTransition(dto, folder.Area, targetZone);
+            var isThreeDModelFile = await IsThreeDModelFileAsync(fileItem);
+            RequireSignatureRulesForTransition(dto, folder.Area, targetZone, isThreeDModelFile);
 
             var hasPendingRequest = (await _unitOfWork.Repository<ApprovalRequest>().FindAsync(
                     a => a.FileItemId == fileItem.Id && a.Status == ApprovalRequestStatus.Pending))
@@ -95,7 +108,25 @@ namespace Application.Services
                 await _unitOfWork.Repository<ApprovalRequestSigner>().CreateAsync(signer);
             await _unitOfWork.CommitAsync();
 
-            return await BuildResponseAsync(request, fileItem);
+            var leaderIds = (await GetActiveTeamLeaderAccountIdsAsync(teamGroupIds))
+                .Where(id => id != actor)
+                .ToList();
+
+            var result = await BuildResponseAsync(request, fileItem);
+
+            if (leaderIds.Count > 0)
+            {
+                await _notification.NotifyManyAsync(
+                    leaderIds,
+                    $"\"{fileItem.Name}\" cần bạn phê duyệt (chuyển từ {_zoneResolver.FormatZone(folder.Area)} sang {_zoneResolver.FormatZone(targetZone)}).",
+                    linkType: "Approval",
+                    linkId: request.Id.ToString());
+
+                foreach (var leaderId in leaderIds)
+                    await _approvalRealtime.ApprovalChangedAsync(leaderId, result);
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -170,7 +201,73 @@ namespace Application.Services
             if (request.TargetZone == CdeArea.Published)
                 _documentIngestBackgroundService.Enqueue(fileItem.Id);
 
+            var result = await BuildResponseAsync(request, fileItem);
+
+            if (request.RequestedBy != actor)
+            {
+                await _notification.NotifyAsync(
+                    request.RequestedBy,
+                    $"\"{fileItem.Name}\" đã được duyệt và chuyển sang {_zoneResolver.FormatZone(request.TargetZone)}.",
+                    linkType: "Approval",
+                    linkId: request.Id.ToString());
+            }
+
+            await BroadcastApprovalChangedAsync(request, result, actor);
+
+            return result;
+        }
+
+        /// <summary>Snapshot DTO hiện tại của 1 approval request — không check quyền, dùng nội bộ để broadcast realtime.</summary>
+        public async Task<ApprovalRequestResponseDTO> GetSnapshotAsync(Guid approvalId)
+        {
+            var request = await GetRequestAsync(approvalId);
+            var fileItem = await GetFileItemAsync(request.FileItemId);
             return await BuildResponseAsync(request, fileItem);
+        }
+
+        /// <summary>
+        /// Tất cả account có thể đang quan tâm/xem approval này: người gửi, Team Leader active của team
+        /// sở hữu file, và mọi signer (account trực tiếp + member active của signer group).
+        /// </summary>
+        public async Task<IReadOnlyCollection<Guid>> GetStakeholderAccountIdsAsync(Guid approvalId)
+        {
+            var request = await GetRequestAsync(approvalId);
+            var fileItem = await GetFileItemAsync(request.FileItemId);
+            var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, requireApprovePermission: true);
+
+            var stakeholderIds = new HashSet<Guid> { request.RequestedBy };
+            stakeholderIds.UnionWith(await GetActiveTeamLeaderAccountIdsAsync(teamGroupIds));
+
+            var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
+                    s => s.ApprovalRequestId == approvalId))
+                .ToList();
+
+            stakeholderIds.UnionWith(signers
+                .Where(s => s.SignerAccountId.HasValue)
+                .Select(s => s.SignerAccountId!.Value));
+
+            var signerGroupIds = signers
+                .Where(s => s.SignerGroupId.HasValue)
+                .Select(s => s.SignerGroupId!.Value)
+                .ToHashSet();
+            if (signerGroupIds.Count > 0)
+            {
+                var groupMemberIds = (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                        m => signerGroupIds.Contains(m.GroupId) && m.Status == GroupMemberStatus.Active))
+                    .Select(m => m.AccountId);
+                stakeholderIds.UnionWith(groupMemberIds);
+            }
+
+            return stakeholderIds;
+        }
+
+        /// <summary>Đẩy realtime state mới nhất của approval cho mọi stakeholder (trừ actor đang thao tác).</summary>
+        private async Task BroadcastApprovalChangedAsync(ApprovalRequest request, ApprovalRequestResponseDTO snapshot, Guid actor)
+        {
+            var stakeholderIds = (await GetStakeholderAccountIdsAsync(request.Id))
+                .Where(id => id != actor);
+            foreach (var accountId in stakeholderIds)
+                await _approvalRealtime.ApprovalChangedAsync(accountId, snapshot);
         }
 
         /// <summary>
@@ -211,7 +308,21 @@ namespace Application.Services
             fileItem.UpdatedAt = now;
 
             await _unitOfWork.CommitAsync();
-            return await BuildResponseAsync(request, fileItem);
+
+            var result = await BuildResponseAsync(request, fileItem);
+
+            if (request.RequestedBy != actor)
+            {
+                await _notification.NotifyAsync(
+                    request.RequestedBy,
+                    $"\"{fileItem.Name}\" bị từ chối duyệt: {reason}",
+                    linkType: "Approval",
+                    linkId: request.Id.ToString());
+            }
+
+            await BroadcastApprovalChangedAsync(request, result, actor);
+
+            return result;
         }
 
         #endregion
@@ -281,11 +392,18 @@ namespace Application.Services
             return parsed;
         }
 
+        // File 3D (IFC hoac CAD 3D nhu rvt/nwc/nwd/dgn) khong co duong ky so truc quan (xem
+        // PdfSignatureService/FileSignaturePositionService/VnptSmartCaService - chi PDF/Word/Excel/CAD 2D
+        // duoc phep ky) nen khong bat buoc ky khi chuyen vung Shared -> Published.
         private static void RequireSignatureRulesForTransition(
             SubmitApprovalRequestDTO? dto,
             CdeArea currentZone,
-            CdeArea targetZone)
+            CdeArea targetZone,
+            bool isThreeDModelFile)
         {
+            if (isThreeDModelFile)
+                return;
+
             if ((currentZone, targetZone) is not (CdeArea.Shared, CdeArea.Published))
                 return;
 
@@ -296,6 +414,19 @@ namespace Application.Services
             var hasSignerGroups = dto.SignerGroupIds.Any(id => id != Guid.Empty);
             if (!hasSignerAccounts && !hasSignerGroups)
                 throw new ApiExceptionResponse("Shared to Published approval requires at least one signer.", 400);
+        }
+
+        private async Task<bool> IsThreeDModelFileAsync(FileItem fileItem)
+        {
+            if (fileItem.FileType == FileType.Ifc)
+                return true;
+            if (fileItem.FileType != FileType.Cad)
+                return false;
+            if (!fileItem.CurrentVersionId.HasValue)
+                return false;
+
+            var currentVersion = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value);
+            return FileSignatureFormatRules.Is3DModelFile(fileItem.FileType, currentVersion?.Format);
         }
 
         private async Task<IReadOnlyCollection<ApprovalRequestSigner>> BuildApprovalSignersAsync(
@@ -394,6 +525,16 @@ namespace Application.Services
                          && m.Role == GroupMemberRole.Leader
                          && m.Status == GroupMemberStatus.Active))
                 .Any();
+
+        /// <summary>Lấy AccountId của tất cả Team Leader active thuộc các group cho trước (dùng để báo có file cần duyệt).</summary>
+        private async Task<IReadOnlyCollection<Guid>> GetActiveTeamLeaderAccountIdsAsync(IReadOnlyCollection<Guid> groupIds)
+            => (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                    m => groupIds.Contains(m.GroupId)
+                         && m.Role == GroupMemberRole.Leader
+                         && m.Status == GroupMemberStatus.Active))
+                .Select(m => m.AccountId)
+                .Distinct()
+                .ToList();
 
         /// <summary>
         /// Kiểm tra actor có quyền xem approval request không.

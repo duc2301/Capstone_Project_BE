@@ -3,6 +3,7 @@ using System;
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Pgvector;
@@ -12,9 +13,11 @@ using Pgvector;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    partial class CDESystemDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260716155852_FileItem_Description")]
+    partial class FileItem_Description
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -702,6 +705,9 @@ namespace Infrastructure.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("FileRelationId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("FileType")
                         .HasColumnType("integer");
 
@@ -735,37 +741,11 @@ namespace Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("FileRelationId");
+
                     b.HasIndex("FolderId");
 
                     b.ToTable("FileItems");
-                });
-
-            modelBuilder.Entity("Domain.Entities.FileLink", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("CreatedByAccountId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("FileItemId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("LinkedFileItemId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("LinkedFileItemId");
-
-                    b.HasIndex("FileItemId", "LinkedFileItemId")
-                        .IsUnique();
-
-                    b.ToTable("FileLinks");
                 });
 
             modelBuilder.Entity("Domain.Entities.FileNamingMetadata", b =>
@@ -910,6 +890,20 @@ namespace Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("FilePermissions");
+                });
+
+            modelBuilder.Entity("Domain.Entities.FileRelation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("FileItemId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("FileRelations");
                 });
 
             modelBuilder.Entity("Domain.Entities.FileSignaturePosition", b =>
@@ -2348,6 +2342,10 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Domain.Entities.FileItem", b =>
                 {
+                    b.HasOne("Domain.Entities.FileRelation", null)
+                        .WithMany("fileItems")
+                        .HasForeignKey("FileRelationId");
+
                     b.HasOne("Domain.Entities.Folder", "Folder")
                         .WithMany("FileItems")
                         .HasForeignKey("FolderId")
@@ -2355,25 +2353,6 @@ namespace Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Folder");
-                });
-
-            modelBuilder.Entity("Domain.Entities.FileLink", b =>
-                {
-                    b.HasOne("Domain.Entities.FileItem", "FileItem")
-                        .WithMany()
-                        .HasForeignKey("FileItemId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Domain.Entities.FileItem", "LinkedFileItem")
-                        .WithMany()
-                        .HasForeignKey("LinkedFileItemId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("FileItem");
-
-                    b.Navigation("LinkedFileItem");
                 });
 
             modelBuilder.Entity("Domain.Entities.FileNamingMetadata", b =>
@@ -2849,6 +2828,11 @@ namespace Infrastructure.Migrations
                     b.Navigation("NamingMetadata");
 
                     b.Navigation("Permissions");
+                });
+
+            modelBuilder.Entity("Domain.Entities.FileRelation", b =>
+                {
+                    b.Navigation("fileItems");
                 });
 
             modelBuilder.Entity("Domain.Entities.Folder", b =>

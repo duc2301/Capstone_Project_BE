@@ -2,6 +2,7 @@ using Application.DTOs.RequestDTOs.FileItem;
 using Application.DTOs.RequestDTOs.FileVersion;
 using Application.DTOs.ResponseDTOs.FileItem;
 using Application.DTOs.ResponseDTOs.FileVersion;
+using Application.DTOs.ResponseDTOs.NamingConvention;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IBackgroundServices;
 using Application.Interfaces.IServices;
@@ -32,22 +33,27 @@ namespace Application.Services
         private readonly IModelTranslationQueue _translationQueue;
         private readonly ILoiCheckQueue _loiCheckQueue;
         private readonly IMapper _mapper;
+        private readonly INamingConventionService _naming;
         private readonly INameMatchContentBackgroundService _nameMatchContentBackgroundService;
         private readonly IFileVersionService _fileVersionService;
+        private readonly IFileLinkService _fileLink;
 
-        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService)
+        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INamingConventionService naming, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService, IFileLinkService fileLink)
         {
             _unitOfWork = unitOfWork;
             _storage = storage;
             _translationQueue = translationQueue;
             _loiCheckQueue = loiCheckQueue;
             _mapper = mapper;
+            _naming = naming;
             _nameMatchContentBackgroundService = nameMatchContentBackgroundService;
             _fileVersionService = fileVersionService;
+            _fileLink = fileLink;
         }
 
         public async Task<FileUploadResultDTO> UploadAsync(
-            UploadFileDTO dto, Stream content, string originalFileName, Guid actor, CancellationToken ct = default)
+            UploadFileDTO dto, Stream content, string originalFileName, Guid actor, bool isSystemAdmin,
+            CancellationToken ct = default)
         {
             var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(dto.FolderId)
                 ?? throw new ApiExceptionResponse("Folder not found.", 404);
@@ -64,6 +70,11 @@ namespace Application.Services
                 ? Path.GetFileNameWithoutExtension(originalFileName)
                 : dto.Name.Trim();
             var ext = Path.GetExtension(originalFileName);
+            var naming = dto.BypassNamingConvention
+                ? new FileNameGenerationResultDTO { HasNamingConvention = false }
+                : await _naming.GenerateFileNameAsync(dto.FolderId, dto.NamingSelections, originalFileName, ct);
+            if (naming.HasNamingConvention)
+                name = naming.FileNameWithoutExtension;
 
             // ③ Kiểm tra tên file (rule mặc định: không rỗng, không ký tự cấm, có đuôi).
             ValidateName(name);
@@ -75,6 +86,11 @@ namespace Application.Services
 
             // ① Đối chiếu quyền: file mới cần Edit.
             //await _permission.RequireAsync(actor, folder.Id, FolderAction.Edit);
+
+            // ② Tệp liên quan: KIỂM phạm vi TRƯỚC khi lưu file — id sai/ngoài phạm vi thì fail ở đây,
+            // chưa lưu byte nào (hệ versioning mới commit FileItem giữa luồng, không thể rollback file mồ côi).
+            if (dto.RelatedFileItemIds is { Count: > 0 })
+                await _fileLink.ValidateUploadLinkTargetsAsync(folder, dto.RelatedFileItemIds, actor, isSystemAdmin, ct);
 
             // ⑦ Lưu nội dung file (đĩa local).
             var stored = await _storage.SaveAsync(content, folder.ProjectId, folder.Id, ext, ct);
@@ -122,6 +138,11 @@ namespace Application.Services
                     UpdatedAt = now
                 };
                 await _unitOfWork.Repository<FileItem>().CreateAsync(fileItem);
+                // Naming convention: lưu breakdown từng segment của tên — chỉ khi tài liệu MỚI
+                // (upload thay thế trùng tên = cùng bộ giá trị, metadata giữ nguyên).
+                // Không SaveChanges ở đây: commit chung 1 lần ở cuối flow.
+                if (naming.HasNamingConvention)
+                    await _naming.StageFileNamingMetadataAsync(fileItem.Id, naming);
                 // FileItem đang tracked (Added) nên versioning service nhìn thấy ngay qua cùng DbContext.
                 version = await _fileVersionService.CreateInitialVersionAsync(fileItem.Id, fileData);
             }
@@ -136,15 +157,20 @@ namespace Application.Services
             // CurrentVersionId giờ trỏ sang dòng FileVersionStates hiện hành (hệ versioning mới).
             fileItem.CurrentVersionId = version.VersionStateId;
 
-            // Cổng kiểm LOI (advisory): file .ifc -> tạo bản ghi Pending để FE hiện "đang kiểm".
-            if (dto.FileType == FileType.Ifc)
-                await _unitOfWork.Repository<FileVersionLoiCheck>().CreateAsync(NewLoiPending(version.VersionStateId!.Value, now));
+            // ② Tệp liên quan (tùy chọn): stage row link cho CẢ file mới lẫn upload thay thế (fileItem đã có ở đây).
+            // Đã validate scope từ đầu flow (trước khi lưu file) nên tới đây chỉ tạo row, commit chung ở dưới.
+            await StageRelatedFileLinksAsync(fileItem.Id, folder, dto, actor, isSystemAdmin);
+
+            // [TẠM TẮT] Cổng kiểm LOI (advisory) — chức năng chưa hoàn thiện. Mở lại cả khối này khi xong.
+            // if (dto.FileType == FileType.Ifc)
+            //     await _unitOfWork.Repository<FileVersionLoiCheck>().CreateAsync(NewLoiPending(version.VersionStateId!.Value, now));
             await _unitOfWork.CommitAsync();
 
             if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
                 _translationQueue.Enqueue(version.VersionStateId!.Value);
-            if (dto.FileType == FileType.Ifc)
-                _loiCheckQueue.Enqueue(version.VersionStateId!.Value);
+            // [TẠM TẮT] LOI check queue — mở lại khi chức năng hoàn thiện.
+            // if (dto.FileType == FileType.Ifc)
+            //     _loiCheckQueue.Enqueue(version.VersionStateId!.Value);
             _nameMatchContentBackgroundService.Enqueue(fileItem.Id);
 
             return new FileUploadResultDTO
@@ -209,6 +235,15 @@ namespace Application.Services
         }
 
         // ---------- nội bộ ----------
+
+        private async Task StageRelatedFileLinksAsync(
+            Guid fileItemId, Folder targetFolder, UploadFileDTO dto, Guid actor, bool isSystemAdmin)
+        {
+            if (dto.RelatedFileItemIds is not { Count: > 0 }) return;
+
+            await _fileLink.StageLinksOnUploadAsync(
+                fileItemId, targetFolder, dto.RelatedFileItemIds, actor, isSystemAdmin);
+        }
 
         // Chỉ model IFC/CAD mới cần dịch lên APS (xem ModelTranslationWorker).
         private static bool IsModelType(FileType type) => type is FileType.Ifc or FileType.Cad;

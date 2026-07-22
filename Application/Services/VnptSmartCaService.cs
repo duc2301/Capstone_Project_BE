@@ -35,6 +35,8 @@ namespace Application.Services
         private readonly IPdfSignatureService _pdfSignatureService;
         private readonly IApprovalService _approvalService;
         private readonly IFileStorageService _storage;
+        private readonly INotificationService _notification;
+        private readonly IApprovalRealtimeNotifier _approvalRealtime;
         private readonly VnptSmartCaOptions _options;
         private readonly ILogger<VnptSmartCaService> _logger;
 
@@ -49,6 +51,8 @@ namespace Application.Services
             IPdfSignatureService pdfSignatureService,
             IApprovalService approvalService,
             IFileStorageService storage,
+            INotificationService notification,
+            IApprovalRealtimeNotifier approvalRealtime,
             IOptions<VnptSmartCaOptions> options,
             ILogger<VnptSmartCaService> logger)
         {
@@ -57,6 +61,8 @@ namespace Application.Services
             _pdfSignatureService = pdfSignatureService;
             _approvalService = approvalService;
             _storage = storage;
+            _notification = notification;
+            _approvalRealtime = approvalRealtime;
             _options = options.Value;
             _logger = logger;
         }
@@ -326,6 +332,7 @@ namespace Application.Services
                 else
                 {
                     message = "Signer signed successfully. Waiting for remaining required signers.";
+                    await NotifyRemainingSignersAsync(approvalId, validation.Context!.ApprovalRequest, validation.Context.FileItem);
                 }
             }
             else if (transaction.Status == SignatureTransactionStatus.Signed
@@ -441,6 +448,52 @@ namespace Application.Services
             return signers.FirstOrDefault(s => s.SignerGroupId.HasValue && activeGroupIds.Contains(s.SignerGroupId.Value));
         }
 
+        /// <summary>
+        /// Bao cho cac signer con lai (chua ky) rang toi luot ho - ap dung khi approval can nhieu nguoi
+        /// ky (explicit signer) va 1 nguoi vua ky xong nhung chua du. Voi signer dang group (khong chi
+        /// dinh tai khoan cu the), bao cho toan bo active member cua group do (ai trong group cung ky
+        /// duoc, giong dung co che ResolveSignerAsync).
+        /// </summary>
+        private async Task NotifyRemainingSignersAsync(Guid approvalId, ApprovalRequest approval, FileItem fileItem)
+        {
+            var snapshot = await _approvalService.GetSnapshotAsync(approvalId);
+            var stakeholderIds = await _approvalService.GetStakeholderAccountIdsAsync(approvalId);
+            foreach (var accId in stakeholderIds)
+                await _approvalRealtime.ApprovalChangedAsync(accId, snapshot);
+
+            var pendingSigners = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
+                    s => s.ApprovalRequestId == approval.Id && s.Status != ApprovalRequestSignerStatus.Signed))
+                .ToList();
+            if (pendingSigners.Count == 0)
+                return;
+
+            var accountIds = pendingSigners
+                .Where(s => s.SignerAccountId.HasValue)
+                .Select(s => s.SignerAccountId!.Value)
+                .ToHashSet();
+
+            var pendingGroupIds = pendingSigners
+                .Where(s => s.SignerGroupId.HasValue)
+                .Select(s => s.SignerGroupId!.Value)
+                .ToHashSet();
+            if (pendingGroupIds.Count > 0)
+            {
+                var groupMemberIds = (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                        m => pendingGroupIds.Contains(m.GroupId) && m.Status == GroupMemberStatus.Active))
+                    .Select(m => m.AccountId);
+                accountIds.UnionWith(groupMemberIds);
+            }
+
+            if (accountIds.Count == 0)
+                return;
+
+            await _notification.NotifyManyAsync(
+                accountIds,
+                $"\"{fileItem.Name}\" đang chờ bạn ký số.",
+                linkType: "Approval",
+                linkId: approvalId.ToString());
+        }
+
         private async Task<bool> AreRequiredSignersCompleteAsync(ApprovalRequest approval)
         {
             var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
@@ -499,80 +552,9 @@ namespace Application.Services
                 return false;
 
             var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value);
-            var format = (version?.Format ?? string.Empty).Trim().TrimStart('.').ToLowerInvariant();
-            return format is "doc" or "docx" or "xls" or "xlsx" or "dwg" or "dwgx";
-        }
-
-        /// <summary>
-        /// Xac dinh cac group phu trach file dua tren permission cua file va folder cha.
-        /// </summary>
-        private async Task<IReadOnlyCollection<Guid>> ResolveFileItemTeamGroupIdsAsync(
-            FileItem fileItem,
-            Folder folder,
-            bool requireApprovePermission)
-        {
-            var activeParticipants = (await _unitOfWork.Repository<ProjectParticipant>().FindAsync(
-                    p => p.ProjectId == folder.ProjectId && p.Status == ProjectParticipantStatus.Active))
-                .ToDictionary(p => p.Id, p => p.GroupId);
-            if (activeParticipants.Count == 0)
-                return Array.Empty<Guid>();
-
-            var teamGroupIds = new HashSet<Guid>();
-
-            var filePermissions = await _unitOfWork.Repository<FilePermission>().FindAsync(
-                p => p.FileItemId == fileItem.Id
-                     && p.ProjectParticipantId.HasValue
-                     && (!requireApprovePermission || p.CanApprove));
-            foreach (var permission in filePermissions)
-            {
-                if (activeParticipants.TryGetValue(permission.ProjectParticipantId!.Value, out var groupId))
-                    teamGroupIds.Add(groupId);
-            }
-
-            var folders = (await _unitOfWork.Repository<Folder>().FindAsync(
-                    f => f.ProjectId == folder.ProjectId))
-                .ToList();
-            var byId = folders.ToDictionary(f => f.Id);
-
-            if (!byId.TryGetValue(fileItem.FolderId, out var current))
-                return teamGroupIds;
-
-            var folderIds = new HashSet<Guid>();
-            while (folderIds.Add(current.Id) && current.ParentFolderId.HasValue
-                   && byId.TryGetValue(current.ParentFolderId.Value, out var parent))
-            {
-                current = parent;
-            }
-
-            var folderPermissions = await _unitOfWork.Repository<FolderPermission>().FindAsync(
-                p => folderIds.Contains(p.FolderId)
-                     && p.ProjectParticipantId.HasValue
-                     && (!requireApprovePermission || p.CanApprove));
-            foreach (var permission in folderPermissions)
-            {
-                if (activeParticipants.TryGetValue(permission.ProjectParticipantId!.Value, out var groupId))
-                    teamGroupIds.Add(groupId);
-            }
-
-            return teamGroupIds.Count > 0
-                ? teamGroupIds
-                : activeParticipants.Values.ToHashSet();
-        }
-
-        /// <summary>
-        /// Kiem tra account co phai Team Leader active cua mot trong cac group hay khong.
-        /// </summary>
-        private async Task<bool> IsActiveTeamLeaderAsync(Guid accountId, IReadOnlyCollection<Guid> groupIds)
-        {
-            if (groupIds.Count == 0)
-                return false;
-
-            return (await _unitOfWork.Repository<GroupMember>().FindAsync(
-                    m => groupIds.Contains(m.GroupId)
-                         && m.AccountId == accountId
-                         && m.Role == GroupMemberRole.Leader
-                         && m.Status == GroupMemberStatus.Active))
-                .Any();
+            return FileSignatureFormatRules.IsWordFormat(version?.Format)
+                   || FileSignatureFormatRules.IsExcelFormat(version?.Format)
+                   || (fileItem.FileType == FileType.Cad && FileSignatureFormatRules.IsCad2DFormat(version?.Format));
         }
 
         /// <summary>
