@@ -1,4 +1,4 @@
-using Application.DTOs.ResponseDTOs.Issue;
+﻿using Application.DTOs.ResponseDTOs.Issue;
 using Application.Interfaces.IServices;
 using Microsoft.AspNetCore.SignalR;
 
@@ -15,10 +15,10 @@ namespace Capstone_Project.SignalR
 
         public Task IssueCreatedAsync(Guid fileItemId, IssueResponseDTO issue)
             => _hub.Clients.Group(MarkupHub.GroupName(fileItemId.ToString()))
-                   .SendAsync("IssueCreated", issue);
+                   .SendAsync(SignalREventNames.IssueCreated, issue);
 
         public Task IssueUpdatedAsync(Guid fileItemId, IssueResponseDTO issue)
             => _hub.Clients.Group(MarkupHub.GroupName(fileItemId.ToString()))
-                   .SendAsync("IssueUpdated", issue);
+                   .SendAsync(SignalREventNames.IssueUpdated, issue);
     }
 }

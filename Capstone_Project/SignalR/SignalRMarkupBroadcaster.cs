@@ -1,4 +1,4 @@
-using Application.DTOs.ResponseDTOs.Markup;
+﻿using Application.DTOs.ResponseDTOs.Markup;
 using Application.Interfaces.IServices;
 using Microsoft.AspNetCore.SignalR;
 
@@ -15,14 +15,14 @@ namespace Capstone_Project.SignalR
 
         public Task NoteAddedAsync(Guid fileItemId, FileNoteResponseDTO note)
             => _hub.Clients.Group(MarkupHub.GroupName(fileItemId.ToString()))
-                   .SendAsync("MarkupNoteAdded", note);
+                   .SendAsync(SignalREventNames.MarkupNoteAdded, note);
 
         public Task NoteUpdatedAsync(Guid fileItemId, FileNoteResponseDTO note)
             => _hub.Clients.Group(MarkupHub.GroupName(fileItemId.ToString()))
-                   .SendAsync("MarkupNoteUpdated", note);
+                   .SendAsync(SignalREventNames.MarkupNoteUpdated, note);
 
         public Task NoteDeletedAsync(Guid fileItemId, Guid noteId)
             => _hub.Clients.Group(MarkupHub.GroupName(fileItemId.ToString()))
-                   .SendAsync("MarkupNoteDeleted", new { fileItemId, noteId });
+                   .SendAsync(SignalREventNames.MarkupNoteDeleted, new { fileItemId, noteId });
     }
 }

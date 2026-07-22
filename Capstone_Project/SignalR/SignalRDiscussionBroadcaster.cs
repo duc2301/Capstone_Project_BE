@@ -1,4 +1,4 @@
-using Application.DTOs.ResponseDTOs.Discussion;
+﻿using Application.DTOs.ResponseDTOs.Discussion;
 using Application.Interfaces.IServices;
 using Microsoft.AspNetCore.SignalR;
 
@@ -15,6 +15,6 @@ namespace Capstone_Project.SignalR
 
         public Task MessagePostedAsync(Guid fileItemId, DiscussionMessageResponseDTO message)
             => _hub.Clients.Group(MarkupHub.GroupName(fileItemId.ToString()))
-                   .SendAsync("DiscussionMessagePosted", message);
+                   .SendAsync(SignalREventNames.DiscussionMessagePosted, message);
     }
 }
