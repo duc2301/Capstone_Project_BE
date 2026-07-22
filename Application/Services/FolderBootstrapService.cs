@@ -192,6 +192,11 @@ namespace Application.Services
 
         // WIP: toàn quyền làm việc trên "ô" của chính nhóm; các khu vực còn lại chỉ Xem/Tải
         // (file vào Shared/Published/Archived qua luồng duyệt, không sửa trực tiếp).
+        // CanApprove/CanVerify KHÔNG giới hạn theo isWip: file đang chờ duyệt để chuyển từ
+        // Shared -> Published (hoặc WIP -> Shared) nằm ở chính "ô" Shared/Published của nhóm, nên
+        // Leader nhóm cần quyền Approve tại đó để ResolveFileItemTeamGroupIdsAsync xác định đúng
+        // nhóm phụ trách — nếu giới hạn isWip thì mọi approval ở Shared/Published sẽ không tìm
+        // được nhóm nào có CanApprove và bị fallback sai về "tất cả các nhóm trong dự án".
         private static FolderPermission BuildDefaultGroupPermission(Guid participantId, Folder folder)
         {
             var isWip = folder.Area == CdeArea.Wip;
@@ -204,8 +209,8 @@ namespace Application.Services
                 CanEdit = isWip,
                 CanUpdate = isWip,
                 CanDownload = true,
-                CanVerify = isWip,
-                CanApprove = isWip,
+                CanVerify = true,
+                CanApprove = true,
                 Status = PermissionStatus.Active
             };
         }
