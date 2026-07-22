@@ -59,9 +59,10 @@ namespace Application.Services
                 ?? throw new ApiExceptionResponse("Folder not found.", 404);
 
             // ④ Consistency: chỉ được upload vào WIP/Shared (Published/Archived là khu xuất bản/lưu trữ).
-            if (folder.Area is CdeArea.Published or CdeArea.Archived)
-                throw new ApiExceptionResponse(
-                    "Không thể tải file trực tiếp lên thư mục Published/Archived. Tải lên WIP hoặc Shared thay thế.", 400);
+            // [BYPASSED]: Cho phép upload trực tiếp vào Published để tải Gói thầu.
+            // if (folder.Area is CdeArea.Published or CdeArea.Archived)
+            //     throw new ApiExceptionResponse(
+            //         "Không thể tải file trực tiếp lên thư mục Published/Archived. Tải lên WIP hoặc Shared thay thế.", 400);
             if (folder.ParentFolderId == null)
                 throw new ApiExceptionResponse(
                     "Không thể tải file trực tiếp lên thư mục gốc. Tạo thư mục con để upload thay thế.", 400);

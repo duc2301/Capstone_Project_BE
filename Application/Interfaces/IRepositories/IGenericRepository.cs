@@ -4,8 +4,8 @@ namespace Application.Interfaces.IRepositories
 {
     public interface IGenericRepository<T> where T : class
     {
-        Task<IEnumerable<T>> GetAllAsync();
-        Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate);
+        Task<IEnumerable<T>> GetAllAsync(string includeProperties = "");
+        Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate, string includeProperties = "");
         Task<T?> GetByIdAsync(Guid? id);
         Task CreateAsync(T entity);
         void Update(T entity);

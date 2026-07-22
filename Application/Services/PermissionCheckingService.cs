@@ -85,8 +85,7 @@ namespace Application.Services
                     .Select(g => new CurrentUserGroupDTO
                     {
                         GroupId = g.Id,
-                        Name = g.Name,
-                        OrganizationId = g.OrganizationId
+                        Name = g.Name
                     })
                     .ToList(),
                 ProjectParticipants = participants

@@ -1,4 +1,4 @@
-﻿using Application.DTOs.ResponseDTOs.Permission;
+using Application.DTOs.ResponseDTOs.Permission;
 using Application.Interfaces.IRepositories;
 using Domain.Entities;
 using Domain.Enum.Permission;
@@ -62,9 +62,7 @@ namespace Infrastructure.Repositories
                             {
                                 ProjectParticipantId = pp.Id,
                                 GroupId = pp.GroupId,
-                                GroupName = pp.Group.Name,
-                                OrganizationId = pp.Group.OrganizationId,
-                                OrganizationName = pp.Group.Organization.DisplayName
+                                GroupName = pp.Group.Name
                             })
                             .AsNoTracking()
                             .ToListAsync();
