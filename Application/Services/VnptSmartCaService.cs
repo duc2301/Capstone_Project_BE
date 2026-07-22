@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.SmartCA;
 using Application.DTOs.ResponseDTOs.SmartCA;
+using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Application.Options;
@@ -398,6 +399,17 @@ namespace Application.Services
             if (folder == null)
                 return SigningValidationResult.Fail("File folder not found.");
 
+            // Folder phải đã được cấp CanApprove cho ít nhất 1 nhóm trước khi cho phép ký số — không
+            // để signer "lách" qua bước phân quyền folder chỉ vì họ được assign ký cho request này.
+            try
+            {
+                await _approvalService.RequireFolderHasApprovePermissionConfiguredAsync(fileItem.Id);
+            }
+            catch (ApiExceptionResponse ex)
+            {
+                return SigningValidationResult.Fail(ex.Message);
+            }
+
             var account = await _unitOfWork.Repository<Account>().GetByIdAsync(currentUserId);
             if (account == null || account.Status != AccountStatus.Active)
                 return SigningValidationResult.Fail("Current user must be active.");
@@ -538,7 +550,9 @@ namespace Application.Services
                 await _unitOfWork.CommitAsync();
             }
 
-            await _approvalService.ApproveAsync(context.ApprovalRequest.Id, currentUserId);
+            // currentUserId ở đây là người ký (không phải Team Leader) — ký đủ chữ ký bắt buộc là điều
+            // kiện đủ để tự động hoàn tất, Leader không cần thao tác Duyệt thủ công thêm nữa.
+            await _approvalService.ApproveAsync(context.ApprovalRequest.Id, currentUserId, viaSignatureCompletion: true);
             return "Signed file generated successfully and approval completed.";
         }
 
