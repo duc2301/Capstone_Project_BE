@@ -78,13 +78,13 @@ namespace Capstone_Project.Controllers
         // "Xem chi tiết": FE dựa vào Kind để hiển thị (model = APS viewer, inline = web, download = tải về).
         [HttpGet("{id:guid}/view")]
         public async Task<IActionResult> GetViewInfo(Guid id, CancellationToken ct)
-            => Ok(ApiResponse.Success("File view info", await _view.GetViewInfoAsync(id, User.GetAccountId(), ct)));
+            => Ok(ApiResponse.Success("File view info", await _view.GetViewInfoAsync(id, User.GetAccountId(), User.IsAdmin(), ct)));
 
         // Bytes PDF hiệu dụng (PDF gốc / Office đã convert) — FE render bằng pdf.js để markup 2D theo trang. Same-origin.
         [HttpGet("{id:guid}/view-pdf")]
         public async Task<IActionResult> GetViewPdf(Guid id, CancellationToken ct)
         {
-            var pdf = await _view.OpenViewPdfAsync(id, User.GetAccountId(), ct);
+            var pdf = await _view.OpenViewPdfAsync(id, User.GetAccountId(), User.IsAdmin(), ct);
             return File(pdf.Content, "application/pdf", pdf.FileName);
         }
 
@@ -92,7 +92,7 @@ namespace Capstone_Project.Controllers
         [HttpPost("{id:guid}/retranslate")]
         public async Task<IActionResult> Retranslate(Guid id, CancellationToken ct)
         {
-            await _view.RetranslateAsync(id, User.GetAccountId(), ct);
+            await _view.RetranslateAsync(id, User.GetAccountId(), User.IsAdmin(), ct);
             return Ok(ApiResponse.Success("Model re-translation queued"));
         }
 

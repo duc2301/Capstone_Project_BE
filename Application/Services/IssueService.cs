@@ -160,7 +160,13 @@ namespace Application.Services
             entity.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<Issue>().Update(entity);
             await _unitOfWork.CommitAsync();
-            return _mapper.Map<IssueResponseDTO>(entity);
+
+            var result = _mapper.Map<IssueResponseDTO>(entity);
+
+            if (entity.LinkedFileItemId.HasValue)
+                await _issueBroadcaster.IssueUpdatedAsync(entity.LinkedFileItemId.Value, result);
+
+            return result;
         }
 
         public async Task DeleteAsync(Guid id)

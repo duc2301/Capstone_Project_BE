@@ -1,3 +1,4 @@
+using Domain.Enum.Cde;
 using Domain.Enum.File;
 
 namespace Application.DTOs.ResponseDTOs.FileItem
@@ -9,6 +10,8 @@ namespace Application.DTOs.ResponseDTOs.FileItem
     public class FileViewInfoDTO
     {
         public string Kind { get; set; } = null!;
+
+        public CdeArea Area { get; set; }
 
         // Dùng khi Kind = "model".
         public string? Urn { get; set; }
