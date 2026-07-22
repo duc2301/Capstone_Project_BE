@@ -30,6 +30,11 @@ namespace Application.Interfaces.IServices
         Task<NamingConventionResponseDTO> AssignFoldersAsync(Guid conventionId, AssignFoldersDTO dto, Guid actor, string? actorRole);
         Task UnassignFolderAsync(Guid folderId, Guid actor, string? actorRole);
 
+        // --- Tùy chỉnh field áp dụng theo folder (Leader) ---
+        // Bật/tắt các field KHÔNG bắt buộc; field bắt buộc/khóa luôn áp dụng.
+        Task<FolderFieldSelectionResponseDTO> GetFolderFieldSelectionAsync(Guid folderId);
+        Task<FolderFieldSelectionResponseDTO> SetFolderFieldSelectionAsync(Guid folderId, IEnumerable<Guid> fieldIds, Guid actor, string? actorRole);
+
         // --- Upload flow ---
         // Payload cho dialog upload: convention đang áp cho folder (hoặc HasNamingConvention = false).
         Task<FolderNamingConventionResponseDTO> GetByFolderAsync(Guid folderId);

@@ -381,8 +381,106 @@ namespace Application.Services
 
             folder.NamingConventionId = null;
             folder.UpdatedAt = DateTime.UtcNow;
+            // Dọn lựa chọn field riêng của folder khi gỡ convention.
+            await ClearFolderFieldSelectionAsync(folderId);
             await _unitOfWork.CommitAsync();
         }
+
+        // =========================================================
+        // Tùy chỉnh field áp dụng theo folder
+        // =========================================================
+
+        public async Task<FolderFieldSelectionResponseDTO> GetFolderFieldSelectionAsync(Guid folderId)
+        {
+            _ = await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
+                ?? throw new ApiExceptionResponse("Folder not found.", 404);
+
+            var convention = await _unitOfWork.NamingConventionRepository.GetByFolderIdAsync(folderId);
+            if (convention == null || !convention.IsActive)
+                return new FolderFieldSelectionResponseDTO { HasNamingConvention = false };
+
+            var enabledIds = await GetEnabledOptionalFieldIdsAsync(folderId);
+
+            return new FolderFieldSelectionResponseDTO
+            {
+                HasNamingConvention = true,
+                NamingConventionId = convention.Id,
+                Fields = convention.Fields
+                    .OrderBy(f => f.OrderIndex)
+                    .Select(f => new FolderFieldOptionDTO
+                    {
+                        Id = f.Id,
+                        Code = f.Code,
+                        DisplayName = f.DisplayName,
+                        Description = f.Description,
+                        OrderIndex = f.OrderIndex,
+                        IsRequired = f.IsRequired,
+                        IsLocked = f.IsLocked,
+                        // Bắt buộc/khóa: luôn áp dụng. Tùy chọn: có row FolderNamingField mới là bật.
+                        Enabled = f.IsRequired || f.IsLocked || enabledIds.Contains(f.Id)
+                    })
+                    .ToList()
+            };
+        }
+
+        public async Task<FolderFieldSelectionResponseDTO> SetFolderFieldSelectionAsync(
+            Guid folderId, IEnumerable<Guid> fieldIds, Guid actor, string? actorRole)
+        {
+            _ = await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
+                ?? throw new ApiExceptionResponse("Folder not found.", 404);
+
+            await RequireFolderNamingAuthorityAsync(folderId, actor, actorRole);
+
+            var convention = await _unitOfWork.NamingConventionRepository.GetByFolderIdAsync(folderId)
+                ?? throw new ApiExceptionResponse("Folder has no naming convention applied.", 400);
+
+            // Chỉ nhận field tùy chọn thuộc đúng convention của folder (bắt buộc/khóa luôn áp dụng, bỏ qua).
+            var optionalIds = convention.Fields
+                .Where(f => !f.IsRequired && !f.IsLocked)
+                .Select(f => f.Id)
+                .ToHashSet();
+
+            var requested = fieldIds.Distinct().ToList();
+            var invalid = requested.Where(id => !optionalIds.Contains(id)).ToList();
+            if (invalid.Count > 0)
+                throw new ApiExceptionResponse(
+                    "Danh sách chứa trường không hợp lệ (không thuộc bộ quy tắc của thư mục, hoặc là trường bắt buộc/khóa).", 400);
+
+            // Replace-all: xóa lựa chọn cũ của folder rồi thêm lại theo danh sách mới.
+            await ClearFolderFieldSelectionAsync(folderId);
+            var now = DateTime.UtcNow;
+            foreach (var fieldId in requested)
+            {
+                await _unitOfWork.Repository<FolderNamingField>().CreateAsync(new FolderNamingField
+                {
+                    Id = Guid.NewGuid(),
+                    FolderId = folderId,
+                    NamingConventionFieldId = fieldId,
+                    CreatedById = actor,
+                    CreatedAt = now
+                });
+            }
+            await _unitOfWork.CommitAsync();
+
+            return await GetFolderFieldSelectionAsync(folderId);
+        }
+
+        // Id các field TÙY CHỌN đang được bật cho folder (không gồm bắt buộc/khóa).
+        private async Task<HashSet<Guid>> GetEnabledOptionalFieldIdsAsync(Guid folderId)
+            => (await _unitOfWork.Repository<FolderNamingField>().FindAsync(x => x.FolderId == folderId))
+                .Select(x => x.NamingConventionFieldId)
+                .ToHashSet();
+
+        private async Task ClearFolderFieldSelectionAsync(Guid folderId)
+        {
+            var existing = await _unitOfWork.Repository<FolderNamingField>().FindAsync(x => x.FolderId == folderId);
+            foreach (var row in existing)
+                _unitOfWork.Repository<FolderNamingField>().Delete(row);
+        }
+
+        // Field áp dụng thực tế cho folder = bắt buộc | khóa | đã bật (tùy chọn).
+        private static bool IsFieldActiveForFolder(NamingConventionField field, HashSet<Guid> enabledOptionalIds)
+            => field.IsRequired || field.IsLocked || enabledOptionalIds.Contains(field.Id);
 
         // =========================================================
         // Upload flow
@@ -397,12 +495,16 @@ namespace Application.Services
             if (convention == null || !convention.IsActive)
                 return new FolderNamingConventionResponseDTO { HasNamingConvention = false };
 
+            // Chỉ hiện field áp dụng cho folder này (bắt buộc/khóa + field tùy chọn đã bật).
+            var enabledIds = await GetEnabledOptionalFieldIdsAsync(folderId);
+
             return new FolderNamingConventionResponseDTO
             {
                 HasNamingConvention = true,
                 NamingConventionId = convention.Id,
                 Delimiter = convention.Delimiter,
                 Fields = convention.Fields
+                    .Where(f => IsFieldActiveForFolder(f, enabledIds))
                     .OrderBy(f => f.OrderIndex)
                     .Select(f =>
                     {
@@ -447,7 +549,12 @@ namespace Application.Services
             if (convention == null || !convention.IsActive)
                 return new FileNameGenerationResultDTO { HasNamingConvention = false };
 
-            var orderedFields = convention.Fields.OrderBy(f => f.OrderIndex).ToList();
+            // Chỉ dùng field áp dụng cho folder này (bắt buộc/khóa + field tùy chọn đã bật).
+            var enabledIds = await GetEnabledOptionalFieldIdsAsync(folderId);
+            var orderedFields = convention.Fields
+                .Where(f => IsFieldActiveForFolder(f, enabledIds))
+                .OrderBy(f => f.OrderIndex)
+                .ToList();
             if (orderedFields.Count == 0)
                 throw new ApiExceptionResponse("Naming convention has no fields configured.", 400);
 
