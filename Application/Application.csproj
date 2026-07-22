@@ -19,6 +19,8 @@
 		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
 		<PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.1" />
 		<PackageReference Include="Swashbuckle.AspNetCore.Annotations" Version="10.2.1" />
+		<PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.1" />
+		<PackageReference Include="HarfBuzzSharp.NativeAssets.Linux" Version="8.3.1.2" />
 		<PackageReference Include="Syncfusion.DocIO.Net.Core" Version="33.2.13" />
 		<PackageReference Include="Syncfusion.DocIORenderer.Net.Core" Version="33.2.13" />
 		<PackageReference Include="Syncfusion.XlsIO.Net.Core" Version="33.2.13" />
