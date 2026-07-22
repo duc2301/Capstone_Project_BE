@@ -70,6 +70,18 @@ namespace Application.Services
             var isThreeDModelFile = await IsThreeDModelFileAsync(fileItem);
             RequireSignatureRulesForTransition(dto, folder.Area, targetZone, isThreeDModelFile);
 
+            // Shared->Published bắt buộc chỉ định signer đích danh theo tài khoản (không dùng nhóm mặc
+            // định) -> mỗi signer được chọn phải là Leader active của 1 nhóm nào đó trong dự án, member
+            // thường không được assign ký cho luồng này.
+            if (folder.Area == CdeArea.Shared && targetZone == CdeArea.Published)
+            {
+                var explicitSignerAccountIds = (dto?.SignerAccountIds ?? new List<Guid>())
+                    .Where(id => id != Guid.Empty)
+                    .Distinct()
+                    .ToList();
+                await RequireSignerAccountsAreActiveLeadersAsync(folder.ProjectId, explicitSignerAccountIds);
+            }
+
             var hasPendingRequest = (await _unitOfWork.Repository<ApprovalRequest>().FindAsync(
                     a => a.FileItemId == fileItem.Id && a.Status == ApprovalRequestStatus.Pending))
                 .Any();
@@ -172,13 +184,13 @@ namespace Application.Services
         /// Duyệt approval request. Chỉ Team Leader mới được thực hiện.
         /// Nếu file yêu cầu ký số thì phải hoàn tất ký trước khi duyệt.
         /// </summary>
-        public async Task<ApprovalRequestResponseDTO> ApproveAsync(Guid id, Guid actor)
+        public async Task<ApprovalRequestResponseDTO> ApproveAsync(Guid id, Guid actor, bool viaSignatureCompletion = false)
         {
             var request = await GetRequestAsync(id);
             var fileItem = await GetFileItemAsync(request.FileItemId);
             var folder = await GetFolderAsync(fileItem.FolderId);
 
-            await RequireCanDecideAsync(actor, request, fileItem, folder);
+            await RequireCanDecideAsync(actor, request, fileItem, folder, allowRequiredSigner: viaSignatureCompletion);
             await RequireSignersCompleteBeforeApprovalAsync(request);
 
             var now = DateTime.UtcNow;
@@ -273,13 +285,50 @@ namespace Application.Services
         /// <summary>
         /// Bắt buộc actor là Team Leader active của team phụ trách file (vd: trước khi đặt vị trí chữ ký
         /// hoặc sinh PDF đã ký) — không cần ApprovalRequest đang Pending như RequireCanDecideAsync.
+        /// Actor được assign làm signer của approval request đang Pending cũng được phép (VD: quy tắc
+        /// Shared->Published yêu cầu signer cross-team — họ không nhất thiết là Leader của nhóm sở
+        /// hữu folder, nhưng vẫn cần đặt được vị trí ký trước khi ký).
         /// </summary>
         public async Task RequireTeamLeaderAsync(Guid fileItemId, Guid actorId)
         {
             var fileItem = await GetFileItemAsync(fileItemId);
             var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, requireApprovePermission: true);
-            if (!await IsGroupLeaderAsync(actorId, teamGroupIds))
-                throw new ApiExceptionResponse("Only the Team Leader can perform this action.", 403);
+
+            // Folder PHẢI đã được cấp CanApprove cho ít nhất 1 nhóm mới cho phép bất kỳ ai thao tác
+            // (kể cả Leader thật hay signer được assign) — không để signer "lách" qua bước phân quyền
+            // folder chỉ vì họ được assign ký; nếu chưa cấu hình thì chặn tất cả cho tới khi Admin cấp.
+            if (teamGroupIds.Count == 0)
+                throw new ApiExceptionResponse(
+                    "No group has been granted approve permission on this folder yet. Please ask the project Admin to configure it.",
+                    403);
+
+            if (await IsGroupLeaderAsync(actorId, teamGroupIds))
+                return;
+
+            var pendingRequest = (await _unitOfWork.Repository<ApprovalRequest>().FindAsync(
+                    r => r.FileItemId == fileItemId && r.Status == ApprovalRequestStatus.Pending))
+                .FirstOrDefault();
+            if (pendingRequest != null
+                && pendingRequest.RequiresSignature
+                && await IsRequiredSignerAsync(actorId, pendingRequest.Id))
+                return;
+
+            throw new ApiExceptionResponse("Only the Team Leader can perform this action.", 403);
+        }
+
+        /// <summary>
+        /// Chỉ kiểm tra folder của file đã được cấp CanApprove cho ít nhất 1 nhóm hay chưa — dùng làm
+        /// điều kiện tiên quyết trước khi cho phép ký số (VnptSmartCaService), vì bản thân bước ký
+        /// không tự resolve teamGroupIds như RequireTeamLeaderAsync.
+        /// </summary>
+        public async Task RequireFolderHasApprovePermissionConfiguredAsync(Guid fileItemId)
+        {
+            var fileItem = await GetFileItemAsync(fileItemId);
+            var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, requireApprovePermission: true);
+            if (teamGroupIds.Count == 0)
+                throw new ApiExceptionResponse(
+                    "No group has been granted approve permission on this folder yet. Please ask the project Admin to configure it.",
+                    403);
         }
 
         /// <summary>
@@ -295,7 +344,7 @@ namespace Application.Services
             var fileItem = await GetFileItemAsync(request.FileItemId);
             var folder = await GetFolderAsync(fileItem.FolderId);
 
-            await RequireCanDecideAsync(actor, request, fileItem, folder);
+            await RequireCanDecideAsync(actor, request, fileItem, folder, allowRequiredSigner: true);
 
             var now = DateTime.UtcNow;
             request.Status = ApprovalRequestStatus.Rejected;
@@ -350,13 +399,31 @@ namespace Application.Services
 
         /// <summary>
         /// Yêu cầu actor là Team Leader có quyền approve file và request đang ở trạng thái Pending.
+        /// Khi <paramref name="allowRequiredSigner"/> = true (dùng cho Từ chối), người/nhóm được
+        /// asign ký cũng được coi là đủ quyền — họ có thể từ chối thẳng thay vì phải ký xong mới
+        /// chờ Leader xử lý, dù không được tự Duyệt (Duyệt luôn chỉ dành cho Team Leader).
         /// </summary>
-        private async Task RequireCanDecideAsync(Guid actor, ApprovalRequest request, FileItem fileItem, Folder folder)
+        private async Task RequireCanDecideAsync(
+            Guid actor,
+            ApprovalRequest request,
+            FileItem fileItem,
+            Folder folder,
+            bool allowRequiredSigner = false)
         {
             if (request.Status != ApprovalRequestStatus.Pending || fileItem.Status != FileItemStatus.PendingApproval)
                 throw new ApiExceptionResponse("Only pending approval requests can be approved or rejected.", 409);
 
+            if (allowRequiredSigner && request.RequiresSignature && await IsRequiredSignerAsync(actor, request.Id))
+                return;
+
             var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, folder, requireApprovePermission: true);
+            // Tương tự RequireTeamLeaderAsync: báo đúng lý do — thiếu cấu hình phân quyền hay thiếu
+            // vai trò Leader — để người dùng không hiểu nhầm là mình "phải là Leader" trong khi thực
+            // ra folder chưa được cấp CanApprove cho bất kỳ nhóm nào.
+            if (teamGroupIds.Count == 0)
+                throw new ApiExceptionResponse(
+                    "No group has been granted approve permission on this folder yet. Please ask the project Admin to configure it.",
+                    403);
             if (!await IsGroupLeaderAsync(actor, teamGroupIds))
                 throw new ApiExceptionResponse("Only the Team Leader can approve or reject this file.", 403);
         }
@@ -517,6 +584,34 @@ namespace Application.Services
                 throw new ApiExceptionResponse("Only members of the file team can submit approval.", 403);
         }
 
+        /// <summary>
+        /// Mỗi accountId trong danh sách phải là Leader active của 1 nhóm bất kỳ (không nhất thiết
+        /// nhóm sở hữu folder) trong dự án — dùng cho signer chỉ định đích danh ở Shared->Published,
+        /// member thường không đủ điều kiện được assign ký cho luồng này.
+        /// </summary>
+        private async Task RequireSignerAccountsAreActiveLeadersAsync(Guid projectId, IReadOnlyCollection<Guid> signerAccountIds)
+        {
+            if (signerAccountIds.Count == 0)
+                return;
+
+            var projectGroupIds = (await _unitOfWork.Repository<ProjectParticipant>().FindAsync(
+                    p => p.ProjectId == projectId && p.Status == ProjectParticipantStatus.Active))
+                .Select(p => p.GroupId)
+                .ToHashSet();
+
+            var leaderAccountIds = (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                    m => projectGroupIds.Contains(m.GroupId)
+                         && m.Role == GroupMemberRole.Leader
+                         && m.Status == GroupMemberStatus.Active))
+                .Select(m => m.AccountId)
+                .ToHashSet();
+
+            if (signerAccountIds.Any(id => !leaderAccountIds.Contains(id)))
+                throw new ApiExceptionResponse(
+                    "Signer must be an active Team Leader of a group in this project.",
+                    400);
+        }
+
         /// <summary>Kiểm tra actor có phải Group Leader active không.</summary>
         private async Task<bool> IsGroupLeaderAsync(Guid accountId, IReadOnlyCollection<Guid> groupIds)
             => (await _unitOfWork.Repository<GroupMember>().FindAsync(
@@ -538,15 +633,43 @@ namespace Application.Services
 
         /// <summary>
         /// Kiểm tra actor có quyền xem approval request không.
-        /// Trả về true nếu actor là người gửi hoặc là Team Leader có quyền approve.
+        /// Trả về true nếu actor là người gửi, là người/nhóm được chỉ định ký, hoặc là Team Leader
+        /// có quyền approve — người được asign ký cần thấy request thì mới ký được, kể cả khi họ
+        /// không phải Leader của nhóm phụ trách.
         /// </summary>
         private async Task<bool> CanViewRequestAsync(Guid actor, ApprovalRequest request, FileItem fileItem)
         {
             if (request.RequestedBy == actor)
                 return true;
 
+            if (request.RequiresSignature && await IsRequiredSignerAsync(actor, request.Id))
+                return true;
+
             var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, requireApprovePermission: true);
             return await IsGroupLeaderAsync(actor, teamGroupIds);
+        }
+
+        /// <summary>Actor có phải người/nhóm (thành viên active) được chỉ định ký cho request này không.</summary>
+        private async Task<bool> IsRequiredSignerAsync(Guid actor, Guid approvalRequestId)
+        {
+            var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
+                    s => s.ApprovalRequestId == approvalRequestId))
+                .ToList();
+            if (signers.Any(s => s.SignerAccountId == actor))
+                return true;
+
+            var signerGroupIds = signers
+                .Where(s => s.SignerGroupId.HasValue)
+                .Select(s => s.SignerGroupId!.Value)
+                .ToList();
+            if (signerGroupIds.Count == 0)
+                return false;
+
+            return (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                    m => signerGroupIds.Contains(m.GroupId)
+                         && m.AccountId == actor
+                         && m.Status == GroupMemberStatus.Active))
+                .Any();
         }
 
         /// <summary>
@@ -654,18 +777,6 @@ namespace Application.Services
             if (activeParticipants.Count == 0)
                 throw new ApiExceptionResponse("File project has no active team.", 400);
 
-            var teamGroupIds = new HashSet<Guid>();
-
-            var filePermissions = await _unitOfWork.Repository<FilePermission>().FindAsync(
-                p => p.FileItemId == fileItem.Id
-                     && p.ProjectParticipantId.HasValue
-                     && (!requireApprovePermission || p.CanApprove));
-            foreach (var permission in filePermissions)
-            {
-                if (activeParticipants.TryGetValue(permission.ProjectParticipantId!.Value, out var groupId))
-                    teamGroupIds.Add(groupId);
-            }
-
             var allFolders = (await _unitOfWork.Repository<Folder>().FindAsync(
                     f => f.ProjectId == folder.ProjectId))
                 .ToDictionary(f => f.Id);
@@ -680,19 +791,43 @@ namespace Application.Services
                 current = parent;
             }
 
-            //var folderPermissions = await _unitOfWork.Repository<FolderPermissionServiceOld>().FindAsync(
-            //    p => folderIds.Contains(p.FolderId)
-            //         && p.ProjectParticipantId.HasValue
-            //         && (!requireApprovePermission || p.CanApprove));
-            //foreach (var permission in folderPermissions)
-            //{
-            //    if (activeParticipants.TryGetValue(permission.ProjectParticipantId!.Value, out var groupId))
-            //        teamGroupIds.Add(groupId);
-            //}
+            async Task<HashSet<Guid>> ResolveGroupIdsAsync(bool applyApproveFilter)
+            {
+                var groupIds = new HashSet<Guid>();
 
-            return teamGroupIds.Count > 0
-                ? teamGroupIds
-                : activeParticipants.Values.ToHashSet();
+                var filePermissions = await _unitOfWork.Repository<FilePermission>().FindAsync(
+                    p => p.FileItemId == fileItem.Id
+                         && p.ProjectParticipantId.HasValue
+                         && (!applyApproveFilter || p.CanApprove));
+                foreach (var permission in filePermissions)
+                {
+                    if (activeParticipants.TryGetValue(permission.ProjectParticipantId!.Value, out var groupId))
+                        groupIds.Add(groupId);
+                }
+
+                var folderPermissions = await _unitOfWork.Repository<FolderPermission>().FindAsync(
+                    p => folderIds.Contains(p.FolderId)
+                         && p.ProjectParticipantId.HasValue
+                         && (!applyApproveFilter || p.CanApprove));
+                foreach (var permission in folderPermissions)
+                {
+                    if (activeParticipants.TryGetValue(permission.ProjectParticipantId!.Value, out var groupId))
+                        groupIds.Add(groupId);
+                }
+
+                return groupIds;
+            }
+
+            var teamGroupIds = await ResolveGroupIdsAsync(applyApproveFilter: requireApprovePermission);
+            if (teamGroupIds.Count > 0 || !requireApprovePermission)
+                return teamGroupIds.Count > 0 ? teamGroupIds : activeParticipants.Values.ToHashSet();
+
+            // Không có nhóm nào có CanApprove=true trên file/folder này (dù bị tắt có chủ đích hay
+            // hoàn toàn chưa cấu hình) -> KHÔNG đoán/fallback về "tất cả nhóm dự án" nữa, trả về rỗng.
+            // Không nhóm nào được coi là phụ trách cho tới khi Admin cấu hình CanApprove rõ ràng cho
+            // đúng nhóm — tránh đoán sai sang nhóm không liên quan (VD: nhóm khác chưa cấu hình gì
+            // trên folder này nhưng lại vô tình lọt vào fallback, hiện nhầm "Người nhận").
+            return Array.Empty<Guid>();
         }
 
         /// <summary>Overload khi chưa có folder sẵn — tự fetch rồi gọi overload chính.</summary>
@@ -787,6 +922,24 @@ namespace Application.Services
                 })
                 .ToList();
 
+            // Team Leader active của nhóm phụ trách file — "người nhận" của yêu cầu khi còn Pending
+            // (đã quyết định rồi thì không cần nữa, đã có ApproverName). Trả cả AccountId để FE xác
+            // định chính xác "actor hiện tại có đúng là người phụ trách không" — kể cả khi actor
+            // cũng là người gửi request (không thể chỉ suy qua "actor có là Leader của nhóm nào đó").
+            var pendingApproverNames = new List<string>();
+            var pendingApproverAccountIds = new List<Guid>();
+            if (request.Status == ApprovalRequestStatus.Pending)
+            {
+                var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, folder, requireApprovePermission: true);
+                var leaderIds = await GetActiveTeamLeaderAccountIdsAsync(teamGroupIds);
+                pendingApproverAccountIds = leaderIds.ToList();
+                pendingApproverNames = leaderIds
+                    .Select(id => accounts.TryGetValue(id, out var leaderAccount) ? leaderAccount.UserName : null)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Select(name => name!)
+                    .ToList();
+            }
+
             return new ApprovalRequestResponseDTO
             {
                 Id = request.Id,
@@ -801,6 +954,8 @@ namespace Application.Services
                 Signers = signers,
                 RequestedBy = request.RequestedBy,
                 RequestedByName = requester?.UserName,
+                PendingApproverNames = pendingApproverNames,
+                PendingApproverAccountIds = pendingApproverAccountIds,
                 ApproverId = request.ApproverId,
                 ApproverName = approver?.UserName,
                 Status = request.Status,
