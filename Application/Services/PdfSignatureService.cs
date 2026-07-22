@@ -471,7 +471,11 @@ namespace Application.Services
             var topY = pdfY + position.Height; // canh tren co dinh
             pdfY = topY - effectiveHeight; // canh duoi day xuong neu can them cho
 
-            var headerRect = new Rectangle(position.X, pdfY + effectiveHeight - headerHeight, position.Width, headerHeight);
+            var headerRect = new Rectangle(
+                position.X + padding,
+                pdfY + effectiveHeight - headerHeight,
+                Math.Max(1, position.Width - padding * 2),
+                headerHeight);
             var bodyRect = new Rectangle(
                 position.X + padding,
                 pdfY + padding,

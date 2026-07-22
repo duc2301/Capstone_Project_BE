@@ -1,4 +1,4 @@
-using Application.DTOs.ResponseDTOs.Approval;
+﻿using Application.DTOs.ResponseDTOs.Approval;
 using Application.Interfaces.IServices;
 using Microsoft.AspNetCore.SignalR;
 
@@ -14,6 +14,6 @@ namespace Capstone_Project.SignalR
         }
 
         public Task ApprovalChangedAsync(Guid accountId, ApprovalRequestResponseDTO approval)
-            => _hub.Clients.User(accountId.ToString()).SendAsync("ApprovalChanged", approval);
+            => _hub.Clients.User(accountId.ToString()).SendAsync(SignalREventNames.ApprovalChanged, approval);
     }
 }

@@ -135,6 +135,24 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("Folder unassigned"));
         }
 
+        // ============ Tùy chỉnh field theo folder ============
+
+        // Toàn bộ field của convention đang áp cho folder + cờ enabled (Leader tùy chỉnh).
+        [HttpGet("folders/{folderId:guid}/field-selection")]
+        public async Task<IActionResult> GetFolderFieldSelection(Guid folderId)
+        {
+            return Ok(ApiResponse.Success("Retrieved successfully", await _service.GetFolderFieldSelectionAsync(folderId)));
+        }
+
+        // Bật/tắt các field không bắt buộc áp dụng cho folder (thay thế toàn bộ lựa chọn).
+        [HttpPut("folders/{folderId:guid}/field-selection")]
+        public async Task<IActionResult> SetFolderFieldSelection(Guid folderId, [FromBody] SetFolderFieldSelectionDTO dto)
+        {
+            var result = await _service.SetFolderFieldSelectionAsync(
+                folderId, dto.FieldIds, User.GetAccountId(), User.GetSystemRole());
+            return Ok(ApiResponse.Success("Field selection updated", result));
+        }
+
         // ============ Upload dialog ============
 
         // Dialog upload gọi trước tiên: convention đang áp cho folder + fields/values để render dropdown.

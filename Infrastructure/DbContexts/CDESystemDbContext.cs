@@ -83,6 +83,7 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<NamingConventionFieldValue> NamingConventionFieldValues { get; set; }
         public virtual DbSet<NamingConventionLockedValue> NamingConventionLockedValues { get; set; }
         public virtual DbSet<FileNamingMetadata> FileNamingMetadata { get; set; }
+        public virtual DbSet<FolderNamingField> FolderNamingFields { get; set; }
         
         public virtual DbSet<FileLink> FileLinks { get; set; }
 
@@ -329,11 +330,30 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(m => m.SelectedValueId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // FolderNamingField → Folder (N:1): field optional được bật cho folder
+            modelBuilder.Entity<FolderNamingField>()
+                .HasOne(x => x.Folder)
+                .WithMany()
+                .HasForeignKey(x => x.FolderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // FolderNamingField → NamingConventionField (N:1)
+            modelBuilder.Entity<FolderNamingField>()
+                .HasOne(x => x.Field)
+                .WithMany()
+                .HasForeignKey(x => x.NamingConventionFieldId)
+                .OnDelete(DeleteBehavior.Cascade);
+
             // INDEXES & CONSTRAINTS
 
             // Unique constraints
             modelBuilder.Entity<NamingConventionField>()
                 .HasIndex(nf => new { nf.NamingConventionId, nf.Code })
+                .IsUnique();
+
+            // 1 field chỉ bật 1 lần cho 1 folder
+            modelBuilder.Entity<FolderNamingField>()
+                .HasIndex(x => new { x.FolderId, x.NamingConventionFieldId })
                 .IsUnique();
 
             modelBuilder.Entity<NamingConventionFieldValue>()

@@ -16,12 +16,18 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly INotificationService _notification;
+        private readonly IDiscussionBroadcaster _broadcaster;
 
-        public DiscussionService(IUnitOfWork unitOfWork, IMapper mapper, INotificationService notification)
+        public DiscussionService(
+            IUnitOfWork unitOfWork,
+            IMapper mapper,
+            INotificationService notification,
+            IDiscussionBroadcaster broadcaster)
         {
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _notification = notification;
+            _broadcaster = broadcaster;
         }
 
         public async Task<IEnumerable<DiscussionResponseDTO>> GetAllAsync()
@@ -228,7 +234,16 @@ namespace Application.Services
             var accountNames = await ResolveAccountNamesAsync(
                 mentionedIds.Append(actorId).ToHashSet());
 
-            return MapMessage(message, attachments, mentionedIds, accountNames);
+            var result = MapMessage(message, attachments, mentionedIds, accountNames);
+
+            if (discussion.ScopeType == DiscussionScopeType.Issue && discussion.ScopeId.HasValue)
+            {
+                var issue = await _unitOfWork.Repository<Issue>().GetByIdAsync(discussion.ScopeId.Value);
+                if (issue?.LinkedFileItemId is Guid fileItemId)
+                    await _broadcaster.MessagePostedAsync(fileItemId, result);
+            }
+
+            return result;
         }
 
         // Chi nguoi tao issue, nguoi thuc hien (AssignedTo) hoac nguoi duoc them tham gia (IssueMention)

@@ -1,10 +1,10 @@
 using Application.DTOs.RequestDTOs.Markup;
 using Application.DTOs.ResponseDTOs.Markup;
 using Application.ExceptionMiddleware;
+using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
-using Domain.Enum.Cde;
 using Domain.Enum.File;
 
 namespace Application.Services
@@ -12,27 +12,30 @@ namespace Application.Services
     public class MarkupService : IMarkupService
     {
         private readonly IUnitOfWork _unitOfWork;
-        private readonly IFolderPermissionService _permission;
+        private readonly IFolderTreeRepository _folderTree;
+        private readonly IPermissionCheckingRepository _permissionRepo;
         private readonly IMarkupBroadcaster _broadcaster;
         private readonly INotificationService _notification;
 
         public MarkupService(
             IUnitOfWork unitOfWork,
-            IFolderPermissionService permission,
+            IFolderTreeRepository folderTree,
+            IPermissionCheckingRepository permissionRepo,
             IMarkupBroadcaster broadcaster,
             INotificationService notification)
         {
             _unitOfWork = unitOfWork;
-            _permission = permission;
+            _folderTree = folderTree;
+            _permissionRepo = permissionRepo;
             _broadcaster = broadcaster;
             _notification = notification;
         }
 
 
-        public async Task<MarkupSetResponseDTO> CreateSetAsync(CreateMarkupSetDTO dto, Guid actorId, CancellationToken ct = default)
+        public async Task<MarkupSetResponseDTO> CreateSetAsync(CreateMarkupSetDTO dto, Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
         {
             var fileItem = await GetFileItemAsync(dto.FileItemId);
-            //await _permission.RequireAsync(actorId, fileItem.FolderId, FolderAction.Download);
+            await RequireCanAccessFileAsync(fileItem, actorId, isSystemAdmin);
 
             var versionId = dto.FileVersionId ?? fileItem.CurrentVersionId
                 ?? throw new ApiExceptionResponse("File has no content version to markup.", 400);
@@ -62,10 +65,10 @@ namespace Application.Services
             return BuildSetDto(set, version.WorkingVersion, actorName, 0, 0, new List<FileNoteResponseDTO>());
         }
 
-        public async Task<IEnumerable<MarkupSetResponseDTO>> GetSetsByFileAsync(Guid fileItemId, Guid actorId, CancellationToken ct = default)
+        public async Task<IEnumerable<MarkupSetResponseDTO>> GetSetsByFileAsync(Guid fileItemId, Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
         {
             var fileItem = await GetFileItemAsync(fileItemId);
-            //await _permission.RequireAsync(actorId, fileItem.FolderId, FolderAction.Download);
+            await RequireCanAccessFileAsync(fileItem, actorId, isSystemAdmin);
 
             var sets = (await _unitOfWork.Repository<MarkupSet>().FindAsync(s => s.FileItemId == fileItemId))
                 .OrderByDescending(s => s.CreatedAt)
@@ -75,7 +78,7 @@ namespace Application.Services
         }
 
         public async Task<IEnumerable<MarkupSetResponseDTO>> GetSetsByIssueAsync(
-            Guid issueId, Guid actorId, CancellationToken ct = default)
+            Guid issueId, Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
         {
             var sets = (await _unitOfWork.Repository<MarkupSet>()
                     .FindAsync(s => s.IssueId == issueId))
@@ -94,8 +97,8 @@ namespace Application.Services
                 if (!fileItems.TryGetValue(set.FileItemId, out var fi)) continue;
                 if (!canViewFolder.TryGetValue(fi.FolderId, out var allowed))
                 {
-                    //var perm = await _permission.EvaluateAsync(actorId, fi.FolderId);
-                    //allowed = perm.CanDownload;
+                    var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fi.FolderId);
+                    allowed = folder is not null && await CanAccessFolderAsync(folder, actorId, isSystemAdmin);
                     canViewFolder[fi.FolderId] = allowed;
                 }
                 if (allowed) visible.Add(set);
@@ -104,11 +107,11 @@ namespace Application.Services
             return await BuildSetSummariesAsync(visible);
         }
 
-        public async Task<MarkupSetResponseDTO> GetSetDetailAsync(Guid setId, Guid actorId, CancellationToken ct = default)
+        public async Task<MarkupSetResponseDTO> GetSetDetailAsync(Guid setId, Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
         {
             var set = await GetSetAsync(setId);
             var fileItem = await GetFileItemAsync(set.FileItemId);
-            //await _permission.RequireAsync(actorId, fileItem.FolderId, FolderAction.Download);
+            await RequireCanAccessFileAsync(fileItem, actorId, isSystemAdmin);
 
             var notes = (await _unitOfWork.Repository<FileNote>().FindAsync(n => n.MarkupSetId == set.Id))
                 .OrderBy(n => n.CreatedAt)
@@ -128,11 +131,11 @@ namespace Application.Services
                 noteDtos);
         }
 
-        public async Task<MarkupSetResponseDTO> UpdateSetStatusAsync(Guid setId, MarkupSetStatus status, Guid actorId, CancellationToken ct = default)
+        public async Task<MarkupSetResponseDTO> UpdateSetStatusAsync(Guid setId, MarkupSetStatus status, Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
         {
             var set = await GetSetAsync(setId);
             var fileItem = await GetFileItemAsync(set.FileItemId);
-            //await _permission.RequireAsync(actorId, fileItem.FolderId, FolderAction.Download);
+            await RequireCanAccessFileAsync(fileItem, actorId, isSystemAdmin);
 
             set.Status = status;
             set.UpdatedAt = DateTime.UtcNow;
@@ -143,11 +146,11 @@ namespace Application.Services
         }
 
         public async Task<MarkupSetResponseDTO> LinkToIssueAsync(
-            Guid setId, Guid? issueId, Guid actorId, CancellationToken ct = default)
+            Guid setId, Guid? issueId, Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
         {
             var set = await GetSetAsync(setId);
             var fileItem = await GetFileItemAsync(set.FileItemId);
-            //await _permission.RequireAsync(actorId, fileItem.FolderId, FolderAction.Download);
+            await RequireCanAccessFileAsync(fileItem, actorId, isSystemAdmin);
 
             set.IssueId = issueId;
             set.UpdatedAt = DateTime.UtcNow;
@@ -157,11 +160,11 @@ namespace Application.Services
             return await BuildSetDetailDtoAsync(set);
         }
 
-        public async Task<FileNoteResponseDTO> AddNoteAsync(Guid setId, CreateFileNoteDTO dto, Guid actorId, CancellationToken ct = default)
+        public async Task<FileNoteResponseDTO> AddNoteAsync(Guid setId, CreateFileNoteDTO dto, Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
         {
             var set = await GetSetAsync(setId);
             var fileItem = await GetFileItemAsync(set.FileItemId);
-            //await _permission.RequireAsync(actorId, fileItem.FolderId, FolderAction.Download);
+            await RequireCanAccessFileAsync(fileItem, actorId, isSystemAdmin);
 
             var now = DateTime.UtcNow;
             var note = new FileNote
@@ -195,12 +198,12 @@ namespace Application.Services
             return result;
         }
 
-        public async Task<FileNoteResponseDTO> UpdateNoteAsync(Guid noteId, UpdateFileNoteDTO dto, Guid actorId, CancellationToken ct = default)
+        public async Task<FileNoteResponseDTO> UpdateNoteAsync(Guid noteId, UpdateFileNoteDTO dto, Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
         {
             var note = await GetNoteAsync(noteId);
             var set = await GetSetAsync(note.MarkupSetId);
             var fileItem = await GetFileItemAsync(set.FileItemId);
-            await RequireCanMutateNoteAsync(actorId, note, fileItem.FolderId);
+            await RequireCanMutateNoteAsync(actorId, note, fileItem.FolderId, isSystemAdmin);
 
             if (dto.MarkupType.HasValue) note.MarkupType = dto.MarkupType.Value;
             if (dto.PageNumber.HasValue) note.PageNumber = dto.PageNumber;
@@ -219,12 +222,12 @@ namespace Application.Services
             return result;
         }
 
-        public async Task DeleteNoteAsync(Guid noteId, Guid actorId, CancellationToken ct = default)
+        public async Task DeleteNoteAsync(Guid noteId, Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
         {
             var note = await GetNoteAsync(noteId);
             var set = await GetSetAsync(note.MarkupSetId);
             var fileItem = await GetFileItemAsync(set.FileItemId);
-            await RequireCanMutateNoteAsync(actorId, note, fileItem.FolderId);
+            await RequireCanMutateNoteAsync(actorId, note, fileItem.FolderId, isSystemAdmin);
 
             _unitOfWork.Repository<FileNote>().Delete(note);
             await _unitOfWork.CommitAsync();
@@ -244,11 +247,42 @@ namespace Application.Services
             => await _unitOfWork.Repository<FileNote>().GetByIdAsync(noteId)
                ?? throw new ApiExceptionResponse("Markup note not found.", 404);
 
-        private async Task RequireCanMutateNoteAsync(Guid actorId, FileNote note, Guid folderId)
+        public async Task<bool> CanAccessFileMarkupAsync(Guid fileItemId, Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
+        {
+            var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId);
+            if (fileItem is null) return false;
+
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
+            return folder is not null && await CanAccessFolderAsync(folder, actorId, isSystemAdmin);
+        }
+
+        private async Task<bool> CanAccessFolderAsync(Folder folder, Guid actorId, bool isSystemAdmin)
+            => isSystemAdmin
+               || await _folderTree.HasFullAccessAsync(folder.ProjectId, actorId)
+               || (await _permissionRepo.GetUserFolderPermissionAsync(folder.Id, actorId)) is { CanView: true };
+
+        private async Task RequireCanAccessFileAsync(FileItem fileItem, Guid actorId, bool isSystemAdmin)
+        {
+            var folder = await GetFolderAsync(fileItem.FolderId);
+            if (!await CanAccessFolderAsync(folder, actorId, isSystemAdmin))
+                throw new ApiExceptionResponse("Bạn không có quyền xem markup của file này.", 403);
+        }
+
+        private async Task RequireCanMutateNoteAsync(Guid actorId, FileNote note, Guid folderId, bool isSystemAdmin)
         {
             if (note.AuthorAccountId == actorId) return;
-            //await _permission.RequireAsync(actorId, folderId, FolderAction.Edit);
+
+            var folder = await GetFolderAsync(folderId);
+            if (isSystemAdmin || await _folderTree.HasFullAccessAsync(folder.ProjectId, actorId)) return;
+
+            var permission = await _permissionRepo.GetUserFolderPermissionAsync(folderId, actorId);
+            if (permission is not { CanEdit: true })
+                throw new ApiExceptionResponse("Bạn cần quyền Sửa trên thư mục này để sửa/xóa ghi chú của người khác.", 403);
         }
+
+        private async Task<Folder> GetFolderAsync(Guid folderId)
+            => await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
+               ?? throw new ApiExceptionResponse("File folder not found.", 404);
 
         private async Task NotifySetFollowersAsync(MarkupSet set, Guid actorId, string? actorName, string fileName)
         {
