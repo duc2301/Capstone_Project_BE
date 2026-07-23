@@ -23,15 +23,56 @@ namespace Application.Services
 
         public async Task<IEnumerable<ContractPackageResponseDTO>> GetAllAsync()
             => _mapper.Map<IEnumerable<ContractPackageResponseDTO>>(
-                await _unitOfWork.Repository<ContractPackage>().GetAllAsync());
+                await _unitOfWork.Repository<ContractPackage>().GetAllAsync("Project"));
 
         public async Task<IEnumerable<ContractPackageResponseDTO>> GetByProjectIdAsync(Guid projectId)
-            => _mapper.Map<IEnumerable<ContractPackageResponseDTO>>(
-                await _unitOfWork.Repository<ContractPackage>().FindAsync(p => p.ProjectId == projectId));
+        {
+            var packages = await _unitOfWork.Repository<ContractPackage>().FindAsync(p => p.ProjectId == projectId, "Project");
+            var result = _mapper.Map<List<ContractPackageResponseDTO>>(packages);
+
+            if (result.Any())
+            {
+                var packageIds = result.Select(p => p.Id).ToList();
+                var assignments = await _unitOfWork.Repository<PackageAssignment>().FindAsync(a => packageIds.Contains(a.ContractPackageId));
+                if (assignments.Any())
+                {
+                    var orgIds = assignments.Select(a => a.OrganizationId).Distinct().ToList();
+                    var orgs = await _unitOfWork.Repository<Organization>().FindAsync(o => orgIds.Contains(o.Id));
+                    var accIds = assignments.Where(a => a.RepresentativeAccountId.HasValue).Select(a => a.RepresentativeAccountId.Value).Distinct().ToList();
+                    var accounts = await _unitOfWork.Repository<Account>().FindAsync(a => accIds.Contains(a.Id));
+
+                    foreach (var r in result)
+                    {
+                        var pkgAssignments = assignments.Where(a => a.ContractPackageId == r.Id).ToList();
+                        foreach (var a in pkgAssignments)
+                        {
+                            var org = orgs.FirstOrDefault(o => o.Id == a.OrganizationId);
+                            var acc = a.RepresentativeAccountId.HasValue ? accounts.FirstOrDefault(x => x.Id == a.RepresentativeAccountId.Value) : null;
+                            r.Assignments.Add(new PackageAssignmentResponseDTO
+                            {
+                                Id = a.Id,
+                                ContractPackageId = a.ContractPackageId,
+                                OrganizationId = a.OrganizationId,
+                                OrganizationName = org?.DisplayName ?? org?.LegalName,
+                                OrganizationCode = org?.TaxCode,
+                                Role = a.Role,
+                                RepresentativeAccountId = a.RepresentativeAccountId,
+                                RepresentativeName = acc?.UserName,
+                                RepresentativeEmail = acc?.Email,
+                                ContractNumber = a.ContractNumber,
+                                ContractSignDate = a.ContractSignDate,
+                                Position = a.Position
+                            });
+                        }
+                    }
+                }
+            }
+            return result;
+        }
 
         public async Task<ContractPackageResponseDTO?> GetByIdAsync(Guid id)
         {
-            var entity = await _unitOfWork.Repository<ContractPackage>().GetByIdAsync(id);
+            var entity = (await _unitOfWork.Repository<ContractPackage>().FindAsync(cp => cp.Id == id, "Project")).FirstOrDefault();
             if (entity == null) return null;
 
             var result = _mapper.Map<ContractPackageResponseDTO>(entity);
@@ -142,34 +183,42 @@ namespace Application.Services
                     CreatedAt = DateTime.UtcNow
                 };
                 entity.Assignments.Add(assignment);
+            }
 
-                // Auto-create WIP folder for this contractor
-                var org = await _unitOfWork.Repository<Organization>().GetByIdAsync(dto.ContractorOrganizationId.Value);
-                if (org != null)
+            // Auto-create package folder under Published / 00 - Các gói thầu
+            var rootPublished = (await _unitOfWork.Repository<Folder>()
+                .FindAsync(f => f.ProjectId == dto.ProjectId && f.Area == Domain.Enum.Cde.CdeArea.Published && f.ParentFolderId == null))
+                .FirstOrDefault();
+
+            if (rootPublished != null)
+            {
+                var packageMasterFolder = (await _unitOfWork.Repository<Folder>()
+                    .FindAsync(f => f.ParentFolderId == rootPublished.Id && f.Name == "00 - Các gói thầu"))
+                    .FirstOrDefault();
+
+                if (packageMasterFolder != null)
                 {
-                    var rootWip = (await _unitOfWork.Repository<Folder>()
-                        .FindAsync(f => f.ProjectId == dto.ProjectId && f.Area == Domain.Enum.Cde.CdeArea.Wip && f.ParentFolderId == null))
-                        .FirstOrDefault();
-                    if (rootWip != null)
+                    var folderName = entity.Name.Trim();
+                    var existingFolder = (await _unitOfWork.Repository<Folder>()
+                        .FindAsync(f => f.ParentFolderId == packageMasterFolder.Id && f.Name.ToLower() == folderName.ToLower())).FirstOrDefault();
+                    
+                    if (existingFolder == null)
                     {
-                        var folderName = (org.DisplayName ?? org.LegalName).Trim();
-                        var existingFolder = (await _unitOfWork.Repository<Folder>()
-                            .FindAsync(f => f.ParentFolderId == rootWip.Id && f.Name.ToLower() == folderName.ToLower())).FirstOrDefault();
-                        if (existingFolder == null)
+                        var newFolder = new Folder
                         {
-                            var newFolder = new Folder
-                            {
-                                Id = Guid.NewGuid(),
-                                ProjectId = dto.ProjectId,
-                                ParentFolderId = rootWip.Id,
-                                Name = folderName,
-                                Area = Domain.Enum.Cde.CdeArea.Wip,
-                                IsTemplate = false,
-                                CreatedAt = DateTime.UtcNow,
-                                UpdatedAt = DateTime.UtcNow
-                            };
-                            await _unitOfWork.Repository<Folder>().CreateAsync(newFolder);
-                        }
+                            Id = Guid.NewGuid(),
+                            ProjectId = dto.ProjectId,
+                            ParentFolderId = packageMasterFolder.Id,
+                            Name = folderName,
+                            Area = Domain.Enum.Cde.CdeArea.Published,
+                            IsTemplate = false,
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow
+                        };
+                        await _unitOfWork.Repository<Folder>().CreateAsync(newFolder);
+                        
+                        // Assign the folder to the contract package so we know where its documents go
+                        entity.DocumentFolderId = newFolder.Id;
                     }
                 }
             }
@@ -205,40 +254,41 @@ namespace Application.Services
             _unitOfWork.Repository<ContractPackage>().Update(entity);
 
             // Update assignment if ContractorOrganizationId is provided
-            if (dto.ContractorOrganizationId.HasValue)
+            if (dto.ContractorOrganizationId.HasValue || dto.RepresentativeAccountId.HasValue || dto.ContractNumber != null || dto.ContractSignDate.HasValue || dto.ContractJobTitle != null)
             {
-                var assignments = await _unitOfWork.Repository<PackageAssignment>()
+                var existingAssignment = await _unitOfWork.Repository<PackageAssignment>()
                     .FindAsync(a => a.ContractPackageId == id && a.Role == Domain.Enum.ContractPackage.PackageRole.MainContractor);
-                var mainAssignment = assignments.FirstOrDefault();
+                
+                var assignment = existingAssignment.FirstOrDefault();
 
-                var signDate = dto.ContractSignDate;
-                if (signDate.HasValue && signDate.Value.Kind == DateTimeKind.Unspecified)
-                    signDate = DateTime.SpecifyKind(signDate.Value, DateTimeKind.Utc);
-
-                if (mainAssignment != null)
+                if (assignment == null && dto.ContractorOrganizationId.HasValue)
                 {
-                    mainAssignment.OrganizationId = dto.ContractorOrganizationId.Value;
-                    mainAssignment.RepresentativeAccountId = dto.RepresentativeAccountId;
-                    mainAssignment.ContractNumber = dto.ContractNumber;
-                    mainAssignment.ContractSignDate = signDate;
-                    mainAssignment.Position = dto.ContractJobTitle;
-                    _unitOfWork.Repository<PackageAssignment>().Update(mainAssignment);
-                }
-                else
-                {
-                    mainAssignment = new PackageAssignment
+                    assignment = new PackageAssignment
                     {
                         Id = Guid.NewGuid(),
                         ContractPackageId = id,
                         OrganizationId = dto.ContractorOrganizationId.Value,
                         Role = Domain.Enum.ContractPackage.PackageRole.MainContractor,
-                        RepresentativeAccountId = dto.RepresentativeAccountId,
-                        ContractNumber = dto.ContractNumber,
-                        ContractSignDate = signDate,
-                        Position = dto.ContractJobTitle,
                         CreatedAt = DateTime.UtcNow
                     };
-                    await _unitOfWork.Repository<PackageAssignment>().CreateAsync(mainAssignment);
+                    await _unitOfWork.Repository<PackageAssignment>().CreateAsync(assignment);
+                }
+
+                if (assignment != null)
+                {
+                    if (dto.ContractorOrganizationId.HasValue) assignment.OrganizationId = dto.ContractorOrganizationId.Value;
+                    if (dto.RepresentativeAccountId.HasValue) assignment.RepresentativeAccountId = dto.RepresentativeAccountId;
+                    if (dto.ContractNumber != null) assignment.ContractNumber = dto.ContractNumber;
+                    if (dto.ContractSignDate.HasValue)
+                    {
+                        var signDate = dto.ContractSignDate.Value;
+                        if (signDate.Kind == DateTimeKind.Unspecified)
+                            signDate = DateTime.SpecifyKind(signDate, DateTimeKind.Utc);
+                        assignment.ContractSignDate = signDate;
+                    }
+                    if (dto.ContractJobTitle != null) assignment.Position = dto.ContractJobTitle;
+                    
+                    _unitOfWork.Repository<PackageAssignment>().Update(assignment);
                 }
             }
 

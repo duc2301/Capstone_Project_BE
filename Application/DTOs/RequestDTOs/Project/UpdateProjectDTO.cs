@@ -10,6 +10,9 @@ namespace Application.DTOs.RequestDTOs.Project
 
         [StringLength(2000)]
         public string? ProjectDescription { get; set; }
+        
+        public string? ProjectCode { get; set; }
+        public string? ProjectImageUrl { get; set; }
 
         public Guid? ManagerAccountId { get; set; }
         public ProjectStatus? Status { get; set; }

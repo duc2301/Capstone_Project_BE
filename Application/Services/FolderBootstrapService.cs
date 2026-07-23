@@ -414,6 +414,27 @@ namespace Application.Services
                 await _unitOfWork.Repository<Folder>().CreateAsync(root);
                 roots.Add(root);
             }
+            
+            // Add "00 - Các gói thầu" to Published area
+            var publishedRoot = roots.FirstOrDefault(r => r.Area == CdeArea.Published);
+            if (publishedRoot != null)
+            {
+                var packageFolder = projectFolders.FirstOrDefault(f => f.ParentFolderId == publishedRoot.Id && f.Name == "Các gói thầu");
+                if (packageFolder == null)
+                {
+                    await _unitOfWork.Repository<Folder>().CreateAsync(new Folder
+                    {
+                        Id = Guid.NewGuid(),
+                        ProjectId = projectId,
+                        ParentFolderId = publishedRoot.Id,
+                        Name = "Các gói thầu",
+                        Area = CdeArea.Published,
+                        IsTemplate = false,
+                        CreatedAt = now,
+                        UpdatedAt = now
+                    });
+                }
+            }
 
             return roots;
         }

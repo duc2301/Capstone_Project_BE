@@ -15,6 +15,11 @@ namespace Application.DTOs.RequestDTOs.Organization
 
         public Guid? OrganizationTypeId { get; set; }
 
+        public string? AvatarUrl { get; set; }
+        public bool? IsJointVenture { get; set; }
+        public Guid? RepresentativeOrganizationId { get; set; }
+        public List<Guid>? JointVentureMemberIds { get; set; }
+
         [StringLength(300)]
         public string? Address { get; set; }
 

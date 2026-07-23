@@ -27,6 +27,7 @@ namespace Infrastructure.DbContexts
         // --- Module A: Định danh & Tổ chức ---
         public virtual DbSet<OrganizationType> OrganizationTypes { get; set; }
         public virtual DbSet<Organization> Organizations { get; set; }
+        public virtual DbSet<JointVentureMember> JointVentureMembers { get; set; }
         public virtual DbSet<Group> Groups { get; set; }
         public virtual DbSet<GroupMember> GroupMembers { get; set; }
 
@@ -247,6 +248,24 @@ namespace Infrastructure.DbContexts
                 .WithMany()
                 .HasForeignKey(s => s.SignerGroupId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // Joint Venture Member relationships
+            modelBuilder.Entity<JointVentureMember>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                
+                entity.HasOne(e => e.JointVenture)
+                    .WithMany()
+                    .HasForeignKey(e => e.JointVentureId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                
+                entity.HasOne(e => e.MemberOrganization)
+                    .WithMany()
+                    .HasForeignKey(e => e.MemberOrganizationId)
+                    .OnDelete(DeleteBehavior.Restrict);
+                    
+                entity.HasIndex(e => new { e.JointVentureId, e.MemberOrganizationId }).IsUnique();
+            });
 
             modelBuilder.Entity<ApprovalSignatureTransaction>()
                 .HasOne(t => t.ApprovalRequest)
