@@ -125,6 +125,42 @@ namespace Application.Services
             return ToResult(snapshot);
         }
 
+        public async Task<FileVersionResult> RestoreVersionAsync(Guid fileItemId, Guid versionStateId)
+        {
+            var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+                ?? throw new KeyNotFoundException($"FileItem {fileItemId} not found.");
+
+            var current = await RequireCurrentStateAsync(fileItemId);
+
+            // Cùng luật "upload thay thế": tài liệu đang Published không nhận version mới, phải về WIP trước.
+            if (current.Stage == VersionStage.Published)
+                throw new InvalidOperationException(
+                    "Published documents cannot restore a past version. Return the document to WIP first.");
+
+            var source = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(versionStateId)
+                ?? throw new KeyNotFoundException($"Version {versionStateId} not found.");
+
+            if (source.FileItemId != fileItemId)
+                throw new InvalidOperationException("Version does not belong to this file.");
+            if (source.IsCurrent)
+                throw new InvalidOperationException("This version is already the current version.");
+
+            // Đánh số y hệt upload thay thế (WorkingVersion +1 trong cùng Working Revision),
+            // nhưng dữ liệu file copy từ version ĐƯỢC CHỌN thay vì upload mới.
+            var snapshot = BuildRestoreSnapshot(source,
+                VersionStage.Working, current.WorkingRevision, current.WorkingVersion + 1, current.PublishedRevision);
+
+            await PersistSnapshotAsync(snapshot, current);
+
+            // Restore là feature thật (không phải sub-step của flow khác) nên tự cập nhật con trỏ
+            // version hiện hành của FileItem để folder-contents/view... đọc đúng bản vừa khôi phục.
+            fileItem.CurrentVersionId = snapshot.Id;
+            fileItem.UpdatedAt = DateTime.UtcNow;
+            await _unitOfWork.SaveChangesAsync();
+
+            return ToResult(snapshot);
+        }
+
         public async Task<FileVersionResult?> GetCurrentVersionAsync(Guid fileItemId)
         {
             var current = await _unitOfWork.FileVersionRepository.GetCurrentStateAsync(fileItemId);
@@ -191,24 +227,40 @@ namespace Application.Services
             VersionStage stage, int workingRevision, int workingVersion, int publishedRevision)
         {
             var snapshot = NewSnapshot(current.FileItemId, stage, workingRevision, workingVersion, publishedRevision);
-            snapshot.FileName = current.FileName;
-            snapshot.StoragePath = current.StoragePath;
-            snapshot.FileSizeBytes = current.FileSizeBytes;
-            snapshot.Format = current.Format;
-            snapshot.Checksum = current.Checksum;
-            snapshot.IsHidden = current.IsHidden;
-            snapshot.UploadedByAccountId = current.UploadedByAccountId;
-            snapshot.UploadedAt = current.UploadedAt;
-            snapshot.ViewerUrn = current.ViewerUrn;
-            snapshot.PreviewStoragePath = current.PreviewStoragePath;
-            snapshot.ViewerStatus = current.ViewerStatus;
-            snapshot.ViewerProgress = current.ViewerProgress;
-            snapshot.ViewerError = current.ViewerError;
-            snapshot.IsSigned = current.IsSigned;
-            snapshot.SignedAt = current.SignedAt;
-            snapshot.SignedBy = current.SignedBy;
-            snapshot.CertificateSerial = current.CertificateSerial;
+            CopyContentFrom(snapshot, current);
             return snapshot;
+        }
+
+        // Snapshot cho restore: copy dữ liệu file của version cũ ĐƯỢC CHỌN sang dòng mới.
+        private static FileVersionState BuildRestoreSnapshot(
+            FileVersionState source,
+            VersionStage stage, int workingRevision, int workingVersion, int publishedRevision)
+        {
+            var snapshot = NewSnapshot(source.FileItemId, stage, workingRevision, workingVersion, publishedRevision);
+            CopyContentFrom(snapshot, source);
+            return snapshot;
+        }
+
+        // Chép toàn bộ dữ liệu file vật lý + viewer + chữ ký (không đụng số version) giữa 2 dòng state.
+        private static void CopyContentFrom(FileVersionState target, FileVersionState source)
+        {
+            target.FileName = source.FileName;
+            target.StoragePath = source.StoragePath;
+            target.FileSizeBytes = source.FileSizeBytes;
+            target.Format = source.Format;
+            target.Checksum = source.Checksum;
+            target.IsHidden = source.IsHidden;
+            target.UploadedByAccountId = source.UploadedByAccountId;
+            target.UploadedAt = source.UploadedAt;
+            target.ViewerUrn = source.ViewerUrn;
+            target.PreviewStoragePath = source.PreviewStoragePath;
+            target.ViewerStatus = source.ViewerStatus;
+            target.ViewerProgress = source.ViewerProgress;
+            target.ViewerError = source.ViewerError;
+            target.IsSigned = source.IsSigned;
+            target.SignedAt = source.SignedAt;
+            target.SignedBy = source.SignedBy;
+            target.CertificateSerial = source.CertificateSerial;
         }
 
         private static FileVersionState NewSnapshot(
