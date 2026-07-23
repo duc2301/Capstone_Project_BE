@@ -13,7 +13,7 @@ using Pgvector;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    [Migration("20260722141549_AddJointVenture")]
+    [Migration("20260723151828_AddJointVenture")]
     partial class AddJointVenture
     {
         /// <inheritdoc />
@@ -1154,6 +1154,34 @@ namespace Infrastructure.Migrations
                     b.HasIndex("ProjectId");
 
                     b.ToTable("Folders");
+                });
+
+            modelBuilder.Entity("Domain.Entities.FolderNamingField", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("FolderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("NamingConventionFieldId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NamingConventionFieldId");
+
+                    b.HasIndex("FolderId", "NamingConventionFieldId")
+                        .IsUnique();
+
+                    b.ToTable("FolderNamingFields");
                 });
 
             modelBuilder.Entity("Domain.Entities.FolderPermission", b =>
@@ -2532,6 +2560,25 @@ namespace Infrastructure.Migrations
                     b.Navigation("ParentFolder");
 
                     b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("Domain.Entities.FolderNamingField", b =>
+                {
+                    b.HasOne("Domain.Entities.Folder", "Folder")
+                        .WithMany()
+                        .HasForeignKey("FolderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Domain.Entities.NamingConventionField", "Field")
+                        .WithMany()
+                        .HasForeignKey("NamingConventionFieldId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Field");
+
+                    b.Navigation("Folder");
                 });
 
             modelBuilder.Entity("Domain.Entities.FolderPermission", b =>
