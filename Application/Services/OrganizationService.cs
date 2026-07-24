@@ -55,6 +55,28 @@ namespace Application.Services
 
         public async Task<OrganizationResponseDTO> CreateAsync(CreateOrganizationDTO dto)
         {
+            if (dto == null) throw new ApiExceptionResponse("Invalid payload", 400);
+
+            if (dto.IsJointVenture)
+            {
+                var existingJv = await _unitOfWork.Repository<Organization>().FindAsync(o => o.IsJointVenture && o.LegalName.ToLower() == dto.LegalName.ToLower());
+                if (existingJv.Any())
+                    throw new ApiExceptionResponse($"Liên danh với tên '{dto.LegalName}' đã tồn tại.", 400);
+            }
+            else
+            {
+                var existingOrg = await _unitOfWork.Repository<Organization>().FindAsync(o =>
+                    !o.IsJointVenture &&
+                    o.OrganizationTypeId == dto.OrganizationTypeId &&
+                    (!string.IsNullOrEmpty(dto.TaxCode) ? o.TaxCode == dto.TaxCode : o.LegalName.ToLower() == dto.LegalName.ToLower())
+                );
+                if (existingOrg.Any())
+                {
+                    var msg = !string.IsNullOrEmpty(dto.TaxCode) ? $"Tổ chức với mã số thuế '{dto.TaxCode}' và vai trò này đã tồn tại." : $"Tổ chức với tên '{dto.LegalName}' và vai trò này đã tồn tại.";
+                    throw new ApiExceptionResponse(msg, 400);
+                }
+            }
+
             var entity = _mapper.Map<Organization>(dto);
             entity.Id = Guid.NewGuid();
             if (entity is IAuditable a) { var now = DateTime.UtcNow; a.CreatedAt = now; a.UpdatedAt = now; }
@@ -79,8 +101,37 @@ namespace Application.Services
 
         public async Task<OrganizationResponseDTO> UpdateAsync(Guid id, UpdateOrganizationDTO dto)
         {
+            if (dto == null) throw new ApiExceptionResponse("Invalid payload", 400);
+
             var entity = await _unitOfWork.Repository<Organization>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Organization with ID {id} not found.", 404);
+
+            var isJv = dto.IsJointVenture ?? entity.IsJointVenture;
+            var legalName = dto.LegalName ?? entity.LegalName;
+            var taxCode = dto.TaxCode ?? entity.TaxCode;
+            var orgTypeId = dto.OrganizationTypeId ?? entity.OrganizationTypeId;
+
+            if (isJv)
+            {
+                var existingJv = await _unitOfWork.Repository<Organization>().FindAsync(o => o.Id != id && o.IsJointVenture && o.LegalName.ToLower() == legalName.ToLower());
+                if (existingJv.Any())
+                    throw new ApiExceptionResponse($"Liên danh với tên '{legalName}' đã tồn tại.", 400);
+            }
+            else
+            {
+                var existingOrg = await _unitOfWork.Repository<Organization>().FindAsync(o =>
+                    o.Id != id &&
+                    !o.IsJointVenture &&
+                    o.OrganizationTypeId == orgTypeId &&
+                    (!string.IsNullOrEmpty(taxCode) ? o.TaxCode == taxCode : o.LegalName.ToLower() == legalName.ToLower())
+                );
+                if (existingOrg.Any())
+                {
+                    var msg = !string.IsNullOrEmpty(taxCode) ? $"Tổ chức với mã số thuế '{taxCode}' và vai trò này đã tồn tại." : $"Tổ chức với tên '{legalName}' và vai trò này đã tồn tại.";
+                    throw new ApiExceptionResponse(msg, 400);
+                }
+            }
+
             _mapper.Map(dto, entity);
             if (entity is IAuditable a) a.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<Organization>().Update(entity);
