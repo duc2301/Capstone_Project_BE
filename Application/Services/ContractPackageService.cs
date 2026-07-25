@@ -193,7 +193,7 @@ namespace Application.Services
             if (rootPublished != null)
             {
                 var packageMasterFolder = (await _unitOfWork.Repository<Folder>()
-                    .FindAsync(f => f.ParentFolderId == rootPublished.Id && f.Name == "00 - Các gói thầu"))
+                    .FindAsync(f => f.ParentFolderId == rootPublished.Id && f.Name == "Các gói thầu"))
                     .FirstOrDefault();
 
                 if (packageMasterFolder != null)

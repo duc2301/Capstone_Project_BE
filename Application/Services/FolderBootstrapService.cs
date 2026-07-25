@@ -434,7 +434,7 @@ namespace Application.Services
                 roots.Add(root);
             }
             
-            // Add "00 - Các gói thầu" to Published area
+            // Add "Các gói thầu" and "Hồ sơ pháp lý" to Published area
             var publishedRoot = roots.FirstOrDefault(r => r.Area == CdeArea.Published);
             if (publishedRoot != null)
             {
@@ -447,6 +447,22 @@ namespace Application.Services
                         ProjectId = projectId,
                         ParentFolderId = publishedRoot.Id,
                         Name = "Các gói thầu",
+                        Area = CdeArea.Published,
+                        IsTemplate = false,
+                        CreatedAt = now,
+                        UpdatedAt = now
+                    });
+                }
+
+                var legalFolder = projectFolders.FirstOrDefault(f => f.ParentFolderId == publishedRoot.Id && f.Name == "Hồ sơ pháp lý");
+                if (legalFolder == null)
+                {
+                    await _unitOfWork.Repository<Folder>().CreateAsync(new Folder
+                    {
+                        Id = Guid.NewGuid(),
+                        ProjectId = projectId,
+                        ParentFolderId = publishedRoot.Id,
+                        Name = "Hồ sơ pháp lý",
                         Area = CdeArea.Published,
                         IsTemplate = false,
                         CreatedAt = now,
