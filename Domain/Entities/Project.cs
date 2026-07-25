@@ -4,7 +4,7 @@ using Domain.Enum.Project;
 namespace Domain.Entities
 {
     // Project rỗng khi tạo; Manager + bên tham gia (Group) set sau qua endpoint chuyên dụng.
-    public class Project : IEntity
+    public class Project : IEntity, IAuditable
     {
         public Guid Id { get; set; }
         public string ProjectName { get; set; } = null!;
@@ -13,6 +13,14 @@ namespace Domain.Entities
         public string? ProjectCode { get; set; }
         public string? ProjectImageUrl { get; set; }
         public ProjectStatus Status { get; set; }     // Planning/Active/OnHold/Completed/Closed
-        public ProjectPhase Phase { get; set; }       // Concept/Design/Construction/Handover/Operation
+
+        public Guid? OwnerOrganizationId { get; set; }
+
+        public string? ContactAddress { get; set; }
+
+        public DateTime? CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
+
+        public Organization? OwnerOrganization { get; set; }
     }
 }

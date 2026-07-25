@@ -78,7 +78,7 @@
 --    aa1*=Accounts  bb1*=Organizations  cc1*=Groups  cc2*=GroupMembers
 --    dd1*=Projects  dd3*=ProjectParticipants
 --    ff1*=Folders   ff2*=FolderPermissions
---    ff3*=FileItems ff4*=FileVersions ff5*=FilePermissions
+--    ff3*=FileItems ff4*=FileVersionStates ff5*=FilePermissions
 -- ============================================================================
 
 BEGIN;
@@ -90,7 +90,7 @@ DELETE FROM "FilePermissions"
  WHERE "FileItemId" IN (SELECT fi."Id" FROM "FileItems" fi
                         JOIN "Folders" f ON fi."FolderId" = f."Id"
                         WHERE f."ProjectId" = 'dd100000-0000-0000-0000-000000000001');
-DELETE FROM "FileVersions"
+DELETE FROM "FileVersionStates"
  WHERE "FileItemId" IN (SELECT fi."Id" FROM "FileItems" fi
                         JOIN "Folders" f ON fi."FolderId" = f."Id"
                         WHERE f."ProjectId" = 'dd100000-0000-0000-0000-000000000001');
@@ -142,11 +142,12 @@ DELETE FROM "Accounts"
 -- 1) ACCOUNTS   Role: Admin=0, User=1 | Status: Active=0
 --    Mật khẩu chung "password" (BCrypt — cùng hash với seed_data.sql)
 -- ============================================================================
-INSERT INTO "Accounts" ("Id","UserName","Email","PasswordHash","Role","Status","ResetPasswordToken","ResetPasswordTokenExpiresAt","CreatedAt","UpdatedAt") VALUES
-('aa100000-0000-0000-0000-000000000001','Trịnh Quang PM','tree.pm@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,NULL,NULL,'2026-03-01 08:00:00+07',NULL),
-('aa100000-0000-0000-0000-000000000002','Lý Văn User','tree.user@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,NULL,NULL,'2026-03-01 08:05:00+07',NULL),
-('aa100000-0000-0000-0000-000000000003','Hồ Thị Không Quyền','tree.noperm@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,NULL,NULL,'2026-03-01 08:10:00+07',NULL),
-('aa100000-0000-0000-0000-000000000004','Trương Văn Đã Rời','tree.left@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,NULL,NULL,'2026-03-01 08:15:00+07',NULL);
+-- IsEmailVerified NOT NULL (migration thêm sau) — 4 account test đều đã xác thực.
+INSERT INTO "Accounts" ("Id","UserName","Email","PasswordHash","Role","Status","ResetPasswordToken","ResetPasswordTokenExpiresAt","IsEmailVerified","EmailOtp","EmailOtpExpiresAt","CreatedAt","UpdatedAt") VALUES
+('aa100000-0000-0000-0000-000000000001','Trịnh Quang PM','tree.pm@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,NULL,NULL,true,NULL,NULL,'2026-03-01 08:00:00+07',NULL),
+('aa100000-0000-0000-0000-000000000002','Lý Văn User','tree.user@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,NULL,NULL,true,NULL,NULL,'2026-03-01 08:05:00+07',NULL),
+('aa100000-0000-0000-0000-000000000003','Hồ Thị Không Quyền','tree.noperm@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,NULL,NULL,true,NULL,NULL,'2026-03-01 08:10:00+07',NULL),
+('aa100000-0000-0000-0000-000000000004','Trương Văn Đã Rời','tree.left@cde.vn','$2a$11$7EPcFyGnHfBCSULBHTvop.rOh9nMvhLacXUe2lmAw5RTP36Ek11ke',1,0,NULL,NULL,true,NULL,NULL,'2026-03-01 08:15:00+07',NULL);
 
 -- ============================================================================
 -- 2) ORGANIZATION  (OrganizationTypeId = Consultant — migration đã seed sẵn)
@@ -179,10 +180,12 @@ INSERT INTO "GroupMembers" ("Id","GroupId","AccountId","Role","Status","JoinedAt
 ('cc200000-0000-0000-0000-000000000005','cc100000-0000-0000-0000-000000000004','aa100000-0000-0000-0000-000000000003',0,0,'2026-03-02 08:20:00+07');
 
 -- ============================================================================
--- 5) PROJECT  Status: Active=1 | Phase: Construction=2
+-- 5) PROJECT  Status: Active=1
+--    ⚠️ Cột "Phase" ĐÃ BỎ (migration AddProjectOwnerAndContactAddress).
+--    OwnerOrganizationId = chủ đầu tư · ContactAddress = địa chỉ liên hệ.
 -- ============================================================================
-INSERT INTO "Projects" ("Id","ProjectName","ProjectDescription","Status","Phase","ManagerAccountId") VALUES
-('dd100000-0000-0000-0000-000000000001','Dự án Test Phân Quyền CDE','Dự án riêng để test api/folder-tree: quyền View trên cây folder và files.',1,2,'aa100000-0000-0000-0000-000000000001');
+INSERT INTO "Projects" ("Id","ProjectName","ProjectDescription","Status","ManagerAccountId","OwnerOrganizationId","ContactAddress","CreatedAt","UpdatedAt") VALUES
+('dd100000-0000-0000-0000-000000000001','Dự án Test Phân Quyền CDE','Dự án riêng để test api/folder-tree: quyền View trên cây folder và files.',1,'aa100000-0000-0000-0000-000000000001','bb100000-0000-0000-0000-000000000001','99 Đường Test, Quận 1, TP.HCM','2026-03-03 08:00:00+07',NULL);
 
 -- ============================================================================
 -- 6) PROJECT PARTICIPANTS  Role: ProjectAdmin=0, Member=1 | Status: Active=0, Inactive=1
@@ -260,16 +263,20 @@ INSERT INTO "FileItems" ("Id","FolderId","Name","FileType","Status","RequiresSig
 ('ff300000-0000-0000-0000-000000000007','ff100000-0000-0000-0000-000000000007','XB-01-HoSoPhatHanh.pdf',0,2,false,false,'ff400000-0000-0000-0000-000000000007',NULL,'aa100000-0000-0000-0000-000000000001','2026-03-05 08:30:00+07',NULL);
 
 -- ============================================================================
--- 10) FILE VERSIONS  (mỗi file 1 version v1 — đủ để CurrentVersionId hợp lệ)
+-- 10) FILE VERSION STATES  (mỗi file 1 bản hiện hành — đủ để CurrentVersionId hợp lệ)
+--     Bảng "FileVersions" cũ ĐÃ BỎ (migration RemoveLegacyFileVersions) → dùng
+--     "FileVersionStates". Script này test PHÂN QUYỀN cây thư mục, không test versioning,
+--     nên mọi bản đều để Working (Stage=0) / P01.01 / IsCurrent=true.
+--     ViewerStatus=0 (None): seed không có file thật trên storage.
 -- ============================================================================
-INSERT INTO "FileVersions" ("Id","FileItemId","VersionNumber","StoragePath","Format","FileSizeBytes","Checksum","IsHidden","UploadedByAccountId","UploadedAt","ViewerUrn","PreviewStoragePath","ViewerStatus","ViewerProgress","ViewerError","IsSigned","SignedAt","SignedBy","CertificateSerial") VALUES
-('ff400000-0000-0000-0000-000000000001','ff300000-0000-0000-0000-000000000001',1,'projects/tree-test/wip/kien-truc/kt-01-matbang-v1.pdf','pdf',1048576,'sha256:tree01',false,'aa100000-0000-0000-0000-000000000001','2026-03-05 08:00:00+07',NULL,NULL,0,NULL,NULL,false,NULL,NULL,NULL),
-('ff400000-0000-0000-0000-000000000002','ff300000-0000-0000-0000-000000000002',1,'projects/tree-test/wip/kien-truc/kt-02-matdung-v1.pdf','pdf',1048576,'sha256:tree02',false,'aa100000-0000-0000-0000-000000000001','2026-03-05 08:05:00+07',NULL,NULL,0,NULL,NULL,false,NULL,NULL,NULL),
-('ff400000-0000-0000-0000-000000000003','ff300000-0000-0000-0000-000000000003',1,'projects/tree-test/wip/kien-truc/kt-03-phoicanh-v1.pdf','pdf',1048576,'sha256:tree03',false,'aa100000-0000-0000-0000-000000000001','2026-03-05 08:10:00+07',NULL,NULL,0,NULL,NULL,false,NULL,NULL,NULL),
-('ff400000-0000-0000-0000-000000000004','ff300000-0000-0000-0000-000000000004',1,'projects/tree-test/wip/ket-cau/kc-01-mongcoc-v1.pdf','pdf',2097152,'sha256:tree04',false,'aa100000-0000-0000-0000-000000000001','2026-03-05 08:15:00+07',NULL,NULL,0,NULL,NULL,false,NULL,NULL,NULL),
-('ff400000-0000-0000-0000-000000000005','ff300000-0000-0000-0000-000000000005',1,'projects/tree-test/wip/mep/mep-01-sododien-v1.pdf','pdf',1572864,'sha256:tree05',false,'aa100000-0000-0000-0000-000000000001','2026-03-05 08:20:00+07',NULL,NULL,0,NULL,NULL,false,NULL,NULL,NULL),
-('ff400000-0000-0000-0000-000000000006','ff300000-0000-0000-0000-000000000006',1,'projects/tree-test/shared/bao-cao-phoi-hop/ph-01-v1.pdf','pdf',786432,'sha256:tree06',false,'aa100000-0000-0000-0000-000000000001','2026-03-05 08:25:00+07',NULL,NULL,0,NULL,NULL,false,NULL,NULL,NULL),
-('ff400000-0000-0000-0000-000000000007','ff300000-0000-0000-0000-000000000007',1,'projects/tree-test/published/xb-01-hosophathanh-v1.pdf','pdf',3145728,'sha256:tree07',false,'aa100000-0000-0000-0000-000000000001','2026-03-05 08:30:00+07',NULL,NULL,0,NULL,NULL,false,NULL,NULL,NULL);
+INSERT INTO "FileVersionStates" ("Id","FileItemId","IsCurrent","Stage","WorkingRevision","WorkingVersion","PublishedRevision","DisplayVersion","FileName","StoragePath","PreviewStoragePath","Format","FileSizeBytes","Checksum","IsHidden","ViewerStatus","ViewerUrn","ViewerProgress","ViewerError","IsSigned","SignedAt","SignedBy","CertificateSerial","UploadedByAccountId","UploadedAt","CreatedAt","UpdatedAt") VALUES
+('ff400000-0000-0000-0000-000000000001','ff300000-0000-0000-0000-000000000001',true,0,1,1,0,'P01.01',NULL,'projects/tree-test/wip/kien-truc/kt-01-matbang-v1.pdf',NULL,'pdf',1048576,'sha256:tree01',false,0,NULL,NULL,NULL,false,NULL,NULL,NULL,'aa100000-0000-0000-0000-000000000001','2026-03-05 08:00:00+07','2026-03-05 08:00:00+07','2026-03-05 08:00:00+07'),
+('ff400000-0000-0000-0000-000000000002','ff300000-0000-0000-0000-000000000002',true,0,1,1,0,'P01.01',NULL,'projects/tree-test/wip/kien-truc/kt-02-matdung-v1.pdf',NULL,'pdf',1048576,'sha256:tree02',false,0,NULL,NULL,NULL,false,NULL,NULL,NULL,'aa100000-0000-0000-0000-000000000001','2026-03-05 08:05:00+07','2026-03-05 08:05:00+07','2026-03-05 08:05:00+07'),
+('ff400000-0000-0000-0000-000000000003','ff300000-0000-0000-0000-000000000003',true,0,1,1,0,'P01.01',NULL,'projects/tree-test/wip/kien-truc/kt-03-phoicanh-v1.pdf',NULL,'pdf',1048576,'sha256:tree03',false,0,NULL,NULL,NULL,false,NULL,NULL,NULL,'aa100000-0000-0000-0000-000000000001','2026-03-05 08:10:00+07','2026-03-05 08:10:00+07','2026-03-05 08:10:00+07'),
+('ff400000-0000-0000-0000-000000000004','ff300000-0000-0000-0000-000000000004',true,0,1,1,0,'P01.01',NULL,'projects/tree-test/wip/ket-cau/kc-01-mongcoc-v1.pdf',NULL,'pdf',2097152,'sha256:tree04',false,0,NULL,NULL,NULL,false,NULL,NULL,NULL,'aa100000-0000-0000-0000-000000000001','2026-03-05 08:15:00+07','2026-03-05 08:15:00+07','2026-03-05 08:15:00+07'),
+('ff400000-0000-0000-0000-000000000005','ff300000-0000-0000-0000-000000000005',true,0,1,1,0,'P01.01',NULL,'projects/tree-test/wip/mep/mep-01-sododien-v1.pdf',NULL,'pdf',1572864,'sha256:tree05',false,0,NULL,NULL,NULL,false,NULL,NULL,NULL,'aa100000-0000-0000-0000-000000000001','2026-03-05 08:20:00+07','2026-03-05 08:20:00+07','2026-03-05 08:20:00+07'),
+('ff400000-0000-0000-0000-000000000006','ff300000-0000-0000-0000-000000000006',true,0,1,1,0,'P01.01',NULL,'projects/tree-test/shared/bao-cao-phoi-hop/ph-01-v1.pdf',NULL,'pdf',786432,'sha256:tree06',false,0,NULL,NULL,NULL,false,NULL,NULL,NULL,'aa100000-0000-0000-0000-000000000001','2026-03-05 08:25:00+07','2026-03-05 08:25:00+07','2026-03-05 08:25:00+07'),
+('ff400000-0000-0000-0000-000000000007','ff300000-0000-0000-0000-000000000007',true,0,1,1,0,'P01.01',NULL,'projects/tree-test/published/xb-01-hosophathanh-v1.pdf',NULL,'pdf',3145728,'sha256:tree07',false,0,NULL,NULL,NULL,false,NULL,NULL,NULL,'aa100000-0000-0000-0000-000000000001','2026-03-05 08:30:00+07','2026-03-05 08:30:00+07','2026-03-05 08:30:00+07');
 
 -- ============================================================================
 -- 11) FILE PERMISSIONS  (6 cờ bool + Status: Active=0, Inactive=1)
