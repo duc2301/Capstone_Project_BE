@@ -4,7 +4,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
-using Domain.Common;
+
 using Domain.Entities;
 using Application.DTOs.ResponseDTOs.Folder;
 
@@ -119,7 +119,7 @@ namespace Application.Services
         {
             var entity = _mapper.Map<ContractPackage>(dto);
             entity.Id = Guid.NewGuid();
-            if (entity is IAuditable a) { var now = DateTime.UtcNow; a.CreatedAt = now; a.UpdatedAt = now; }
+            entity.CreatedAt = entity.UpdatedAt = DateTime.UtcNow;
 
             // Auto-generate code if empty
             if (string.IsNullOrWhiteSpace(entity.Code))
@@ -243,7 +243,7 @@ namespace Application.Services
                 ?? throw new ApiExceptionResponse($"ContractPackage with ID {id} not found.", 404);
 
             _mapper.Map(dto, entity);
-            if (entity is IAuditable a) a.UpdatedAt = DateTime.UtcNow;
+            entity.UpdatedAt = DateTime.UtcNow;
 
             if (entity.StartDate.HasValue && entity.StartDate.Value.Kind == DateTimeKind.Unspecified)
                 entity.StartDate = DateTime.SpecifyKind(entity.StartDate.Value, DateTimeKind.Utc);

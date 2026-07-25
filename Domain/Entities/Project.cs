@@ -1,10 +1,10 @@
-using Domain.Common;
+
 using Domain.Enum.Project;
 
 namespace Domain.Entities
 {
     // Project rỗng khi tạo; Manager + bên tham gia (Group) set sau qua endpoint chuyên dụng.
-    public class Project : IEntity, IAuditable
+    public class Project 
     {
         public Guid Id { get; set; }
         public string ProjectName { get; set; } = null!;

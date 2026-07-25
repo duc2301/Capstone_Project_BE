@@ -1,10 +1,10 @@
-using Domain.Common;
+
 using Domain.Enum.Project;
 
 namespace Domain.Entities
 {
     // 1 group = 1 bên tham gia 1 dự án. Org/phòng ban suy ra qua Group.OrganizationId.
-    public class ProjectParticipant : IEntity
+    public class ProjectParticipant 
     {
         public Guid Id { get; set; }
         public Guid ProjectId { get; set; }

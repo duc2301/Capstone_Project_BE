@@ -4,7 +4,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
-using Domain.Common;
+
 using Domain.Entities;
 using Domain.Enum.Audit;
 
@@ -50,7 +50,7 @@ namespace Application.Services
 
             var entity = _mapper.Map<Project>(dto);
             entity.Id = Guid.NewGuid();
-            if (entity is IAuditable a) { var now = DateTime.UtcNow; a.CreatedAt = now; a.UpdatedAt = now; }
+            entity.CreatedAt = entity.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.Repository<Project>().CreateAsync(entity);
 
             if (!string.IsNullOrWhiteSpace(dto.Address) || dto.Latitude.HasValue || dto.Longitude.HasValue)
@@ -107,12 +107,12 @@ namespace Application.Services
             _ = await ResolveOwnerOrganizationAsync(dto.OwnerOrganizationId);
 
             _mapper.Map(dto, entity);
-            if (entity is IAuditable a) a.UpdatedAt = DateTime.UtcNow;
+            entity.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<Project>().Update(entity);
 
             await _auditLog.LogAsync(
                 LogScope.System, AuditAction.Update, nameof(Project), entity.Id.ToString(),
-                actorId, detail: $"Cập nhật dự án '{entity.ProjectName}' (trạng thái: {entity.Status}, giai đoạn: {entity.Phase})",
+                actorId, detail: $"Cập nhật dự án '{entity.ProjectName}' (trạng thái: {entity.Status}, vào lúc: {entity.UpdatedAt})",
                 projectId: entity.Id);
 
             await _unitOfWork.CommitAsync();

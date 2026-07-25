@@ -4,7 +4,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
-using Domain.Common;
+
 using Domain.Entities;
 using Domain.Enum.Audit;
 using Domain.Enum.Cde;
@@ -58,7 +58,7 @@ namespace Application.Services
         {
             var entity = _mapper.Map<FileItem>(dto);
             entity.Id = Guid.NewGuid();
-            if (entity is IAuditable a) { var now = DateTime.UtcNow; a.CreatedAt = now; a.UpdatedAt = now; }
+            entity.CreatedAt = entity.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.Repository<FileItem>().CreateAsync(entity);
             await _unitOfWork.CommitAsync();
             return _mapper.Map<FileItemResponseDTO>(entity);
@@ -69,7 +69,7 @@ namespace Application.Services
             var entity = await _unitOfWork.Repository<FileItem>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"FileItem with ID {id} not found.", 404);
             _mapper.Map(dto, entity);
-            if (entity is IAuditable a) a.UpdatedAt = DateTime.UtcNow;
+            entity.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<FileItem>().Update(entity);
             await _unitOfWork.CommitAsync();
             return _mapper.Map<FileItemResponseDTO>(entity);

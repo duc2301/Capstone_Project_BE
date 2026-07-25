@@ -1,11 +1,11 @@
 using Domain.Enum.Issue;
 
-using Domain.Common;
+
 
 namespace Domain.Entities
 {
     // Issue / RFI: vấn đề hoặc yêu cầu thông tin giữa các bên
-    public class Issue : IEntity, IAuditable
+    public class Issue 
     {
         public Guid Id { get; set; }
         public Guid ProjectId { get; set; }

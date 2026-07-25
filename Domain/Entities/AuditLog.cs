@@ -1,4 +1,3 @@
-using Domain.Common;
 using Domain.Enum.Audit;
 
 namespace Domain.Entities

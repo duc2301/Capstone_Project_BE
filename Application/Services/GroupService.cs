@@ -4,7 +4,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
-using Domain.Common;
+
 using Domain.Entities;
 using Domain.Enum.Account;
 using Domain.Enum.Audit;
@@ -58,7 +58,7 @@ namespace Application.Services
         {
             var entity = _mapper.Map<Group>(dto);
             entity.Id = Guid.NewGuid();
-            if (entity is IAuditable a) { var now = DateTime.UtcNow; a.CreatedAt = now; a.UpdatedAt = now; }
+            entity.CreatedAt = entity.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.Repository<Group>().CreateAsync(entity);
             await _unitOfWork.CommitAsync();
 
@@ -83,7 +83,7 @@ namespace Application.Services
                 "Chỉ Admin hoặc PM dự án mới được cập nhật thông tin nhóm.");
 
             _mapper.Map(dto, entity);
-            if (entity is IAuditable a) a.UpdatedAt = DateTime.UtcNow;
+            entity.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<Group>().Update(entity);
             await _unitOfWork.CommitAsync();
 

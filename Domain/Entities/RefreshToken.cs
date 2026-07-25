@@ -1,10 +1,10 @@
 using System.ComponentModel.DataAnnotations.Schema;
-using Domain.Common;
+
 
 namespace Domain.Entities
 {
     // Refresh token xoay vòng: mỗi lần refresh sẽ revoke token cũ và phát token mới.
-    public class RefreshToken : IEntity
+    public class RefreshToken 
     {
         public Guid Id { get; set; }
         public Guid AccountId { get; set; }

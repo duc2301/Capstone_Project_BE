@@ -1,9 +1,8 @@
-using Domain.Common;
 using Pgvector;
 
 namespace Domain.Entities
 {
-    public class DocumentChildChunk : IEntity
+    public class DocumentChildChunk
     {
         public Guid Id { get; set; }
         public Guid DocumentId { get; set; }      // FK -> Document (cha)

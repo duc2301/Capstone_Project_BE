@@ -4,7 +4,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
-using Domain.Common;
+
 using Domain.Entities;
 using Domain.Enum.Audit;
 
@@ -37,7 +37,7 @@ namespace Application.Services
         {
             var entity = _mapper.Map<Folder>(dto);
             entity.Id = Guid.NewGuid();
-            if (entity is IAuditable a) { var now = DateTime.UtcNow; a.CreatedAt = now; a.UpdatedAt = now; }
+            entity.CreatedAt = entity.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.Repository<Folder>().CreateAsync(entity);
 
             await _auditLog.LogAsync(
@@ -54,7 +54,7 @@ namespace Application.Services
             var entity = await _unitOfWork.Repository<Folder>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Folder with ID {id} not found.", 404);
             _mapper.Map(dto, entity);
-            if (entity is IAuditable a) a.UpdatedAt = DateTime.UtcNow;
+            entity.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<Folder>().Update(entity);
 
             await _auditLog.LogAsync(

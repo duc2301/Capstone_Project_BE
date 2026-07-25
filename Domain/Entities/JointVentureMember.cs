@@ -1,8 +1,8 @@
-using Domain.Common;
+
 
 namespace Domain.Entities
 {
-    public class JointVentureMember : IEntity
+    public class JointVentureMember 
     {
         public Guid Id { get; set; }
         public Guid JointVentureId { get; set; }

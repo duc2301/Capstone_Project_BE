@@ -1,11 +1,9 @@
 using Domain.Enum.ContractPackage;
 
-using Domain.Common;
-
 namespace Domain.Entities
 {
     // Gói thầu thuộc 1 dự án
-    public class ContractPackage : IEntity
+    public class ContractPackage
     {
         public Guid Id { get; set; }
         public Guid ProjectId { get; set; }
@@ -27,6 +25,7 @@ namespace Domain.Entities
         public Guid? DocumentFolderId { get; set; }     // File đính kèm gói thầu (nằm trong CDE)
 
         public DateTime? CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
 
         public Project Project { get; set; } = null!;
         public ICollection<PackageAssignment> Assignments { get; set; } = new List<PackageAssignment>();
