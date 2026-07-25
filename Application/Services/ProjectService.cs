@@ -6,6 +6,7 @@ using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using Domain.Common;
 using Domain.Entities;
+using Domain.Enum.Audit;
 
 namespace Application.Services
 {
@@ -14,12 +15,15 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly IFolderBootstrapService _folderBootstrap;
+        private readonly IAuditLogService _auditLog;
 
-        public ProjectService(IUnitOfWork unitOfWork, IMapper mapper, IFolderBootstrapService folderBootstrap)
+        public ProjectService(IUnitOfWork unitOfWork, IMapper mapper, IFolderBootstrapService folderBootstrap,
+            IAuditLogService auditLog)
         {
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _folderBootstrap = folderBootstrap;
+            _auditLog = auditLog;
         }
 
         public async Task<IEnumerable<ProjectResponseDTO>> GetAllAsync()
@@ -36,7 +40,7 @@ namespace Application.Services
             return dto;
         }
 
-        public async Task<ProjectResponseDTO> CreateAsync(CreateProjectDTO dto)
+        public async Task<ProjectResponseDTO> CreateAsync(CreateProjectDTO dto, Guid actorId)
         {
             var entity = _mapper.Map<Project>(dto);
             entity.Id = Guid.NewGuid();
@@ -57,6 +61,10 @@ namespace Application.Services
                 });
             }
 
+            await _auditLog.LogAsync(
+                LogScope.System, AuditAction.Create, nameof(Project), entity.Id.ToString(),
+                actorId, detail: $"Tạo dự án '{entity.ProjectName}'", projectId: entity.Id);
+
             await _unitOfWork.CommitAsync();
 
             // Dựng 4 khu vực CDE gốc (WIP/Shared/Published/Archived) ngay khi tạo dự án.
@@ -76,22 +84,33 @@ namespace Application.Services
             return location == null ? null : _mapper.Map<ProjectLocationResponseDTO>(location);
         }
 
-        public async Task<ProjectResponseDTO> UpdateAsync(Guid id, UpdateProjectDTO dto)
+        public async Task<ProjectResponseDTO> UpdateAsync(Guid id, UpdateProjectDTO dto, Guid actorId)
         {
             var entity = await _unitOfWork.Repository<Project>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Project with ID {id} not found.", 404);
             _mapper.Map(dto, entity);
             if (entity is IAuditable a) a.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<Project>().Update(entity);
+
+            await _auditLog.LogAsync(
+                LogScope.System, AuditAction.Update, nameof(Project), entity.Id.ToString(),
+                actorId, detail: $"Cập nhật dự án '{entity.ProjectName}' (trạng thái: {entity.Status}, giai đoạn: {entity.Phase})",
+                projectId: entity.Id);
+
             await _unitOfWork.CommitAsync();
             return _mapper.Map<ProjectResponseDTO>(entity);
         }
 
-        public async Task DeleteAsync(Guid id)
+        public async Task DeleteAsync(Guid id, Guid actorId)
         {
             var entity = await _unitOfWork.Repository<Project>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Project with ID {id} not found.", 404);
             _unitOfWork.Repository<Project>().Delete(entity);
+
+            await _auditLog.LogAsync(
+                LogScope.System, AuditAction.Delete, nameof(Project), entity.Id.ToString(),
+                actorId, detail: $"Xoá dự án '{entity.ProjectName}'", projectId: entity.Id);
+
             await _unitOfWork.CommitAsync();
         }
     }

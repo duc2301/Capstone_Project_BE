@@ -56,14 +56,14 @@ namespace Capstone_Project.Controllers
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateFolderDTO dto)
         {
             //await _permission.RequireAsync(User.GetAccountId(), id, FolderAction.Edit);
-            return Ok(ApiResponse.Success("Updated successfully", await _service.UpdateAsync(id, dto)));
+            return Ok(ApiResponse.Success("Updated successfully", await _service.UpdateAsync(id, dto, User.GetAccountId())));
         }
 
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> Delete(Guid id)
         {
             //await _permission.RequireAsync(User.GetAccountId(), id, FolderAction.Edit);
-            await _service.DeleteAsync(id);
+            await _service.DeleteAsync(id, User.GetAccountId());
             return Ok(ApiResponse.Success("Deleted successfully"));
         }
 

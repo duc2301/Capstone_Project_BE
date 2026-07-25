@@ -27,8 +27,11 @@ namespace Application.Services
             (CdeArea.Archived,  "Archived"),
         };
 
-        public FolderBootstrapService(IUnitOfWork unitOfWork, IMapper mapper)
+        private readonly IAuditLogService _auditLog;
+
+        public FolderBootstrapService(IUnitOfWork unitOfWork, IMapper mapper, IAuditLogService auditLog)
         {
+            _auditLog = auditLog;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
         }
@@ -168,6 +171,12 @@ namespace Application.Services
             // Folder tạo trong WIP luôn có "bản chiếu" cùng vị trí ở Shared/Published/Archived.
             if (child.Area == CdeArea.Wip)
                 await CreateMirrorFoldersAsync(child, parent, childPermissions, now);
+
+            await _auditLog.LogAsync(
+                Domain.Enum.Audit.LogScope.Group, Domain.Enum.Audit.AuditAction.Create,
+                nameof(Folder), child.Id.ToString(), actor,
+                detail: $"Tạo thư mục con '{child.Name}' trong '{parent.Name}' (vùng {child.Area})",
+                projectId: parent.ProjectId, folderId: child.Id);
 
             await _unitOfWork.CommitAsync();
             return _mapper.Map<FolderResponseDTO>(child);

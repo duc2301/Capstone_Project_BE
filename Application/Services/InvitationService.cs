@@ -6,6 +6,7 @@ using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using Domain.Entities;
+using Domain.Enum.Audit;
 using Domain.Enum.Group;
 using Domain.Enum.Invitation;
 using Domain.Enum.Project;
@@ -23,17 +24,20 @@ namespace Application.Services
         private readonly INotificationService _notification;
         private readonly IFolderBootstrapService _folderBootstrap;
         private readonly IMapper _mapper;
+        private readonly IAuditLogService _auditLog;
 
         public InvitationService(
             IUnitOfWork unitOfWork,
             INotificationService notification,
             IFolderBootstrapService folderBootstrap,
-            IMapper mapper)
+            IMapper mapper,
+            IAuditLogService auditLog)
         {
             _unitOfWork = unitOfWork;
             _notification = notification;
             _folderBootstrap = folderBootstrap;
             _mapper = mapper;
+            _auditLog = auditLog;
         }
 
         public async Task<InvitationResponseDTO> InviteAsync(InviteRequestDTO dto, Guid inviter, string? inviterName)
@@ -78,6 +82,11 @@ namespace Application.Services
             invitation.ExpiresAt = DateTime.UtcNow.AddDays(dto.ExpireDays > 0 ? dto.ExpireDays : 7);
 
             await _unitOfWork.Repository<ProjectInvitation>().CreateAsync(invitation);
+
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Invite, nameof(ProjectInvitation), invitation.Id.ToString(), inviter,
+                detail: $"Mời vào nhóm '{group.Name}' (vai trò {RoleLabel(dto.Role)}) của dự án '{project.ProjectName}'",
+                projectId: dto.ProjectId, groupId: dto.InvitedGroupId);
 
             await _unitOfWork.CommitAsync();
 
@@ -162,6 +171,12 @@ namespace Application.Services
             invitation.Status = InvitationStatus.Accepted;
             invitation.RespondedAt = DateTime.UtcNow;
 
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.AcceptInvite, nameof(ProjectInvitation), invitation.Id.ToString(),
+                accountId,
+                detail: $"Chấp nhận lời mời vào nhóm (vai trò {RoleLabel(invitation.Role)})",
+                projectId: projectId, groupId: groupId);
+
             await _unitOfWork.CommitAsync();
 
             // Group lần đầu vào dự án -> dựng "ô" thư mục CDE cho bên này (idempotent).
@@ -190,6 +205,12 @@ namespace Application.Services
 
             invitation.Status = InvitationStatus.Rejected;
             invitation.RespondedAt = DateTime.UtcNow;
+
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.RejectInvite, nameof(ProjectInvitation), invitation.Id.ToString(),
+                accountId,
+                detail: $"Từ chối lời mời vào nhóm (vai trò {RoleLabel(invitation.Role)})",
+                projectId: invitation.ProjectId, groupId: invitation.InvitedGroupId);
 
             await _unitOfWork.CommitAsync();
 

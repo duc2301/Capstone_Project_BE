@@ -6,6 +6,7 @@ using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using Domain.Common;
 using Domain.Entities;
+using Domain.Enum.Audit;
 using Domain.Enum.Cde;
 using Domain.Enum.File;
 
@@ -19,6 +20,7 @@ namespace Application.Services
         private readonly IIssueService _issueService;
         private readonly IFileVersionService _fileVersionService;
         private readonly IMapper _mapper;
+        private readonly IAuditLogService _auditLog;
 
         public FileItemService(
             IUnitOfWork unitOfWork,
@@ -26,7 +28,8 @@ namespace Application.Services
             IFileZoneResolverService zoneResolver,
             IIssueService issueService,
             IFileVersionService fileVersionService,
-            IMapper mapper)
+            IMapper mapper,
+            IAuditLogService auditLog)
         {
             _unitOfWork = unitOfWork;
             _permission = permission;
@@ -34,6 +37,7 @@ namespace Application.Services
             _issueService = issueService;
             _fileVersionService = fileVersionService;
             _mapper = mapper;
+            _auditLog = auditLog;
         }
 
         public async Task<IEnumerable<FileItemResponseDTO>> GetAllAsync()
@@ -119,6 +123,12 @@ namespace Application.Services
                     fileItem.CurrentVersionId = result.VersionStateId;
                 }
             }
+
+            // folderId = folder NGUỒN lúc chuyển (nhóm đang giữ file thấy được lịch sử chuyển vùng).
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.ZoneTransfer, nameof(FileItem), fileItem.Id.ToString(), actorId,
+                detail: $"Chuyển vùng '{fileItem.Name}': {fromZone} → {_zoneResolver.FormatZone(targetZone)}",
+                projectId: currentFolder.ProjectId, folderId: currentFolder.Id);
 
             await _unitOfWork.CommitAsync();
 

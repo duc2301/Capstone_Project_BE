@@ -7,8 +7,8 @@ namespace Application.Interfaces.IServices
     {
         Task<IEnumerable<AccountResponseDTO>> GetAllAsync();
         Task<AccountResponseDTO?> GetByIdAsync(Guid id);
-        Task<AccountResponseDTO> CreateAsync(CreateAccountDTO dto);
-        Task<AccountResponseDTO> UpdateAsync(Guid id, UpdateAccountDTO dto);
-        Task DeleteAsync(Guid id);
+        Task<AccountResponseDTO> CreateAsync(CreateAccountDTO dto, Guid actorId);
+        Task<AccountResponseDTO> UpdateAsync(Guid id, UpdateAccountDTO dto, Guid actorId);
+        Task DeleteAsync(Guid id, Guid actorId);
     }
 }
