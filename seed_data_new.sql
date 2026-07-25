@@ -117,13 +117,17 @@ INSERT INTO "GroupMembers" ("Id","GroupId","AccountId","Role","Status","JoinedAt
 
 -- ============================================================================
 -- 5) PROJECTS  Status: Planning=0,Active=1,OnHold=2,Completed=3,Closed=4
---              Phase : Concept=0,Design=1,Construction=2,Handover=3,Operation=4
+--    ⚠️ Cột "Phase" ĐÃ BỎ (migration AddProjectOwnerAndContactAddress): hệ thống
+--       không quản lý tiến độ, chỉ giữ Status để biết dự án còn hoạt động hay đã đóng.
+--    OwnerOrganizationId -> "Organizations" = CHỦ ĐẦU TƯ (nullable, ON DELETE SET NULL).
+--    ContactAddress      = địa chỉ liên hệ, TÁCH khỏi địa chỉ công trình ở "ProjectLocations".
+--    d0*3 để trống chủ đầu tư + địa chỉ liên hệ → test UI hiển thị "Chưa cập nhật".
 -- ============================================================================
-INSERT INTO "Projects" ("Id","ProjectName","ProjectDescription","Status","Phase","ManagerAccountId") VALUES
-('d0000000-0000-0000-0000-000000000001','Khu phức hợp căn hộ Riverside Tower','Tổ hợp căn hộ cao cấp 3 tháp, 35 tầng ven sông Sài Gòn.',1,2,'a0000000-0000-0000-0000-000000000002'),
-('d0000000-0000-0000-0000-000000000002','Cầu vượt nút giao Cát Lái','Cầu vượt thép giảm ùn tắc nút giao Cát Lái, TP. Thủ Đức.',0,1,'a0000000-0000-0000-0000-000000000002'),
-('d0000000-0000-0000-0000-000000000003','Nhà máy xử lý nước thải Bình Hưng','Nhà máy xử lý nước thải công suất 469.000 m3/ngày đêm.',2,0,NULL),
-('d0000000-0000-0000-0000-000000000004','Trung tâm thương mại Sài Gòn Center','TTTM kết hợp văn phòng cho thuê khu trung tâm Quận 1.',3,3,'a0000000-0000-0000-0000-000000000002');
+INSERT INTO "Projects" ("Id","ProjectName","ProjectDescription","Status","ManagerAccountId","OwnerOrganizationId","ContactAddress","CreatedAt","UpdatedAt") VALUES
+('d0000000-0000-0000-0000-000000000001','Khu phức hợp căn hộ Riverside Tower','Tổ hợp căn hộ cao cấp 3 tháp, 35 tầng ven sông Sài Gòn.',1,'a0000000-0000-0000-0000-000000000002','b0000000-0000-0000-0000-000000000001','Tầng 12, Tòa nhà ABC, 45 Lê Duẩn, Quận 1, TP.HCM','2026-01-15 08:00:00+07',NULL),
+('d0000000-0000-0000-0000-000000000002','Cầu vượt nút giao Cát Lái','Cầu vượt thép giảm ùn tắc nút giao Cát Lái, TP. Thủ Đức.',0,'a0000000-0000-0000-0000-000000000002','b0000000-0000-0000-0000-000000000002','45 Lê Duẩn, Quận 1, TP.HCM','2026-01-16 08:00:00+07',NULL),
+('d0000000-0000-0000-0000-000000000003','Nhà máy xử lý nước thải Bình Hưng','Nhà máy xử lý nước thải công suất 469.000 m3/ngày đêm.',2,NULL,NULL,NULL,'2026-01-17 08:00:00+07',NULL),
+('d0000000-0000-0000-0000-000000000004','Trung tâm thương mại Sài Gòn Center','TTTM kết hợp văn phòng cho thuê khu trung tâm Quận 1.',3,'a0000000-0000-0000-0000-000000000002','b0000000-0000-0000-0000-000000000001','123 Nguyễn Hữu Cảnh, Bình Thạnh, TP.HCM','2026-01-18 08:00:00+07','2026-02-01 10:30:00+07');
 
 -- ============================================================================
 -- 6) PROJECT LOCATIONS
@@ -680,7 +684,8 @@ INSERT INTO "RefreshTokens" ("Id","AccountId","Token","CreatedAt","ExpiresAt","R
 -- 39) AUDIT LOGS  Action(AuditAction): Create=0,Update=1,Delete=2,Move=3,Submit=4,
 --                 Verify=5,Approve=6,Reject=7,Download=8,PermissionChange=9
 -- ============================================================================
-INSERT INTO "AuditLogs" ("Id","Action","ActorAccountId","EntityType","EntityId","ProjectId","DetailJson","CreatedAt") VALUES
+-- Cột đúng là "Detail" (migration Update_AuditLog đã đổi tên từ "DetailJson"); "Scope" mặc định 0.
+INSERT INTO "AuditLogs" ("Id","Action","ActorAccountId","EntityType","EntityId","ProjectId","Detail","CreatedAt") VALUES
 ('90000000-0000-0000-0000-000000000001',0,'a0000000-0000-0000-0000-000000000002','Project','d0000000-0000-0000-0000-000000000001','d0000000-0000-0000-0000-000000000001','{"projectName":"Khu phức hợp căn hộ Riverside Tower"}','2026-01-15 08:00:00+07'),
 ('90000000-0000-0000-0000-000000000002',0,'a0000000-0000-0000-0000-000000000003','NamingConvention','fa000000-0000-0000-0000-000000000001','d0000000-0000-0000-0000-000000000001','{"name":"Quy ước ISO 19650 — Riverside Tower","fields":7}','2026-02-01 09:00:00+07'),
 ('90000000-0000-0000-0000-000000000003',0,'a0000000-0000-0000-0000-000000000003','FileItem','f2000000-0000-0000-0000-000000000001','d0000000-0000-0000-0000-000000000001','{"name":"RIV-BIM-TA-01-DR-ARC-001.pdf","folder":"Kiến trúc","namingValid":true}','2026-02-05 08:00:00+07'),

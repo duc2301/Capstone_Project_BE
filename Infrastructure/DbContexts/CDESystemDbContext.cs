@@ -118,6 +118,12 @@ namespace Infrastructure.DbContexts
                 new OrganizationType { Id = new Guid("e48c6618-c877-46bf-9d6d-7d9fb92a50e9"), Code = "FacilityManagement", Name = "Đơn vị vận hành", IsActive = true }
             );
 
+            modelBuilder.Entity<Project>()
+                .HasOne(p => p.OwnerOrganization)
+                .WithMany()
+                .HasForeignKey(p => p.OwnerOrganizationId)
+                .OnDelete(DeleteBehavior.SetNull);
+
             // Cascade Restrict cho các cây tự tham chiếu — tránh "multiple cascade paths"
             // và bảo vệ dữ liệu khỏi xóa lan khi xóa node cha.
             modelBuilder.Entity<Folder>()

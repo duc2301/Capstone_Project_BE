@@ -26,13 +26,17 @@ namespace Application.Services
             _auditLog = auditLog;
         }
 
+        private const string OwnerInclude = "OwnerOrganization";
+
         public async Task<IEnumerable<ProjectResponseDTO>> GetAllAsync()
             => _mapper.Map<IEnumerable<ProjectResponseDTO>>(
-                await _unitOfWork.Repository<Project>().GetAllAsync());
+                await _unitOfWork.Repository<Project>().GetAllAsync(OwnerInclude));
 
         public async Task<ProjectResponseDTO?> GetByIdAsync(Guid id)
         {
-            var entity = await _unitOfWork.Repository<Project>().GetByIdAsync(id);
+            var entity = (await _unitOfWork.Repository<Project>()
+                    .FindAsync(p => p.Id == id, OwnerInclude))
+                .FirstOrDefault();
             if (entity == null) return null;
 
             var dto = _mapper.Map<ProjectResponseDTO>(entity);
@@ -42,6 +46,8 @@ namespace Application.Services
 
         public async Task<ProjectResponseDTO> CreateAsync(CreateProjectDTO dto, Guid actorId)
         {
+            var owner = await ResolveOwnerOrganizationAsync(dto.OwnerOrganizationId);
+
             var entity = _mapper.Map<Project>(dto);
             entity.Id = Guid.NewGuid();
             if (entity is IAuditable a) { var now = DateTime.UtcNow; a.CreatedAt = now; a.UpdatedAt = now; }
@@ -71,8 +77,17 @@ namespace Application.Services
             await _folderBootstrap.InitializeRootFoldersAsync(entity.Id);
 
             var result = _mapper.Map<ProjectResponseDTO>(entity);
+            result.OwnerOrganizationName = owner == null ? null : (owner.DisplayName ?? owner.LegalName);
             result.Location = await GetDefaultLocationAsync(entity.Id);
             return result;
+        }
+
+        private async Task<Organization?> ResolveOwnerOrganizationAsync(Guid? organizationId)
+        {
+            if (!organizationId.HasValue) return null;
+
+            return await _unitOfWork.Repository<Organization>().GetByIdAsync(organizationId.Value)
+                ?? throw new ApiExceptionResponse("Owner organization not found.", 404);
         }
 
         private async Task<ProjectLocationResponseDTO?> GetDefaultLocationAsync(Guid projectId)
@@ -88,6 +103,9 @@ namespace Application.Services
         {
             var entity = await _unitOfWork.Repository<Project>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Project with ID {id} not found.", 404);
+
+            _ = await ResolveOwnerOrganizationAsync(dto.OwnerOrganizationId);
+
             _mapper.Map(dto, entity);
             if (entity is IAuditable a) a.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<Project>().Update(entity);
@@ -98,7 +116,8 @@ namespace Application.Services
                 projectId: entity.Id);
 
             await _unitOfWork.CommitAsync();
-            return _mapper.Map<ProjectResponseDTO>(entity);
+
+            return await GetByIdAsync(id) ?? _mapper.Map<ProjectResponseDTO>(entity);
         }
 
         public async Task DeleteAsync(Guid id, Guid actorId)

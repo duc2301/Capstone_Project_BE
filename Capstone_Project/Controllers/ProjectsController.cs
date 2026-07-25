@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
+    [ApiController]
     [Route("api/projects")]
     public class ProjectsController : ControllerBase
     {

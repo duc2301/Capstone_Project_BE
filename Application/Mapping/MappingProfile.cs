@@ -58,7 +58,11 @@ namespace Application.Mapping
                 .ForMember(d => d.UserName, o => o.MapFrom(s => s.Account != null ? s.Account.UserName : ""))
                 .ForMember(d => d.Email, o => o.MapFrom(s => s.Account != null ? s.Account.Email : null));
             CreateMap<Project, ProjectResponseDTO>()
-                .ForMember(d => d.Location, o => o.Ignore());
+                .ForMember(d => d.Location, o => o.Ignore())
+                .ForMember(d => d.OwnerOrganizationName, o => o.MapFrom(s =>
+                    s.OwnerOrganization != null
+                        ? (s.OwnerOrganization.DisplayName ?? s.OwnerOrganization.LegalName)
+                        : null));
             CreateMap<CreateProjectDTO, Project>();
             CreateMap<UpdateProjectDTO, Project>()
                 .ForAllMembers(o => o.Condition((src, dest, val) => val != null));
