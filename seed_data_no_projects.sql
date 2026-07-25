@@ -45,7 +45,7 @@ TRUNCATE TABLE
     "FileNotes", "MarkupSets", "FileSignaturePositions",
     "FileNamingMetadata", "NamingConventionLockedValues", "NamingConventionFieldValues",
     "NamingConventionFields", "NamingConventions",
-    "FileLinks", "FilePermissions", "FileVersions", "FileItems", "FolderPermissions", "Folders",
+    "FileLinks", "FilePermissions", "FileVersionStates", "FileItems", "FolderPermissions", "Folders",
     "PackageAssignments", "ContractPackages",
     "ProjectInvitations", "ProjectParticipants", "ProjectLocations", "Projects",
     "GroupMembers", "Groups", "Organizations",
