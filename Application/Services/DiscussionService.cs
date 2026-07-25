@@ -5,7 +5,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
-using Domain.Common;
+
 using Domain.Entities;
 using Domain.Enum.Discussion;
 
@@ -44,7 +44,7 @@ namespace Application.Services
         {
             var entity = _mapper.Map<Discussion>(dto);
             entity.Id = Guid.NewGuid();
-            if (entity is IAuditable a) { var now = DateTime.UtcNow; a.CreatedAt = now; a.UpdatedAt = now; }
+            entity.CreatedAt = entity.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.Repository<Discussion>().CreateAsync(entity);
             await _unitOfWork.CommitAsync();
             return _mapper.Map<DiscussionResponseDTO>(entity);
@@ -55,7 +55,7 @@ namespace Application.Services
             var entity = await _unitOfWork.Repository<Discussion>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Discussion with ID {id} not found.", 404);
             _mapper.Map(dto, entity);
-            if (entity is IAuditable a) a.UpdatedAt = DateTime.UtcNow;
+            entity.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<Discussion>().Update(entity);
             await _unitOfWork.CommitAsync();
             return _mapper.Map<DiscussionResponseDTO>(entity);

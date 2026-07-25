@@ -4,8 +4,9 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
-using Domain.Common;
+
 using Domain.Entities;
+using Domain.Enum.Audit;
 
 namespace Application.Services
 {
@@ -13,11 +14,13 @@ namespace Application.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
+        private readonly IAuditLogService _auditLog;
 
-        public FolderService(IUnitOfWork unitOfWork, IMapper mapper)
+        public FolderService(IUnitOfWork unitOfWork, IMapper mapper, IAuditLogService auditLog)
         {
             _unitOfWork = unitOfWork;
             _mapper = mapper;
+            _auditLog = auditLog;
         }
 
         public async Task<IEnumerable<FolderResponseDTO>> GetAllAsync()
@@ -30,32 +33,50 @@ namespace Application.Services
             return entity == null ? null : _mapper.Map<FolderResponseDTO>(entity);
         }
 
-        public async Task<FolderResponseDTO> CreateAsync(CreateFolderDTO dto)
+        public async Task<FolderResponseDTO> CreateAsync(CreateFolderDTO dto, Guid actorId)
         {
             var entity = _mapper.Map<Folder>(dto);
             entity.Id = Guid.NewGuid();
-            if (entity is IAuditable a) { var now = DateTime.UtcNow; a.CreatedAt = now; a.UpdatedAt = now; }
+            entity.CreatedAt = entity.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.Repository<Folder>().CreateAsync(entity);
+
+            await _auditLog.LogAsync(
+                LogScope.Group, AuditAction.Create, nameof(Folder), entity.Id.ToString(), actorId,
+                detail: $"Tạo thư mục '{entity.Name}' (vùng {entity.Area})",
+                projectId: entity.ProjectId, folderId: entity.Id);
+
             await _unitOfWork.CommitAsync();
             return _mapper.Map<FolderResponseDTO>(entity);
         }
 
-        public async Task<FolderResponseDTO> UpdateAsync(Guid id, UpdateFolderDTO dto)
+        public async Task<FolderResponseDTO> UpdateAsync(Guid id, UpdateFolderDTO dto, Guid actorId)
         {
             var entity = await _unitOfWork.Repository<Folder>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Folder with ID {id} not found.", 404);
             _mapper.Map(dto, entity);
-            if (entity is IAuditable a) a.UpdatedAt = DateTime.UtcNow;
+            entity.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<Folder>().Update(entity);
+
+            await _auditLog.LogAsync(
+                LogScope.Group, AuditAction.Update, nameof(Folder), entity.Id.ToString(), actorId,
+                detail: $"Cập nhật thư mục '{entity.Name}'",
+                projectId: entity.ProjectId, folderId: entity.Id);
+
             await _unitOfWork.CommitAsync();
             return _mapper.Map<FolderResponseDTO>(entity);
         }
 
-        public async Task DeleteAsync(Guid id)
+        public async Task DeleteAsync(Guid id, Guid actorId)
         {
             var entity = await _unitOfWork.Repository<Folder>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Folder with ID {id} not found.", 404);
             _unitOfWork.Repository<Folder>().Delete(entity);
+
+            await _auditLog.LogAsync(
+                LogScope.Group, AuditAction.Delete, nameof(Folder), entity.Id.ToString(), actorId,
+                detail: $"Xoá thư mục '{entity.Name}' (vùng {entity.Area})",
+                projectId: entity.ProjectId, folderId: entity.Id);
+
             await _unitOfWork.CommitAsync();
         }
     }

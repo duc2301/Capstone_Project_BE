@@ -1,9 +1,9 @@
-using Domain.Common;
+
 
 namespace Domain.Entities
 {
     // Vi tri dat chu ky truc quan (visual signature) tren file PDF; moi FileItem giu 1 vi tri hien hanh.
-    public class FileSignaturePosition : IEntity
+    public class FileSignaturePosition 
     {
         public Guid Id { get; set; }
         public Guid FileItemId { get; set; }

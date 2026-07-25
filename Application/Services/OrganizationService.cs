@@ -4,7 +4,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
-using Domain.Common;
+
 using Domain.Entities;
 
 namespace Application.Services
@@ -79,7 +79,7 @@ namespace Application.Services
 
             var entity = _mapper.Map<Organization>(dto);
             entity.Id = Guid.NewGuid();
-            if (entity is IAuditable a) { var now = DateTime.UtcNow; a.CreatedAt = now; a.UpdatedAt = now; }
+            entity.CreatedAt = entity.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.Repository<Organization>().CreateAsync(entity);
 
             if (dto.IsJointVenture && dto.JointVentureMemberIds != null)
@@ -133,7 +133,7 @@ namespace Application.Services
             }
 
             _mapper.Map(dto, entity);
-            if (entity is IAuditable a) a.UpdatedAt = DateTime.UtcNow;
+            entity.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<Organization>().Update(entity);
 
             if (dto.IsJointVenture.HasValue && dto.JointVentureMemberIds != null)

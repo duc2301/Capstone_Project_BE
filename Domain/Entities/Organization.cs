@@ -1,10 +1,10 @@
-using Domain.Common;
+
 
 namespace Domain.Entities
 {
     // Tổ chức bên ngoài tham gia dự án (CĐT, nhà thầu, tư vấn...),
     // thêm bằng mã số thuế rồi tra cứu. Khác với Department (phòng ban nội bộ).
-    public class Organization : IEntity, IAuditable
+    public class Organization 
     {
         public Guid Id { get; set; }
         public string TaxCode { get; set; } = null!;

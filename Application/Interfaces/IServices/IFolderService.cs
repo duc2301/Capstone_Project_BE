@@ -7,8 +7,8 @@ namespace Application.Interfaces.IServices
     {
         Task<IEnumerable<FolderResponseDTO>> GetAllAsync();
         Task<FolderResponseDTO?> GetByIdAsync(Guid id);
-        Task<FolderResponseDTO> CreateAsync(CreateFolderDTO dto);
-        Task<FolderResponseDTO> UpdateAsync(Guid id, UpdateFolderDTO dto);
-        Task DeleteAsync(Guid id);
+        Task<FolderResponseDTO> CreateAsync(CreateFolderDTO dto, Guid actorId);
+        Task<FolderResponseDTO> UpdateAsync(Guid id, UpdateFolderDTO dto, Guid actorId);
+        Task DeleteAsync(Guid id, Guid actorId);
     }
 }

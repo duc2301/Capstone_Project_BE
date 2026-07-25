@@ -8,7 +8,7 @@ namespace Application.Interfaces.IServices
     {
         Task<IEnumerable<GroupFilePermissionResponseDTO>> GetGroupFilePermissionResponsesAsync(Guid fileItemId);
 
-        Task<IEnumerable<GroupFilePermissionResponseDTO>> BulkUpdateFilePermissionsAsync(AddPermissionsBulkDTO dto);
+        Task<IEnumerable<GroupFilePermissionResponseDTO>> BulkUpdateFilePermissionsAsync(AddPermissionsBulkDTO dto, Guid actorId);
 
         Task<FilePermissionsViewModelDTO> GetDataForPermissionUIAsync(Guid fileItemId);
 

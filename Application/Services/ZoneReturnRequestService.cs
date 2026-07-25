@@ -6,6 +6,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
+using Domain.Enum.Audit;
 using Domain.Enum.Cde;
 using Domain.Enum.File;
 
@@ -16,15 +17,18 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IFileZoneResolverService _zoneResolver;
         private readonly IFileVersionService _fileVersionService;
+        private readonly IAuditLogService _auditLog;
 
         public ZoneReturnRequestService(
             IUnitOfWork unitOfWork,
             IFileZoneResolverService zoneResolver,
-            IFileVersionService fileVersionService)
+            IFileVersionService fileVersionService,
+            IAuditLogService auditLog)
         {
             _unitOfWork = unitOfWork;
             _zoneResolver = zoneResolver;
             _fileVersionService = fileVersionService;
+            _auditLog = auditLog;
         }
 
         public async Task<ApiResponse> CreateAsync(Guid fileItemId, CreateZoneReturnRequestDTO dto, Guid actorId)
@@ -62,6 +66,13 @@ namespace Application.Services
             };
 
             await _unitOfWork.Repository<ZoneReturnRequest>().CreateAsync(returnRequest);
+
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.ReturnRequest, nameof(ZoneReturnRequest),
+                returnRequest.Id.ToString(), actorId,
+                detail: $"Yêu cầu trả '{fileItem.Name}' về WIP (từ {currentFolder.Area}) — lý do: {reason}",
+                projectId: currentFolder.ProjectId, folderId: currentFolder.Id);
+
             await _unitOfWork.CommitAsync();
 
             return ApiResponse.Success("Return request created", new CreateZoneReturnRequestResponseDTO
@@ -161,6 +172,11 @@ namespace Application.Services
                 }
             }
 
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Approve, nameof(ZoneReturnRequest), request.Id.ToString(), actorId,
+                detail: $"Duyệt trả '{fileItem.Name}' về WIP (từ {request.FromZone})",
+                projectId: currentFolder.ProjectId, folderId: currentFolder.Id);
+
             await _unitOfWork.CommitAsync();
 
             return ApiResponse.Success("Return request approved", new ZoneReturnDecisionResponseDTO
@@ -191,6 +207,11 @@ namespace Application.Services
             request.ApprovedBy = actorId;
             request.DecidedAt = now;
             request.RejectReason = rejectReason;
+
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Reject, nameof(ZoneReturnRequest), request.Id.ToString(), actorId,
+                detail: $"Từ chối trả '{fileItem.Name}' về WIP — lý do: {rejectReason}",
+                projectId: currentFolder.ProjectId, folderId: currentFolder.Id);
 
             await _unitOfWork.CommitAsync();
 

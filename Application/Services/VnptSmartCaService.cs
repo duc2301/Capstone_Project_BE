@@ -46,6 +46,8 @@ namespace Application.Services
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
 
+        private readonly IAuditLogService _auditLog;
+
         public VnptSmartCaService(
             IUnitOfWork unitOfWork,
             IHttpClientFactory httpClientFactory,
@@ -55,8 +57,10 @@ namespace Application.Services
             INotificationService notification,
             IApprovalRealtimeNotifier approvalRealtime,
             IOptions<VnptSmartCaOptions> options,
-            ILogger<VnptSmartCaService> logger)
+            ILogger<VnptSmartCaService> logger,
+            IAuditLogService auditLog)
         {
+            _auditLog = auditLog;
             _unitOfWork = unitOfWork;
             _httpClientFactory = httpClientFactory;
             _pdfSignatureService = pdfSignatureService;
@@ -320,6 +324,22 @@ namespace Application.Services
                 validation.Context.Signer.CertificateSerial = transaction.CertificateSerial;
                 await CompleteImplicitSignersAsync(validation.Context.ApprovalRequest, transaction.CertificateSerial, now);
                 justSigned = true;
+            }
+
+            if (justSigned)
+            {
+                var signedFile = validation.Context!.FileItem;
+                var signedFolder = await _unitOfWork.Repository<Domain.Entities.Folder>()
+                    .GetByIdAsync(signedFile.FolderId);
+
+                await _auditLog.LogAsync(
+                    Domain.Enum.Audit.LogScope.Project, Domain.Enum.Audit.AuditAction.Sign,
+                    nameof(Domain.Entities.FileItem), signedFile.Id.ToString(), currentUserId,
+                    detail: $"Ký số '{signedFile.Name}'"
+                            + (string.IsNullOrWhiteSpace(transaction.CertificateSerial)
+                                ? ""
+                                : $" (chứng thư {transaction.CertificateSerial})"),
+                    projectId: signedFolder?.ProjectId, folderId: signedFile.FolderId);
             }
 
             await _unitOfWork.CommitAsync();

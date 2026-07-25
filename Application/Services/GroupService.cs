@@ -4,9 +4,10 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
-using Domain.Common;
+
 using Domain.Entities;
 using Domain.Enum.Account;
+using Domain.Enum.Audit;
 using Domain.Enum.Group;
 using Domain.Enum.Project;
 
@@ -17,15 +18,18 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly INotificationService _notification;
         private readonly IMapper _mapper;
+        private readonly IAuditLogService _auditLog;
 
         public GroupService(
             IUnitOfWork unitOfWork,
             INotificationService notification,
-            IMapper mapper)
+            IMapper mapper,
+            IAuditLogService auditLog)
         {
             _unitOfWork = unitOfWork;
             _notification = notification;
             _mapper = mapper;
+            _auditLog = auditLog;
         }
 
         public async Task<IEnumerable<GroupResponseDTO>> GetAllAsync()
@@ -54,7 +58,7 @@ namespace Application.Services
         {
             var entity = _mapper.Map<Group>(dto);
             entity.Id = Guid.NewGuid();
-            if (entity is IAuditable a) { var now = DateTime.UtcNow; a.CreatedAt = now; a.UpdatedAt = now; }
+            entity.CreatedAt = entity.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.Repository<Group>().CreateAsync(entity);
             await _unitOfWork.CommitAsync();
 
@@ -79,7 +83,7 @@ namespace Application.Services
                 "Chỉ Admin hoặc PM dự án mới được cập nhật thông tin nhóm.");
 
             _mapper.Map(dto, entity);
-            if (entity is IAuditable a) a.UpdatedAt = DateTime.UtcNow;
+            entity.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<Group>().Update(entity);
             await _unitOfWork.CommitAsync();
 
@@ -136,6 +140,12 @@ namespace Application.Services
                 target.Role = GroupMemberRole.Member;
             }
 
+            // Scope=System: 1 nhóm có thể thuộc NHIỀU dự án nên không gắn được 1 projectId duy nhất.
+            await _auditLog.LogAsync(
+                LogScope.System, AuditAction.Update, nameof(GroupMember), target.Id.ToString(), actor,
+                detail: $"Đổi vai trò thành viên thành {(newRole == GroupMemberRole.Leader ? "Trưởng nhóm" : "Thành viên")}",
+                groupId: groupId);
+
             await _unitOfWork.CommitAsync();
 
             return await GetByIdAsync(groupId)
@@ -161,6 +171,12 @@ namespace Application.Services
 
             var removed = newStatus == GroupMemberStatus.Left;
             target.Status = newStatus;
+
+            await _auditLog.LogAsync(
+                LogScope.System, AuditAction.StatusChange, nameof(GroupMember), target.Id.ToString(), actor,
+                detail: $"Đổi trạng thái thành viên nhóm '{group.Name}' thành {newStatus}",
+                groupId: groupId);
+
             await _unitOfWork.CommitAsync();
 
             if (removed)

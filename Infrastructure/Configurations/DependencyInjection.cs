@@ -80,6 +80,11 @@ namespace Infrastructure.Configurations
             services.AddScoped<IPermissionCheckingService, PermissionCheckingService>();
             services.AddScoped<IPermissionCheckingRepository, PermissionCheckingRepository>();
 
+            // Nhật ký hoạt động: các service nghiệp vụ gọi LogAsync để ghi;
+            // 3 view đọc (Admin / PM dự án / thành viên nhóm) lọc quyền trong AuditLogRepository.
+            services.AddScoped<IAuditLogService, AuditLogService>();
+            services.AddScoped<IAuditLogRepository, AuditLogRepository>();
+
             services.AddScoped<IJwtService, JwtService>();
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IEmailService, GmailEmailService>();
