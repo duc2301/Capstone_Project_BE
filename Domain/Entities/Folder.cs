@@ -1,11 +1,11 @@
 using Domain.Enum.Cde;
 
-using Domain.Common;
+
 
 namespace Domain.Entities
 {
     // Thư mục CDE: cây tự tham chiếu, gắn 1 khu vực CDE
-    public class Folder : IEntity, IAuditable
+    public class Folder 
     {
         public Guid Id { get; set; }
         public Guid ProjectId { get; set; }

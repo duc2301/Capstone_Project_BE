@@ -9,6 +9,7 @@ using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using Domain.Entities;
+using Domain.Enum.Audit;
 using Domain.Enum.Cde;
 using Domain.Enum.File;
 using Domain.Enum.Loi;
@@ -37,9 +38,11 @@ namespace Application.Services
         private readonly INameMatchContentBackgroundService _nameMatchContentBackgroundService;
         private readonly IFileVersionService _fileVersionService;
         private readonly IFileLinkService _fileLink;
+        private readonly IAuditLogService _auditLog;
 
-        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INamingConventionService naming, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService, IFileLinkService fileLink)
+        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INamingConventionService naming, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService, IFileLinkService fileLink, IAuditLogService auditLog)
         {
+            _auditLog = auditLog;
             _unitOfWork = unitOfWork;
             _storage = storage;
             _translationQueue = translationQueue;
@@ -126,6 +129,9 @@ namespace Application.Services
                 throw new ApiExceptionResponse(ex.Message, 409);
             }
 
+            // Giữ cờ "tài liệu mới" TRƯỚC khi `version` bị gán lại trong nhánh dưới (dùng cho audit log).
+            var isNewDocument = version.IsNewDocument;
+
             if (version.IsNewDocument)
             {
                 fileItem = new FileItem
@@ -165,6 +171,15 @@ namespace Application.Services
             // [TẠM TẮT] Cổng kiểm LOI (advisory) — chức năng chưa hoàn thiện. Mở lại cả khối này khi xong.
             // if (dto.FileType == FileType.Ifc)
             //     await _unitOfWork.Repository<FileVersionLoiCheck>().CreateAsync(NewLoiPending(version.VersionStateId!.Value, now));
+            await _auditLog.LogAsync(
+                LogScope.Group,
+                isNewDocument ? AuditAction.Upload : AuditAction.NewVersion,
+                nameof(FileItem), fileItem.Id.ToString(), actor,
+                detail: isNewDocument
+                    ? $"Tải lên tài liệu mới '{fileItem.Name}' (v{version.DisplayVersion})"
+                    : $"Cập nhật phiên bản '{fileItem.Name}' (v{version.DisplayVersion})",
+                projectId: folder.ProjectId, folderId: folder.Id);
+
             await _unitOfWork.CommitAsync();
 
             if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
@@ -213,6 +228,14 @@ namespace Application.Services
 
             var stream = await _storage.OpenReadAsync(version.StoragePath, ct);
             var downloadName = $"{fileItem.Name}.{version.Format}";
+
+            // Luồng chỉ-đọc: không có transaction nghiệp vụ để bám vào -> ghi + commit riêng.
+            var downloadFolder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
+            await _auditLog.LogAndSaveAsync(
+                LogScope.Group, AuditAction.Download, nameof(FileItem), fileItem.Id.ToString(), actor,
+                detail: $"Tải về '{downloadName}'",
+                projectId: downloadFolder?.ProjectId, folderId: fileItem.FolderId);
+
             return new DownloadFileResult(stream, downloadName, _storage.GetContentType(version.Format));
         }
 

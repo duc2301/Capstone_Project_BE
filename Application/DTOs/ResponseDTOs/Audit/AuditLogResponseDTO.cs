@@ -1,21 +1,21 @@
 using Domain.Enum.Audit;
 
-namespace Domain.Entities
+namespace Application.DTOs.ResponseDTOs.Audit
 {
-    // Nhật ký hoạt động (chỉ admin dự án xem). Ghi nhận lịch sử thao tác.
-    public class AuditLog
+    // 1 dòng nhật ký trả về cho FE. ActorName lấy bằng join Accounts (entity không snapshot tên).
+    public class AuditLogResponseDTO
     {
         public Guid Id { get; set; }
         public LogScope Scope { get; set; }
-        public AuditAction Action { get; set; }          // Create/Update/Approve/Upload/Sign...
-        public Guid? ActorAccountId { get; set; }        // ai làm
+        public AuditAction Action { get; set; }
 
-        // bối cảnh
+        public Guid? ActorAccountId { get; set; }
+        public string? ActorName { get; set; }
+
         public Guid? ProjectId { get; set; }
         public Guid? FolderId { get; set; }
         public Guid? GroupId { get; set; }
 
-        // đối tượng bị tác động
         public string EntityType { get; set; } = null!;
         public string EntityId { get; set; } = null!;
 

@@ -4,7 +4,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
-using Domain.Common;
+
 using Domain.Entities;
 
 namespace Application.Services
@@ -34,7 +34,7 @@ namespace Application.Services
         {
             var entity = _mapper.Map<OrganizationType>(dto);
             entity.Id = Guid.NewGuid();
-            if (entity is IAuditable a) { var now = DateTime.UtcNow; a.CreatedAt = now; a.UpdatedAt = now; }
+            entity.CreatedAt = entity.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.Repository<OrganizationType>().CreateAsync(entity);
             await _unitOfWork.CommitAsync();
             return _mapper.Map<OrganizationTypeResponseDTO>(entity);
@@ -45,7 +45,7 @@ namespace Application.Services
             var entity = await _unitOfWork.Repository<OrganizationType>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"OrganizationType with ID {id} not found.", 404);
             _mapper.Map(dto, entity);
-            if (entity is IAuditable a) a.UpdatedAt = DateTime.UtcNow;
+            entity.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<OrganizationType>().Update(entity);
             await _unitOfWork.CommitAsync();
             return _mapper.Map<OrganizationTypeResponseDTO>(entity);

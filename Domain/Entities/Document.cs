@@ -1,10 +1,9 @@
-using Domain.Common;
 using Domain.Enum.Cde;
 using Domain.Enum.Rag;
 
 namespace Domain.Entities
 {
-    public class Document : IEntity
+    public class Document
     {
         public Guid Id { get; set; }
 

@@ -2,11 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-using Domain.Common;
+
 
 namespace Domain.Entities
 {
-    public class Notification : IEntity
+    public class Notification 
     {
         public Guid Id { get; set; }
         public string? Message { get; set; }

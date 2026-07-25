@@ -46,7 +46,7 @@ namespace Capstone_Project.Controllers
             //if (dto.FileItemId != fileId)
             //    return BadRequest("File ID mismatch");
 
-            var result = await _filePermissionService.BulkUpdateFilePermissionsAsync(dto);
+            var result = await _filePermissionService.BulkUpdateFilePermissionsAsync(dto, User.GetAccountId());
             return Ok(ApiResponse.Success("Permission updated successfully", result));
         }
 

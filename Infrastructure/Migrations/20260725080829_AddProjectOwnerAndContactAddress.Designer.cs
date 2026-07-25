@@ -3,6 +3,7 @@ using System;
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Pgvector;
@@ -12,9 +13,11 @@ using Pgvector;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    partial class CDESystemDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260725080829_AddProjectOwnerAndContactAddress")]
+    partial class AddProjectOwnerAndContactAddress
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -456,9 +459,6 @@ namespace Infrastructure.Migrations
                     b.Property<decimal?>("TaxRate")
                         .HasColumnType("numeric");
 
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<string>("WorkTypes")
                         .HasColumnType("text");
 
@@ -496,9 +496,6 @@ namespace Infrastructure.Migrations
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
@@ -1258,9 +1255,6 @@ namespace Infrastructure.Migrations
                     b.Property<Guid?>("OrganizationId")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.HasKey("Id");
 
                     b.HasIndex("OrganizationId");
@@ -1890,9 +1884,6 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<string>("Description")
                         .HasColumnType("text");
 
@@ -1902,9 +1893,6 @@ namespace Infrastructure.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
@@ -1918,73 +1906,57 @@ namespace Infrastructure.Migrations
                         {
                             Id = new Guid("7f947ce1-e7c6-49b2-aa41-f9b30292917a"),
                             Code = "Client",
-                            CreatedAt = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
                             IsActive = true,
-                            Name = "Chủ đầu tư",
-                            UpdatedAt = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified)
+                            Name = "Chủ đầu tư"
                         },
                         new
                         {
                             Id = new Guid("ad5b98c7-b28f-4c40-861a-5a363b84eb00"),
                             Code = "ProjectManagementUnit",
-                            CreatedAt = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
                             IsActive = true,
-                            Name = "Ban quản lý dự án",
-                            UpdatedAt = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified)
+                            Name = "Ban quản lý dự án"
                         },
                         new
                         {
                             Id = new Guid("ad4c917e-b170-4ff8-bca3-10764641c8d9"),
                             Code = "Surveyor",
-                            CreatedAt = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
                             IsActive = true,
-                            Name = "Tư vấn giám sát",
-                            UpdatedAt = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified)
+                            Name = "Tư vấn giám sát"
                         },
                         new
                         {
                             Id = new Guid("d692eaa8-4cf1-4a12-8bf8-4d0e1529acb5"),
                             Code = "Consultant",
-                            CreatedAt = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
                             IsActive = true,
-                            Name = "Tư vấn (thiết kế/BIM)",
-                            UpdatedAt = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified)
+                            Name = "Tư vấn (thiết kế/BIM)"
                         },
                         new
                         {
                             Id = new Guid("ae2fd257-cca8-4bb4-8f90-c0c45100702b"),
                             Code = "MainContractor",
-                            CreatedAt = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
                             IsActive = true,
-                            Name = "Nhà thầu chính",
-                            UpdatedAt = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified)
+                            Name = "Nhà thầu chính"
                         },
                         new
                         {
                             Id = new Guid("8c0dcb7d-87fe-413e-b8d6-83eb91171cbe"),
                             Code = "Subcontractor",
-                            CreatedAt = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
                             IsActive = true,
-                            Name = "Nhà thầu phụ",
-                            UpdatedAt = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified)
+                            Name = "Nhà thầu phụ"
                         },
                         new
                         {
                             Id = new Guid("3fe93ed9-2e6a-47a6-90cf-6e5aac24c645"),
                             Code = "Supplier",
-                            CreatedAt = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
                             IsActive = true,
-                            Name = "Nhà cung cấp",
-                            UpdatedAt = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified)
+                            Name = "Nhà cung cấp"
                         },
                         new
                         {
                             Id = new Guid("e48c6618-c877-46bf-9d6d-7d9fb92a50e9"),
                             Code = "FacilityManagement",
-                            CreatedAt = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
                             IsActive = true,
-                            Name = "Đơn vị vận hành",
-                            UpdatedAt = new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified)
+                            Name = "Đơn vị vận hành"
                         });
                 });
 
