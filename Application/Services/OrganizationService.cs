@@ -59,9 +59,12 @@ namespace Application.Services
 
             if (dto.IsJointVenture)
             {
-                var existingJv = await _unitOfWork.Repository<Organization>().FindAsync(o => o.IsJointVenture && o.LegalName.ToLower() == dto.LegalName.ToLower());
+                var existingJv = await _unitOfWork.Repository<Organization>().FindAsync(o => 
+                    o.IsJointVenture && 
+                    o.OrganizationTypeId == dto.OrganizationTypeId &&
+                    o.LegalName.ToLower() == dto.LegalName.ToLower());
                 if (existingJv.Any())
-                    throw new ApiExceptionResponse($"Liên danh với tên '{dto.LegalName}' đã tồn tại.", 400);
+                    throw new ApiExceptionResponse($"Liên danh với tên '{dto.LegalName}' và vai trò này đã tồn tại.", 400);
             }
             else
             {
@@ -79,6 +82,10 @@ namespace Application.Services
 
             var entity = _mapper.Map<Organization>(dto);
             entity.Id = Guid.NewGuid();
+            if (entity.IsJointVenture && string.IsNullOrEmpty(entity.TaxCode))
+            {
+                entity.TaxCode = string.Empty;
+            }
             if (entity is IAuditable a) { var now = DateTime.UtcNow; a.CreatedAt = now; a.UpdatedAt = now; }
             await _unitOfWork.Repository<Organization>().CreateAsync(entity);
 
@@ -113,9 +120,13 @@ namespace Application.Services
 
             if (isJv)
             {
-                var existingJv = await _unitOfWork.Repository<Organization>().FindAsync(o => o.Id != id && o.IsJointVenture && o.LegalName.ToLower() == legalName.ToLower());
+                var existingJv = await _unitOfWork.Repository<Organization>().FindAsync(o => 
+                    o.Id != id && 
+                    o.IsJointVenture && 
+                    o.OrganizationTypeId == orgTypeId &&
+                    o.LegalName.ToLower() == legalName.ToLower());
                 if (existingJv.Any())
-                    throw new ApiExceptionResponse($"Liên danh với tên '{legalName}' đã tồn tại.", 400);
+                    throw new ApiExceptionResponse($"Liên danh với tên '{legalName}' và vai trò này đã tồn tại.", 400);
             }
             else
             {
@@ -133,6 +144,10 @@ namespace Application.Services
             }
 
             _mapper.Map(dto, entity);
+            if (entity.IsJointVenture && string.IsNullOrEmpty(entity.TaxCode))
+            {
+                entity.TaxCode = string.Empty;
+            }
             if (entity is IAuditable a) a.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<Organization>().Update(entity);
 
