@@ -22,5 +22,10 @@ namespace Application.DTOs.RequestDTOs.Project
 
         [StringLength(500)]
         public string? ContactAddress { get; set; }
+
+        [StringLength(500)]
+        public string? Address { get; set; }
+        public double? Latitude { get; set; }
+        public double? Longitude { get; set; }
     }
 }
