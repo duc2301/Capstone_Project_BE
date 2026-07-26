@@ -16,11 +16,31 @@ namespace Capstone_Project.Controllers
     {
         private readonly IProjectFlowService _projectFlow;
         private readonly IProjectService _projectService;
+        private readonly IAIService _ai;
 
-        public ProjectsController(IProjectFlowService projectFlow, IProjectService projectService)
+        public ProjectsController(IProjectFlowService projectFlow, IProjectService projectService, IAIService ai)
         {
             _projectFlow = projectFlow;
             _projectService = projectService;
+            _ai = ai;
+        }
+
+        // Khởi tạo nhanh: tải file BEP (PDF/DOCX) -> AI đọc -> trả các field prefill cho stepper.
+        // CHỈ parse, không tạo dự án. Việc tạo vẫn qua POST /api/projects.
+        [HttpPost("parse-bep")]
+        [Authorize(Roles = "Admin")]
+        [Consumes("multipart/form-data")]
+        [RequestSizeLimit(52_428_800)]                                   // 50MB
+        [RequestFormLimits(MultipartBodyLengthLimit = 52_428_800)]
+        public async Task<IActionResult> ParseBep(IFormFile file, CancellationToken ct)
+        {
+            if (file == null || file.Length == 0)
+                throw new ApiExceptionResponse("No file provided.", 400);
+
+            var ext = Path.GetExtension(file.FileName).TrimStart('.').ToLowerInvariant();
+            await using var stream = file.OpenReadStream();
+            var result = await _ai.ParseBepAsync(stream, ext, ct);
+            return Ok(ApiResponse.Success("BEP parsed", result));
         }
 
 
