@@ -185,7 +185,6 @@ namespace Application.Services
                 entity.Assignments.Add(assignment);
             }
 
-            // Auto-create package folder under Published / 00 - Các gói thầu
             var rootPublished = (await _unitOfWork.Repository<Folder>()
                 .FindAsync(f => f.ProjectId == dto.ProjectId && f.Area == Domain.Enum.Cde.CdeArea.Published && f.ParentFolderId == null))
                 .FirstOrDefault();
@@ -193,7 +192,7 @@ namespace Application.Services
             if (rootPublished != null)
             {
                 var packageMasterFolder = (await _unitOfWork.Repository<Folder>()
-                    .FindAsync(f => f.ParentFolderId == rootPublished.Id && f.Name == "Các gói thầu"))
+                    .FindAsync(f => f.ParentFolderId == rootPublished.Id && f.Name == FolderBootstrapService.ContractPackagesFolderName))
                     .FirstOrDefault();
 
                 if (packageMasterFolder != null)
@@ -261,6 +260,7 @@ namespace Application.Services
                 
                 var assignment = existingAssignment.FirstOrDefault();
 
+                var isNewAssignment = false;
                 if (assignment == null && dto.ContractorOrganizationId.HasValue)
                 {
                     assignment = new PackageAssignment
@@ -272,6 +272,7 @@ namespace Application.Services
                         CreatedAt = DateTime.UtcNow
                     };
                     await _unitOfWork.Repository<PackageAssignment>().CreateAsync(assignment);
+                    isNewAssignment = true;
                 }
 
                 if (assignment != null)
@@ -287,8 +288,9 @@ namespace Application.Services
                         assignment.ContractSignDate = signDate;
                     }
                     if (dto.ContractJobTitle != null) assignment.Position = dto.ContractJobTitle;
-                    
-                    _unitOfWork.Repository<PackageAssignment>().Update(assignment);
+
+                    if (!isNewAssignment)
+                        _unitOfWork.Repository<PackageAssignment>().Update(assignment);
                 }
             }
 

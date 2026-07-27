@@ -17,6 +17,8 @@ namespace Application.Interfaces.IServices
         Task CanVerifyFolderAsync(Guid folderId, Guid accountId);
         Task CanApproveFolderAsync(Guid folderId, Guid accountId);
 
+        Task CanUploadToFolderAsync(Guid folderId, Guid accountId);
+
         // File permissions
         Task CanViewFileAsync(Guid fileItemId, Guid accountId);
         Task CanEditFileAsync(Guid fileItemId, Guid accountId);

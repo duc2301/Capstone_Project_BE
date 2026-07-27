@@ -31,6 +31,9 @@ namespace Application.Services
         public Task CanUpdateFolderAsync(Guid folderId, Guid accountId)
             => CheckFolderAsync(folderId, accountId, fp => fp.CanUpdate, "Update");
 
+        public Task CanUploadToFolderAsync(Guid folderId, Guid accountId)
+            => CheckFolderAsync(folderId, accountId, fp => fp.CanEdit || fp.CanUpdate, "Edit/Update");
+
         public Task CanDownloadFolderAsync(Guid folderId, Guid accountId)
             => CheckFolderAsync(folderId, accountId, fp => fp.CanDownload, "Download");
 

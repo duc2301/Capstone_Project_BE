@@ -129,7 +129,6 @@ namespace Application.Services
             if (!string.IsNullOrWhiteSpace(dto.Address)) location.Address = dto.Address;
             if (dto.Latitude.HasValue) location.Latitude = dto.Latitude;
             if (dto.Longitude.HasValue) location.Longitude = dto.Longitude;
-            _unitOfWork.Repository<ProjectLocation>().Update(location);
         }
 
         public async Task<ProjectResponseDTO> UpdateAsync(Guid id, UpdateProjectDTO dto, Guid actorId)
