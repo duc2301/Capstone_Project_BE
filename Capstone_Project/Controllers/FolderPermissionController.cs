@@ -1,6 +1,7 @@
 ﻿using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Permission;
 using Application.Interfaces.IServices;
+using Capstone_Project.Extensions;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
@@ -46,7 +47,7 @@ namespace Capstone_Project.Controllers
             //if (dto.FileItemId != fileId)
             //    return BadRequest("File ID mismatch");
 
-            var result = await _folderPermissionService.BulkUpdateFolderPermissionsAsync(dto);
+            var result = await _folderPermissionService.BulkUpdateFolderPermissionsAsync(dto, User.GetAccountId());
             return Ok(ApiResponse.Success("Permission updated successfully", result));
         }
 

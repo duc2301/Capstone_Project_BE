@@ -6,6 +6,9 @@ namespace Application.DTOs.ResponseDTOs.ContractPackage
     {
         public Guid Id { get; set; }
         public Guid ProjectId { get; set; }
+        public string? ProjectName { get; set; }
+        public string? ProjectCode { get; set; }
+        public string? ProjectImageUrl { get; set; }
         public string Code { get; set; } = null!;
         public string Name { get; set; } = null!;
         public string? Description { get; set; }

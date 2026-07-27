@@ -29,9 +29,16 @@ namespace Application.BackgroundServices
         {
             await RequeueUnfinishedAsync(stoppingToken);
 
-            await foreach (var fileVersionId in _queue.ReadAllAsync(stoppingToken))
+            try
             {
-                await ProcessAsync(fileVersionId, stoppingToken);
+                await foreach (var fileVersionId in _queue.ReadAllAsync(stoppingToken))
+                {
+                    await ProcessAsync(fileVersionId, stoppingToken);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when shutting down
             }
         }
 

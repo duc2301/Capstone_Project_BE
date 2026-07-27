@@ -18,6 +18,9 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
 
+        public const string ContractPackagesFolderName = "Các gói thầu";
+        public const string LegalDocumentsFolderName = "Hồ sơ pháp lý";
+
         // 4 khu vực gốc + tên hiển thị mặc định.
         private static readonly (CdeArea Area, string Name)[] RootAreas =
         {
@@ -27,8 +30,11 @@ namespace Application.Services
             (CdeArea.Archived,  "Archived"),
         };
 
-        public FolderBootstrapService(IUnitOfWork unitOfWork, IMapper mapper)
+        private readonly IAuditLogService _auditLog;
+
+        public FolderBootstrapService(IUnitOfWork unitOfWork, IMapper mapper, IAuditLogService auditLog)
         {
+            _auditLog = auditLog;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
         }
@@ -112,28 +118,24 @@ namespace Application.Services
             await _unitOfWork.CommitAsync();
         }
 
-        public async Task<FolderResponseDTO> CreateChildFolderAsync(Guid parentFolderId, string name, Guid actor, string? actorRole)
+        public async Task<FolderResponseDTO> CreateChildFolderAsync(Guid parentFolderId, string name, Guid actor, string actorRole)
         {
             if (string.IsNullOrWhiteSpace(name))
                 throw new ApiExceptionResponse("Folder name is required.", 400);
 
-            var parent = await _unitOfWork.Repository<Folder>().GetByIdAsync(parentFolderId)
+            var parentFolder = await _unitOfWork.Repository<Folder>().GetByIdAsync(parentFolderId)
                 ?? throw new ApiExceptionResponse("Parent folder not found.", 404);
 
-            // Xác định nhóm sở hữu: parent hoặc tổ tiên gần nhất có OwnerGroupId.
-            var ownerGroupId = await ResolveOwnerGroupIdAsync(parent);
-
-            // Phân quyền: Admin hệ thống / PM dự án / Team Leader của nhóm sở hữu.
-            await EnsureCanCreateSubFolderAsync(actor, parent.ProjectId, ownerGroupId, actorRole);
+            await EnsureCanCreateSubFolderAsync(actor, parentFolder, actorRole);
 
             var now = DateTime.UtcNow;
             var child = new Folder
             {
                 Id = Guid.NewGuid(),
-                ProjectId = parent.ProjectId,
-                ParentFolderId = parent.Id,
+                ProjectId = parentFolder.ProjectId,
+                ParentFolderId = parentFolder.Id,
                 Name = name.Trim(),
-                Area = parent.Area,                          // kế thừa khu vực
+                Area = parentFolder.Area,                          // kế thừa khu vực
                 IsTemplate = false,
                 CreatedByAccountId = actor,
                 CreatedAt = now,
@@ -144,7 +146,7 @@ namespace Application.Services
 
             // Kế thừa ACL của folder cha để thành viên đang thấy cha cũng thấy/thao tác được folder con.
             var parentPermissions = await _unitOfWork.Repository<FolderPermission>()
-                .FindAsync(p => p.FolderId == parent.Id);
+                .FindAsync(p => p.FolderId == parentFolder.Id);
             var childPermissions = new List<FolderPermission>();
             foreach (var permission in parentPermissions)
             {
@@ -167,7 +169,13 @@ namespace Application.Services
 
             // Folder tạo trong WIP luôn có "bản chiếu" cùng vị trí ở Shared/Published/Archived.
             if (child.Area == CdeArea.Wip)
-                await CreateMirrorFoldersAsync(child, parent, childPermissions, now);
+                await CreateMirrorFoldersAsync(child, parentFolder, childPermissions, now);
+
+            await _auditLog.LogAsync(
+                Domain.Enum.Audit.LogScope.Group, Domain.Enum.Audit.AuditAction.Create,
+                nameof(Folder), child.Id.ToString(), actor,
+                detail: $"Tạo thư mục con '{child.Name}' trong '{parentFolder.Name}' (vùng {child.Area})",
+                projectId: parentFolder.ProjectId, folderId: child.Id);
 
             await _unitOfWork.CommitAsync();
             return _mapper.Map<FolderResponseDTO>(child);
@@ -231,21 +239,35 @@ namespace Application.Services
             return null;
         }
 
-        private async Task EnsureCanCreateSubFolderAsync(Guid actor, Guid projectId, Guid? ownerGroupId, string? actorRole)
+        private async Task EnsureCanCreateSubFolderAsync(Guid actor, Folder parent, string actorRole)
         {
             if (actorRole == AccountRole.Admin.ToString())
                 return;
 
-            var project = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId);
+            var project = await _unitOfWork.Repository<Project>().GetByIdAsync(parent.ProjectId);
             if (project?.ManagerAccountId == actor)
                 return;
 
-            if (ownerGroupId.HasValue)
+            var participantIds = (await _unitOfWork.Repository<FolderPermission>()
+                    .FindAsync(fp => fp.FolderId == parent.Id
+                                  && fp.Status == PermissionStatus.Active
+                                  && fp.ProjectParticipantId != null))
+                .Select(fp => fp.ProjectParticipantId!.Value)
+                .ToHashSet();
+
+            var ownerGroupIds = (await _unitOfWork.Repository<ProjectParticipant>()
+                    .FindAsync(pp => participantIds.Contains(pp.Id)
+                                  && pp.Status == ProjectParticipantStatus.Active))
+                .Select(pp => pp.GroupId)
+                .ToHashSet();
+
+            if (ownerGroupIds.Count > 0)
             {
                 var isLeader = (await _unitOfWork.Repository<GroupMember>()
-                    .FindAsync(gm => gm.GroupId == ownerGroupId.Value
-                            && gm.AccountId == actor
-                            && gm.Role == GroupMemberRole.Leader))
+                        .FindAsync(gm => ownerGroupIds.Contains(gm.GroupId)
+                                      && gm.AccountId == actor
+                                      && gm.Role == GroupMemberRole.Leader
+                                      && gm.Status == GroupMemberStatus.Active))
                     .Any();
                 if (isLeader) return;
             }
@@ -413,6 +435,43 @@ namespace Application.Services
                 };
                 await _unitOfWork.Repository<Folder>().CreateAsync(root);
                 roots.Add(root);
+            }
+            
+            // Add "Các gói thầu" and "Hồ sơ pháp lý" to Published area
+            var publishedRoot = roots.FirstOrDefault(r => r.Area == CdeArea.Published);
+            if (publishedRoot != null)
+            {
+                var packageFolder = projectFolders.FirstOrDefault(f => f.ParentFolderId == publishedRoot.Id && f.Name == ContractPackagesFolderName);
+                if (packageFolder == null)
+                {
+                    await _unitOfWork.Repository<Folder>().CreateAsync(new Folder
+                    {
+                        Id = Guid.NewGuid(),
+                        ProjectId = projectId,
+                        ParentFolderId = publishedRoot.Id,
+                        Name = ContractPackagesFolderName,
+                        Area = CdeArea.Published,
+                        IsTemplate = false,
+                        CreatedAt = now,
+                        UpdatedAt = now
+                    });
+                }
+
+                var legalFolder = projectFolders.FirstOrDefault(f => f.ParentFolderId == publishedRoot.Id && f.Name == LegalDocumentsFolderName);
+                if (legalFolder == null)
+                {
+                    await _unitOfWork.Repository<Folder>().CreateAsync(new Folder
+                    {
+                        Id = Guid.NewGuid(),
+                        ProjectId = projectId,
+                        ParentFolderId = publishedRoot.Id,
+                        Name = LegalDocumentsFolderName,
+                        Area = CdeArea.Published,
+                        IsTemplate = false,
+                        CreatedAt = now,
+                        UpdatedAt = now
+                    });
+                }
             }
 
             return roots;

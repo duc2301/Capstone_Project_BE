@@ -4,9 +4,8 @@ namespace Application.DTOs.RequestDTOs.Organization
 {
     public class CreateOrganizationDTO
     {
-        [Required]
         [StringLength(20)]
-        public string TaxCode { get; set; } = null!;
+        public string? TaxCode { get; set; }
 
         [Required]
         [StringLength(300)]
@@ -17,6 +16,11 @@ namespace Application.DTOs.RequestDTOs.Organization
 
         [Required]
         public Guid OrganizationTypeId { get; set; }
+
+        public string? AvatarUrl { get; set; }
+        public bool IsJointVenture { get; set; }
+        public Guid? RepresentativeOrganizationId { get; set; }
+        public List<Guid>? JointVentureMemberIds { get; set; }
 
         [StringLength(300)]
         public string? Address { get; set; }

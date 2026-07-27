@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Capstone_Project.Controllers
 {
     [Route("api/organizations")]
+    [ApiController]
     public class OrganizationsController : ControllerBase
     {
         private readonly IOrganizationService _service;

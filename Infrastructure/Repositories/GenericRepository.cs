@@ -31,14 +31,24 @@ namespace Infrastructure.Repositories
                 _context.Set<T>().Remove(entity);
         }
 
-        public async Task<IEnumerable<T>> GetAllAsync()
+        public async Task<IEnumerable<T>> GetAllAsync(string includeProperties = "")
         {
-            return await _context.Set<T>().ToListAsync();
+            IQueryable<T> query = _context.Set<T>();
+            foreach (var includeProperty in includeProperties.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                query = query.Include(includeProperty);
+            }
+            return await query.ToListAsync();
         }
 
-        public async Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate)
+        public async Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate, string includeProperties = "")
         {
-            return await _context.Set<T>().Where(predicate).ToListAsync();
+            IQueryable<T> query = _context.Set<T>().Where(predicate);
+            foreach (var includeProperty in includeProperties.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                query = query.Include(includeProperty);
+            }
+            return await query.ToListAsync();
         }
 
         public async Task<T?> GetByIdAsync(Guid? id)
@@ -48,9 +58,7 @@ namespace Infrastructure.Repositories
 
         public void Update(T entity)
         {
-            _context.ChangeTracker.Clear();
-            var tracker = _context.Attach(entity);
-            tracker.State = EntityState.Modified;
+            _context.Entry(entity).State = EntityState.Modified;
         }
 
         public async Task CreateRangeAsync(IEnumerable<T> entities)

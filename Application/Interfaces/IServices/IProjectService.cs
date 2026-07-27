@@ -7,8 +7,8 @@ namespace Application.Interfaces.IServices
     {
         Task<IEnumerable<ProjectResponseDTO>> GetAllAsync();
         Task<ProjectResponseDTO?> GetByIdAsync(Guid id);
-        Task<ProjectResponseDTO> CreateAsync(CreateProjectDTO dto);
-        Task<ProjectResponseDTO> UpdateAsync(Guid id, UpdateProjectDTO dto);
-        Task DeleteAsync(Guid id);
+        Task<ProjectResponseDTO> CreateAsync(CreateProjectDTO dto, Guid actorId);
+        Task<ProjectResponseDTO> UpdateAsync(Guid id, UpdateProjectDTO dto, Guid actorId);
+        Task DeleteAsync(Guid id, Guid actorId);
     }
 }

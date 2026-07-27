@@ -27,6 +27,7 @@ namespace Infrastructure.DbContexts
         // --- Module A: Định danh & Tổ chức ---
         public virtual DbSet<OrganizationType> OrganizationTypes { get; set; }
         public virtual DbSet<Organization> Organizations { get; set; }
+        public virtual DbSet<JointVentureMember> JointVentureMembers { get; set; }
         public virtual DbSet<Group> Groups { get; set; }
         public virtual DbSet<GroupMember> GroupMembers { get; set; }
 
@@ -116,6 +117,12 @@ namespace Infrastructure.DbContexts
                 new OrganizationType { Id = new Guid("3fe93ed9-2e6a-47a6-90cf-6e5aac24c645"), Code = "Supplier", Name = "Nhà cung cấp", IsActive = true },
                 new OrganizationType { Id = new Guid("e48c6618-c877-46bf-9d6d-7d9fb92a50e9"), Code = "FacilityManagement", Name = "Đơn vị vận hành", IsActive = true }
             );
+
+            modelBuilder.Entity<Project>()
+                .HasOne(p => p.OwnerOrganization)
+                .WithMany()
+                .HasForeignKey(p => p.OwnerOrganizationId)
+                .OnDelete(DeleteBehavior.SetNull);
 
             // Cascade Restrict cho các cây tự tham chiếu — tránh "multiple cascade paths"
             // và bảo vệ dữ liệu khỏi xóa lan khi xóa node cha.
@@ -247,6 +254,24 @@ namespace Infrastructure.DbContexts
                 .WithMany()
                 .HasForeignKey(s => s.SignerGroupId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // Joint Venture Member relationships
+            modelBuilder.Entity<JointVentureMember>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                
+                entity.HasOne(e => e.JointVenture)
+                    .WithMany()
+                    .HasForeignKey(e => e.JointVentureId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                
+                entity.HasOne(e => e.MemberOrganization)
+                    .WithMany()
+                    .HasForeignKey(e => e.MemberOrganizationId)
+                    .OnDelete(DeleteBehavior.Restrict);
+                    
+                entity.HasIndex(e => new { e.JointVentureId, e.MemberOrganizationId }).IsUnique();
+            });
 
             modelBuilder.Entity<ApprovalSignatureTransaction>()
                 .HasOne(t => t.ApprovalRequest)

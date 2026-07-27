@@ -1,4 +1,4 @@
-using Domain.Common;
+
 using Domain.Enum.Group;
 using Domain.Enum.Invitation;
 
@@ -7,7 +7,7 @@ namespace Domain.Entities
     // Lời mời 1 account tham gia 1 group thuộc 1 project (do Project Manager phát).
     // Accept (by Id, có JWT) -> service tạo GroupMember(Role) + auto-link ProjectParticipant nếu cần.
     // Token vẫn giữ trong DB cho email cold-link sau này, không expose qua response/route in-app.
-    public class ProjectInvitation : IEntity
+    public class ProjectInvitation 
     {
         public Guid Id { get; set; }
         public Guid ProjectId { get; set; }

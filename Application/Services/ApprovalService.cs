@@ -6,6 +6,7 @@ using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Application.Services.Signing;
 using Domain.Entities;
+using Domain.Enum.Audit;
 using Domain.Enum.Cde;
 using Domain.Enum.File;
 using Domain.Enum.Group;
@@ -26,6 +27,7 @@ namespace Application.Services
         private readonly IFileVersionService _fileVersionService;
         private readonly INotificationService _notification;
         private readonly IApprovalRealtimeNotifier _approvalRealtime;
+        private readonly IAuditLogService _auditLog;
 
         public ApprovalService(
             IUnitOfWork unitOfWork,
@@ -34,7 +36,8 @@ namespace Application.Services
             IIngestBackgroundService documentIngestBackgroundService,
             IFileVersionService fileVersionService,
             INotificationService notification,
-            IApprovalRealtimeNotifier approvalRealtime)
+            IApprovalRealtimeNotifier approvalRealtime,
+            IAuditLogService auditLog)
         {
             _unitOfWork = unitOfWork;
             _zoneResolver = zoneResolver;
@@ -43,6 +46,7 @@ namespace Application.Services
             _fileVersionService = fileVersionService;
             _notification = notification;
             _approvalRealtime = approvalRealtime;
+            _auditLog = auditLog;
         }
 
         #region API chính
@@ -118,6 +122,14 @@ namespace Application.Services
             await _unitOfWork.Repository<ApprovalRequest>().CreateAsync(request);
             foreach (var signer in signers)
                 await _unitOfWork.Repository<ApprovalRequestSigner>().CreateAsync(signer);
+
+            // folderId = folder NGUỒN lúc thao tác -> cả vòng đời (submit/approve/reject) cùng một tập người xem.
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Submit, nameof(ApprovalRequest), request.Id.ToString(), actor,
+                detail: $"Gửi duyệt '{fileItem.Name}': {request.FromZone} → {request.TargetZone}"
+                        + (request.RequiresSignature ? " (yêu cầu ký số)" : ""),
+                projectId: folder.ProjectId, folderId: folder.Id);
+
             await _unitOfWork.CommitAsync();
 
             var leaderIds = (await GetActiveTeamLeaderAccountIdsAsync(teamGroupIds))
@@ -207,6 +219,12 @@ namespace Application.Services
 
             // Versioning: vào SHARED -> P{rev+1}.01, vào PUBLISHED -> C{pubRev+1} (dòng state mới).
             await ApplyZoneVersioningAsync(fileItem, request.TargetZone);
+
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Approve, nameof(ApprovalRequest), request.Id.ToString(), actor,
+                detail: $"Duyệt '{fileItem.Name}': {request.FromZone} → {request.TargetZone}"
+                        + (viaSignatureCompletion ? " (tự động sau khi ký số xong)" : ""),
+                projectId: folder.ProjectId, folderId: folder.Id);
 
             await _unitOfWork.CommitAsync();
 
@@ -355,6 +373,11 @@ namespace Application.Services
             fileItem.Status = FileItemStatus.Rejected;
             fileItem.RequiresSignature = false;
             fileItem.UpdatedAt = now;
+
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Reject, nameof(ApprovalRequest), request.Id.ToString(), actor,
+                detail: $"Từ chối '{fileItem.Name}' ({request.FromZone} → {request.TargetZone}) — lý do: {reason}",
+                projectId: folder.ProjectId, folderId: folder.Id);
 
             await _unitOfWork.CommitAsync();
 

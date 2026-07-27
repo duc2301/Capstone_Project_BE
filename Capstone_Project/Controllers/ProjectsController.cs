@@ -10,16 +10,37 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
+    [ApiController]
     [Route("api/projects")]
     public class ProjectsController : ControllerBase
     {
         private readonly IProjectFlowService _projectFlow;
         private readonly IProjectService _projectService;
+        private readonly IAIService _ai;
 
-        public ProjectsController(IProjectFlowService projectFlow, IProjectService projectService)
+        public ProjectsController(IProjectFlowService projectFlow, IProjectService projectService, IAIService ai)
         {
             _projectFlow = projectFlow;
             _projectService = projectService;
+            _ai = ai;
+        }
+
+        // Khởi tạo nhanh: tải file BEP (PDF/DOCX) -> AI đọc -> trả các field prefill cho stepper.
+        // CHỈ parse, không tạo dự án. Việc tạo vẫn qua POST /api/projects.
+        [HttpPost("parse-bep")]
+        [Authorize(Roles = "Admin")]
+        [Consumes("multipart/form-data")]
+        [RequestSizeLimit(52_428_800)]                                   // 50MB
+        [RequestFormLimits(MultipartBodyLengthLimit = 52_428_800)]
+        public async Task<IActionResult> ParseBep(IFormFile file, CancellationToken ct)
+        {
+            if (file == null || file.Length == 0)
+                throw new ApiExceptionResponse("No file provided.", 400);
+
+            var ext = Path.GetExtension(file.FileName).TrimStart('.').ToLowerInvariant();
+            await using var stream = file.OpenReadStream();
+            var result = await _ai.ParseBepAsync(stream, ext, ct);
+            return Ok(ApiResponse.Success("BEP parsed", result));
         }
 
 
@@ -29,7 +50,7 @@ namespace Capstone_Project.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> AssignManager(Guid id, [FromBody] AssignProjectManagerDTO dto)
         {
-            var result = await _projectFlow.AssignManagerAsync(id, dto, User.GetUserName());
+            var result = await _projectFlow.AssignManagerAsync(id, dto, User.GetUserName(), User.GetAccountId());
             return Ok(ApiResponse.Success("Manager assigned", result));
         }
 
@@ -54,7 +75,7 @@ namespace Capstone_Project.Controllers
         public async Task<IActionResult> UpdateParticipantStatus(
             Guid id, Guid groupId, [FromBody] UpdateParticipantStatusDTO dto)
         {
-            var result = await _projectFlow.UpdateParticipantStatusAsync(id, groupId, dto);
+            var result = await _projectFlow.UpdateParticipantStatusAsync(id, groupId, dto, User.GetAccountId());
             return Ok(ApiResponse.Success("Participant status updated", result));
         }
 
@@ -62,7 +83,7 @@ namespace Capstone_Project.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Create([FromBody] CreateProjectDTO dto)
         {
-            var result = await _projectService.CreateAsync(dto);
+            var result = await _projectService.CreateAsync(dto, User.GetAccountId());
             return Ok(ApiResponse.Success("Project created", result));
         }
 
@@ -96,7 +117,7 @@ namespace Capstone_Project.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateProjectDTO dto)
         {
-            var result = await _projectService.UpdateAsync(id, dto);
+            var result = await _projectService.UpdateAsync(id, dto, User.GetAccountId());
             return Ok(ApiResponse.Success("Project updated", result));
         }
 
@@ -104,7 +125,7 @@ namespace Capstone_Project.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Delete(Guid id)
         {
-            await _projectService.DeleteAsync(id);
+            await _projectService.DeleteAsync(id, User.GetAccountId());
             return Ok(ApiResponse.Success("Project deleted"));
         }
     }

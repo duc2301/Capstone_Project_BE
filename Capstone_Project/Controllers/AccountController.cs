@@ -1,6 +1,7 @@
 using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Account;
 using Application.Interfaces.IServices;
+using Capstone_Project.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -22,7 +23,7 @@ namespace Capstone_Project.Controllers
         public async Task<IActionResult> Create([FromBody] CreateAccountDTO dto)
         {
 
-            var result = await _accountService.CreateAsync(dto);
+            var result = await _accountService.CreateAsync(dto, User.GetAccountId());
             return Ok(ApiResponse.Success("Registration successful", result));
         }
 
@@ -38,7 +39,7 @@ namespace Capstone_Project.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateAccountDTO dto)
         {
-            var result = await _accountService.UpdateAsync(id, dto);
+            var result = await _accountService.UpdateAsync(id, dto, User.GetAccountId());
             return Ok(ApiResponse.Success("Account updated successfully", result));
         }
 
@@ -46,7 +47,7 @@ namespace Capstone_Project.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Delete(Guid id)
         {
-            await _accountService.DeleteAsync(id);
+            await _accountService.DeleteAsync(id, User.GetAccountId());
             return Ok(ApiResponse.Success("Account deleted successfully"));
 
         }

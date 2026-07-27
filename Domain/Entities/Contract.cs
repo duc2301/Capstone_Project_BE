@@ -1,11 +1,8 @@
 using Domain.Enum.Contract;
-
-using Domain.Common;
-
 namespace Domain.Entities
 {
     // Hợp đồng (bill thầu) ký giữa chủ đầu tư và nhà thầu, theo gói thầu
-    public class Contract : IEntity, IAuditable
+    public class Contract
     {
         public Guid Id { get; set; }
         public Guid ContractPackageId { get; set; }

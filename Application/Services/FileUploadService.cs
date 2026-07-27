@@ -9,6 +9,7 @@ using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using Domain.Entities;
+using Domain.Enum.Audit;
 using Domain.Enum.Cde;
 using Domain.Enum.File;
 using Domain.Enum.Loi;
@@ -28,7 +29,7 @@ namespace Application.Services
         private static readonly bool AutoTranslateModelsOnUpload = false;
 
         private readonly IUnitOfWork _unitOfWork;
-        //private readonly IFolderPermissionServiceOld _permission;
+        private readonly IPermissionCheckingService _permission;
         private readonly IFileStorageService _storage;
         private readonly IModelTranslationQueue _translationQueue;
         private readonly ILoiCheckQueue _loiCheckQueue;
@@ -37,9 +38,12 @@ namespace Application.Services
         private readonly INameMatchContentBackgroundService _nameMatchContentBackgroundService;
         private readonly IFileVersionService _fileVersionService;
         private readonly IFileLinkService _fileLink;
+        private readonly IAuditLogService _auditLog;
 
-        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INamingConventionService naming, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService, IFileLinkService fileLink)
+        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INamingConventionService naming, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService, IFileLinkService fileLink, IAuditLogService auditLog, IPermissionCheckingService permission)
         {
+            _auditLog = auditLog;
+            _permission = permission;
             _unitOfWork = unitOfWork;
             _storage = storage;
             _translationQueue = translationQueue;
@@ -58,13 +62,16 @@ namespace Application.Services
             var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(dto.FolderId)
                 ?? throw new ApiExceptionResponse("Folder not found.", 404);
 
-            // ④ Consistency: chỉ được upload vào WIP/Shared (Published/Archived là khu xuất bản/lưu trữ).
-            if (folder.Area is CdeArea.Published or CdeArea.Archived)
-                throw new ApiExceptionResponse(
-                    "Không thể tải file trực tiếp lên thư mục Published/Archived. Tải lên WIP hoặc Shared thay thế.", 400);
             if (folder.ParentFolderId == null)
                 throw new ApiExceptionResponse(
                     "Không thể tải file trực tiếp lên thư mục gốc. Tạo thư mục con để upload thay thế.", 400);
+
+            if (folder.Area != CdeArea.Wip && !await IsSystemDocumentFolderAsync(folder))
+                throw new ApiExceptionResponse(
+                    "Chỉ được tải file lên khu vực WIP. File sang Shared/Published qua luồng phê duyệt.", 400);
+
+            if (!isSystemAdmin)
+                await _permission.CanUploadToFolderAsync(folder.Id, actor);
 
             var name = string.IsNullOrWhiteSpace(dto.Name)
                 ? Path.GetFileNameWithoutExtension(originalFileName)
@@ -84,8 +91,6 @@ namespace Application.Services
             // ④ Đuôi file phải khớp FileType khai báo.
             ValidateExtensionMatchesType(ext, dto.FileType);
 
-            // ① Đối chiếu quyền: file mới cần Edit.
-            //await _permission.RequireAsync(actor, folder.Id, FolderAction.Edit);
 
             // ② Tệp liên quan: KIỂM phạm vi TRƯỚC khi lưu file — id sai/ngoài phạm vi thì fail ở đây,
             // chưa lưu byte nào (hệ versioning mới commit FileItem giữa luồng, không thể rollback file mồ côi).
@@ -124,6 +129,9 @@ namespace Application.Services
                 // vd: tài liệu đang Published — không nhận upload thay thế.
                 throw new ApiExceptionResponse(ex.Message, 409);
             }
+
+            // Giữ cờ "tài liệu mới" TRƯỚC khi `version` bị gán lại trong nhánh dưới (dùng cho audit log).
+            var isNewDocument = version.IsNewDocument;
 
             if (version.IsNewDocument)
             {
@@ -164,6 +172,15 @@ namespace Application.Services
             // [TẠM TẮT] Cổng kiểm LOI (advisory) — chức năng chưa hoàn thiện. Mở lại cả khối này khi xong.
             // if (dto.FileType == FileType.Ifc)
             //     await _unitOfWork.Repository<FileVersionLoiCheck>().CreateAsync(NewLoiPending(version.VersionStateId!.Value, now));
+            await _auditLog.LogAsync(
+                LogScope.Group,
+                isNewDocument ? AuditAction.Upload : AuditAction.NewVersion,
+                nameof(FileItem), fileItem.Id.ToString(), actor,
+                detail: isNewDocument
+                    ? $"Tải lên tài liệu mới '{fileItem.Name}' (v{version.DisplayVersion})"
+                    : $"Cập nhật phiên bản '{fileItem.Name}' (v{version.DisplayVersion})",
+                projectId: folder.ProjectId, folderId: folder.Id);
+
             await _unitOfWork.CommitAsync();
 
             if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
@@ -212,6 +229,14 @@ namespace Application.Services
 
             var stream = await _storage.OpenReadAsync(version.StoragePath, ct);
             var downloadName = $"{fileItem.Name}.{version.Format}";
+
+            // Luồng chỉ-đọc: không có transaction nghiệp vụ để bám vào -> ghi + commit riêng.
+            var downloadFolder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
+            await _auditLog.LogAndSaveAsync(
+                LogScope.Group, AuditAction.Download, nameof(FileItem), fileItem.Id.ToString(), actor,
+                detail: $"Tải về '{downloadName}'",
+                projectId: downloadFolder?.ProjectId, folderId: fileItem.FolderId);
+
             return new DownloadFileResult(stream, downloadName, _storage.GetContentType(version.Format));
         }
 
@@ -258,6 +283,16 @@ namespace Application.Services
             CreatedAt = now,
             UpdatedAt = now
         };
+
+        private async Task<bool> IsSystemDocumentFolderAsync(Folder folder)
+        {
+            if (folder.Area != CdeArea.Published) return false;
+
+            if (folder.Name == FolderBootstrapService.LegalDocumentsFolderName) return true;
+
+            return (await _unitOfWork.Repository<ContractPackage>()
+                .FindAsync(p => p.DocumentFolderId == folder.Id)).Any();
+        }
 
         private static void ValidateName(string name)
         {

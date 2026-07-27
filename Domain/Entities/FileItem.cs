@@ -1,11 +1,8 @@
 using Domain.Enum.File;
-
-using Domain.Common;
-
 namespace Domain.Entities
 {
     // 1 tài liệu trong thư mục CDE; nội dung thực + số version nằm ở các dòng FileVersionState
-    public class FileItem : IEntity, IAuditable
+    public class FileItem 
     {
         public Guid Id { get; set; }
         public Guid FolderId { get; set; }

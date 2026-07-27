@@ -6,6 +6,7 @@ using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using Domain.Entities;
 using Domain.Enum.Account;
+using Domain.Enum.Audit;
 
 namespace Application.Services
 {
@@ -13,11 +14,13 @@ namespace Application.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
+        private readonly IAuditLogService _auditLog;
 
-        public AccountService(IUnitOfWork unitOfWork, IMapper mapper)
+        public AccountService(IUnitOfWork unitOfWork, IMapper mapper, IAuditLogService auditLog)
         {
             _unitOfWork = unitOfWork;
             _mapper = mapper;
+            _auditLog = auditLog;
         }
 
         public async Task<IEnumerable<AccountResponseDTO>> GetAllAsync()
@@ -32,7 +35,7 @@ namespace Application.Services
             return entity == null ? null : _mapper.Map<AccountResponseDTO>(entity);
         }
 
-        public async Task<AccountResponseDTO> CreateAsync(CreateAccountDTO dto)
+        public async Task<AccountResponseDTO> CreateAsync(CreateAccountDTO dto, Guid actorId)
         {
             if (await _unitOfWork.AccountRepository.EmailExistsAsync(dto.Email))
                 throw new ApiExceptionResponse("Email already exists.", 409);
@@ -46,12 +49,17 @@ namespace Application.Services
             account.UpdatedAt = DateTime.UtcNow;
 
             await _unitOfWork.AccountRepository.CreateAsync(account);
+
+            await _auditLog.LogAsync(
+                LogScope.System, AuditAction.Create, nameof(Account), account.Id.ToString(), actorId,
+                detail: $"Tạo tài khoản '{account.UserName}' ({account.Email}) — vai trò {account.Role}");
+
             await _unitOfWork.CommitAsync();
 
             return _mapper.Map<AccountResponseDTO>(account);
         }
 
-        public async Task<AccountResponseDTO> UpdateAsync(Guid id, UpdateAccountDTO dto)
+        public async Task<AccountResponseDTO> UpdateAsync(Guid id, UpdateAccountDTO dto, Guid actorId)
         {
             var entity = await _unitOfWork.AccountRepository.GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Account with ID {id} not found.", 404);
@@ -60,17 +68,27 @@ namespace Application.Services
             entity.UpdatedAt = DateTime.UtcNow;
 
             _unitOfWork.AccountRepository.Update(entity);
+
+            await _auditLog.LogAsync(
+                LogScope.System, AuditAction.Update, nameof(Account), entity.Id.ToString(), actorId,
+                detail: $"Cập nhật tài khoản '{entity.UserName}' — vai trò {entity.Role}, trạng thái {entity.Status}");
+
             await _unitOfWork.CommitAsync();
 
             return _mapper.Map<AccountResponseDTO>(entity);
         }
 
-        public async Task DeleteAsync(Guid id)
+        public async Task DeleteAsync(Guid id, Guid actorId)
         {
             var entity = await _unitOfWork.AccountRepository.GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Account with ID {id} not found.", 404);
 
             _unitOfWork.AccountRepository.Delete(entity);
+
+            await _auditLog.LogAsync(
+                LogScope.System, AuditAction.Delete, nameof(Account), entity.Id.ToString(), actorId,
+                detail: $"Xoá tài khoản '{entity.UserName}' ({entity.Email})");
+
             await _unitOfWork.CommitAsync();
         }
     }

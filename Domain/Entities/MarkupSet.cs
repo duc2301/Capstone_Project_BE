@@ -1,9 +1,9 @@
-using Domain.Common;
+
 using Domain.Enum.File;
 
 namespace Domain.Entities
 {
-    public class MarkupSet : IEntity, IAuditable
+    public class MarkupSet 
     {
         public Guid Id { get; set; }
         public Guid FileItemId { get; set; }

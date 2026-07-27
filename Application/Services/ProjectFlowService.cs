@@ -6,6 +6,7 @@ using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using Domain.Entities;
 using Domain.Enum.Account;
+using Domain.Enum.Audit;
 using Domain.Enum.Project;
 
 namespace Application.Services
@@ -16,24 +17,27 @@ namespace Application.Services
         private readonly INotificationService _notification;
         private readonly IFolderBootstrapService _folderBootstrap;
         private readonly IMapper _mapper;
+        private readonly IAuditLogService _auditLog;
 
         public ProjectFlowService(
             IUnitOfWork unitOfWork,
             INotificationService notification,
             IFolderBootstrapService folderBootstrap,
-            IMapper mapper)
+            IMapper mapper,
+            IAuditLogService auditLog)
         {
             _unitOfWork = unitOfWork;
             _notification = notification;
             _folderBootstrap = folderBootstrap;
             _mapper = mapper;
+            _auditLog = auditLog;
         }
 
         // Admin gán 1 account hiện có làm PM của project.
         // 1 account có thể làm PM nhiều dự án -> chỉ validate account tồn tại + active.
         // actorName (người gán) do controller lấy từ JWT.
         public async Task<ProjectResponseDTO> AssignManagerAsync(
-            Guid projectId, AssignProjectManagerDTO dto, string? actorName)
+            Guid projectId, AssignProjectManagerDTO dto, string? actorName, Guid actorId)
         {
             var project = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId)
                 ?? throw new ApiExceptionResponse("Project not found.", 404);
@@ -46,6 +50,11 @@ namespace Application.Services
 
             var oldManagerId = project.ManagerAccountId;
             project.ManagerAccountId = account.Id;
+
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Assign, nameof(Project), project.Id.ToString(), actorId,
+                detail: $"Chỉ định '{account.UserName}' làm Project Manager của dự án '{project.ProjectName}'",
+                projectId: project.Id);
 
             await _unitOfWork.CommitAsync();
 
@@ -122,6 +131,13 @@ namespace Application.Services
                 }
             }
 
+            foreach (var participant in created)
+                await _auditLog.LogAsync(
+                    LogScope.Project, AuditAction.Create, nameof(ProjectParticipant),
+                    participant.Id.ToString(), actor,
+                    detail: $"Thêm nhóm tham gia dự án (vai trò {participant.Role})",
+                    projectId: projectId, groupId: participant.GroupId);
+
             await _unitOfWork.CommitAsync();
 
             // Tạo "ô" thư mục CDE cho từng bên vừa thêm (WIP/Shared/Published/Archived).
@@ -163,7 +179,7 @@ namespace Application.Services
         }
 
         public async Task<ParticipantResponseDTO> UpdateParticipantStatusAsync(
-            Guid projectId, Guid groupId, UpdateParticipantStatusDTO dto)
+            Guid projectId, Guid groupId, UpdateParticipantStatusDTO dto, Guid actorId)
         {
             _ = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId)
                 ?? throw new ApiExceptionResponse("Project not found.", 404);
@@ -174,6 +190,13 @@ namespace Application.Services
                 ?? throw new ApiExceptionResponse("Group is not a participant of this project.", 404);
 
             participant.Status = dto.Status;
+
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.StatusChange, nameof(ProjectParticipant),
+                participant.Id.ToString(), actorId,
+                detail: $"Đổi trạng thái bên tham gia thành {dto.Status}",
+                projectId: projectId, groupId: groupId);
+
             await _unitOfWork.CommitAsync();
 
             return _mapper.Map<ParticipantResponseDTO>(participant);

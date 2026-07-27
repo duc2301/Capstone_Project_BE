@@ -14,8 +14,11 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
 
-        public FilePermissionService(IUnitOfWork unitOfWork, IMapper mapper)
+        private readonly IAuditLogService _auditLog;
+
+        public FilePermissionService(IUnitOfWork unitOfWork, IMapper mapper, IAuditLogService auditLog)
         {
+            _auditLog = auditLog;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
         }
@@ -59,7 +62,7 @@ namespace Application.Services
 
         #region Create/Update permissions theo bulk
 
-        public async Task<IEnumerable<GroupFilePermissionResponseDTO>> BulkUpdateFilePermissionsAsync(AddPermissionsBulkDTO dto)
+        public async Task<IEnumerable<GroupFilePermissionResponseDTO>> BulkUpdateFilePermissionsAsync(AddPermissionsBulkDTO dto, Guid actorId)
         {
             //if (!dto.GroupsPermission.Any()) 
             //    throw new ApiExceptionResponse("GroupsPermission list is empty.", 400);
@@ -133,6 +136,16 @@ namespace Application.Services
 
             if (toCreate.Any())
                 await _unitOfWork.Repository<FilePermission>().CreateRangeAsync(toCreate);
+
+            var auditFile = await _unitOfWork.Repository<FileItem>().GetByIdAsync(dto.Id);
+            var auditFolder = auditFile == null
+                ? null
+                : await _unitOfWork.Repository<Folder>().GetByIdAsync(auditFile.FolderId);
+            await _auditLog.LogAsync(
+                Domain.Enum.Audit.LogScope.Project, Domain.Enum.Audit.AuditAction.PermissionChange,
+                nameof(FileItem), dto.Id.ToString(), actorId,
+                detail: $"Cập nhật phân quyền tệp '{auditFile?.Name}' cho {updatedParticipantIds.Count()} bên tham gia",
+                projectId: auditFolder?.ProjectId, folderId: auditFile?.FolderId);
 
             await _unitOfWork.CommitAsync();
 
