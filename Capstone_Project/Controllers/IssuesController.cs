@@ -28,7 +28,13 @@ namespace Capstone_Project.Controllers
         [HttpGet("by-file/{fileItemId:guid}")]
         public async Task<IActionResult> GetByFileItem(Guid fileItemId)
             => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByFileItemAsync(fileItemId)));
-            
+
+        [HttpGet("by-project/{projectId:guid}")]
+        public async Task<IActionResult> GetByProject(Guid projectId)
+            => Ok(ApiResponse.Success("Retrieved successfully",
+                await _service.GetByProjectAsync(projectId, User.GetAccountId(), User.IsAdmin())));
+
+
         [HttpPost("open-file-ids")]
         public async Task<IActionResult> GetOpenIssueFileIds([FromBody] GetOpenIssueFileIdsDTO dto)
             => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetOpenIssueFileIdsAsync(dto.FileItemIds)));

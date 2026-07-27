@@ -18,6 +18,9 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
 
+        public const string ContractPackagesFolderName = "Các gói thầu";
+        public const string LegalDocumentsFolderName = "Hồ sơ pháp lý";
+
         // 4 khu vực gốc + tên hiển thị mặc định.
         private static readonly (CdeArea Area, string Name)[] RootAreas =
         {
@@ -438,7 +441,7 @@ namespace Application.Services
             var publishedRoot = roots.FirstOrDefault(r => r.Area == CdeArea.Published);
             if (publishedRoot != null)
             {
-                var packageFolder = projectFolders.FirstOrDefault(f => f.ParentFolderId == publishedRoot.Id && f.Name == "Các gói thầu");
+                var packageFolder = projectFolders.FirstOrDefault(f => f.ParentFolderId == publishedRoot.Id && f.Name == ContractPackagesFolderName);
                 if (packageFolder == null)
                 {
                     await _unitOfWork.Repository<Folder>().CreateAsync(new Folder
@@ -446,7 +449,7 @@ namespace Application.Services
                         Id = Guid.NewGuid(),
                         ProjectId = projectId,
                         ParentFolderId = publishedRoot.Id,
-                        Name = "Các gói thầu",
+                        Name = ContractPackagesFolderName,
                         Area = CdeArea.Published,
                         IsTemplate = false,
                         CreatedAt = now,
@@ -454,7 +457,7 @@ namespace Application.Services
                     });
                 }
 
-                var legalFolder = projectFolders.FirstOrDefault(f => f.ParentFolderId == publishedRoot.Id && f.Name == "Hồ sơ pháp lý");
+                var legalFolder = projectFolders.FirstOrDefault(f => f.ParentFolderId == publishedRoot.Id && f.Name == LegalDocumentsFolderName);
                 if (legalFolder == null)
                 {
                     await _unitOfWork.Repository<Folder>().CreateAsync(new Folder
@@ -462,7 +465,7 @@ namespace Application.Services
                         Id = Guid.NewGuid(),
                         ProjectId = projectId,
                         ParentFolderId = publishedRoot.Id,
-                        Name = "Hồ sơ pháp lý",
+                        Name = LegalDocumentsFolderName,
                         Area = CdeArea.Published,
                         IsTemplate = false,
                         CreatedAt = now,

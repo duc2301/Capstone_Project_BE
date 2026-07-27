@@ -58,9 +58,7 @@ namespace Infrastructure.Repositories
 
         public void Update(T entity)
         {
-            _context.ChangeTracker.Clear();
-            var tracker = _context.Attach(entity);
-            tracker.State = EntityState.Modified;
+            _context.Entry(entity).State = EntityState.Modified;
         }
 
         public async Task CreateRangeAsync(IEnumerable<T> entities)

@@ -2,6 +2,7 @@ using Application.DTOs.RequestDTOs.Issue;
 using Application.DTOs.ResponseDTOs.Common;
 using Application.DTOs.ResponseDTOs.Issue;
 using Application.ExceptionMiddleware;
+using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
@@ -25,6 +26,7 @@ namespace Application.Services
         private readonly INotificationService _notification;
         private readonly IIssueBroadcaster _issueBroadcaster;
         private readonly IFileStorageService _storage;
+        private readonly IFolderTreeRepository _folderTreeRepository;
 
         public IssueService(
             IUnitOfWork unitOfWork,
@@ -33,7 +35,8 @@ namespace Application.Services
             IDiscussionService discussionService,
             INotificationService notification,
             IIssueBroadcaster issueBroadcaster,
-            IFileStorageService storage)
+            IFileStorageService storage,
+            IFolderTreeRepository folderTreeRepository)
         {
             _unitOfWork = unitOfWork;
             _mapper = mapper;
@@ -42,6 +45,7 @@ namespace Application.Services
             _notification = notification;
             _issueBroadcaster = issueBroadcaster;
             _storage = storage;
+            _folderTreeRepository = folderTreeRepository;
         }
 
         public async Task<IEnumerable<IssueResponseDTO>> GetAllAsync()
@@ -49,9 +53,117 @@ namespace Application.Services
                 await _unitOfWork.Repository<Issue>().GetAllAsync());
 
         public async Task<IEnumerable<IssueResponseDTO>> GetByFileItemAsync(Guid fileItemId)
-            => _mapper.Map<IEnumerable<IssueResponseDTO>>(
-                (await _unitOfWork.Repository<Issue>().FindAsync(i => i.LinkedFileItemId == fileItemId))
-                    .OrderByDescending(i => i.CreatedAt));
+        {
+            var issues = (await _unitOfWork.Repository<Issue>().FindAsync(i => i.LinkedFileItemId == fileItemId))
+                .OrderByDescending(i => i.CreatedAt)
+                .ToList();
+            var dtos = _mapper.Map<List<IssueResponseDTO>>(issues);
+
+            var accountIds = issues
+                .SelectMany(i => new[] { i.RaisedByAccountId, i.AssignedToAccountId })
+                .Where(id => id.HasValue).Select(id => id!.Value).ToHashSet();
+            if (accountIds.Count == 0) return dtos;
+
+            var names = (await _unitOfWork.Repository<Account>().FindAsync(a => accountIds.Contains(a.Id)))
+                .ToDictionary(a => a.Id, a => a.UserName);
+
+            foreach (var dto in dtos)
+            {
+                if (dto.RaisedByAccountId.HasValue && names.TryGetValue(dto.RaisedByAccountId.Value, out var raised))
+                    dto.RaisedByName = raised;
+                if (dto.AssignedToAccountId.HasValue && names.TryGetValue(dto.AssignedToAccountId.Value, out var assigned))
+                    dto.AssignedToName = assigned;
+            }
+
+            return dtos;
+        }
+
+        public async Task<IEnumerable<ProjectIssueListItemDTO>> GetByProjectAsync(
+            Guid projectId, Guid accountId, bool isSystemAdmin)
+        {
+            if (!await _folderTreeRepository.ProjectExistsAsync(projectId))
+                throw new ApiExceptionResponse("Project not found.", 404);
+
+            var issues = (await _unitOfWork.Repository<Issue>().FindAsync(i => i.ProjectId == projectId)).ToList();
+            if (issues.Count == 0) return Array.Empty<ProjectIssueListItemDTO>();
+
+            var fileIds = issues.Where(i => i.LinkedFileItemId.HasValue)
+                .Select(i => i.LinkedFileItemId!.Value).ToHashSet();
+            var fileById = fileIds.Count == 0
+                ? new Dictionary<Guid, FileItem>()
+                : (await _unitOfWork.Repository<FileItem>().FindAsync(f => fileIds.Contains(f.Id)))
+                    .ToDictionary(f => f.Id);
+
+            var folderNameById = (await _folderTreeRepository.GetProjectFoldersAsync(projectId, null))
+                .ToDictionary(f => f.Id, f => f.Name);
+
+            var hasFullAccess = isSystemAdmin
+                || await _folderTreeRepository.HasFullAccessAsync(projectId, accountId);
+            var viewableFolderIds = hasFullAccess
+                ? new HashSet<Guid>()
+                : await _folderTreeRepository.GetViewableFolderIdsAsync(projectId, accountId);
+
+            Guid? FolderOf(Issue issue)
+                => issue.LinkedFileItemId.HasValue && fileById.TryGetValue(issue.LinkedFileItemId.Value, out var file)
+                    ? file.FolderId
+                    : issue.LinkedFolderId;
+
+            bool CanSee(Issue issue)
+            {
+                if (hasFullAccess) return true;
+
+                var folderId = FolderOf(issue);
+                if (!folderId.HasValue)
+                    return issue.RaisedByAccountId == accountId || issue.AssignedToAccountId == accountId;
+
+                return viewableFolderIds.Contains(folderId.Value);
+            }
+
+            var visible = issues.Where(CanSee).ToList();
+            if (visible.Count == 0) return Array.Empty<ProjectIssueListItemDTO>();
+
+            var accountIds = visible
+                .SelectMany(i => new[] { i.RaisedByAccountId, i.AssignedToAccountId })
+                .Where(id => id.HasValue).Select(id => id!.Value).ToHashSet();
+            var accountNames = accountIds.Count == 0
+                ? new Dictionary<Guid, string>()
+                : (await _unitOfWork.Repository<Account>().FindAsync(a => accountIds.Contains(a.Id)))
+                    .ToDictionary(a => a.Id, a => a.UserName);
+
+            string? NameOf(Guid? id)
+                => id.HasValue && accountNames.TryGetValue(id.Value, out var name) ? name : null;
+
+            return visible
+                .OrderByDescending(i => i.CreatedAt)
+                .Select(i =>
+                {
+                    var folderId = FolderOf(i);
+                    return new ProjectIssueListItemDTO
+                    {
+                        Id = i.Id,
+                        ProjectId = i.ProjectId,
+                        Type = i.Type,
+                        Title = i.Title,
+                        Description = i.Description,
+                        Status = i.Status,
+                        Priority = i.Priority,
+                        RaisedByAccountId = i.RaisedByAccountId,
+                        RaisedByName = NameOf(i.RaisedByAccountId),
+                        AssignedToAccountId = i.AssignedToAccountId,
+                        AssignedToName = NameOf(i.AssignedToAccountId),
+                        DueDate = i.DueDate,
+                        CreatedAt = i.CreatedAt,
+                        UpdatedAt = i.UpdatedAt,
+                        LinkedFileItemId = i.LinkedFileItemId,
+                        LinkedFileName = i.LinkedFileItemId.HasValue
+                            && fileById.TryGetValue(i.LinkedFileItemId.Value, out var f) ? f.Name : null,
+                        LinkedFolderId = folderId,
+                        LinkedFolderName = folderId.HasValue
+                            && folderNameById.TryGetValue(folderId.Value, out var n) ? n : null,
+                    };
+                })
+                .ToList();
+        }
 
         public async Task<IssueResponseDTO?> GetByIdAsync(Guid id)
         {

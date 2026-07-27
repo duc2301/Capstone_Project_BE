@@ -33,12 +33,24 @@ namespace Application.Mapping
     public class MappingProfile : Profile
     {
         // Quy ước Update = partial: chỉ field khác null mới được ánh xạ đè.
+        private IMappingExpression<TUpdate, TEntity> PartialUpdateMap<TUpdate, TEntity>()
+        {
+            var map = CreateMap<TUpdate, TEntity>();
+            foreach (var prop in typeof(TUpdate).GetProperties())
+            {
+                if (typeof(TEntity).GetProperty(prop.Name) == null) continue;
+                var sourceProp = prop;
+                map.ForMember(sourceProp.Name,
+                    o => o.Condition((src, dest, _) => sourceProp.GetValue(src) != null));
+            }
+            return map;
+        }
+
         private void Crud<TEntity, TCreate, TUpdate, TResponse>()
         {
             CreateMap<TEntity, TResponse>();
             CreateMap<TCreate, TEntity>();
-            CreateMap<TUpdate, TEntity>()
-                .ForAllMembers(o => o.Condition((src, dest, val) => val != null));
+            PartialUpdateMap<TUpdate, TEntity>();
         }
 
         public MappingProfile()
@@ -46,8 +58,7 @@ namespace Application.Mapping
             // --- Account (giữ nguyên bản gốc) ---
             CreateMap<Account, AccountResponseDTO>();
             CreateMap<CreateAccountDTO, Account>();
-            CreateMap<UpdateAccountDTO, Account>()
-                .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
+            PartialUpdateMap<UpdateAccountDTO, Account>();
 
             // --- Module A/B ---
             Crud<OrganizationType, CreateOrganizationTypeDTO, UpdateOrganizationTypeDTO, OrganizationTypeResponseDTO>();
@@ -64,14 +75,12 @@ namespace Application.Mapping
                         ? (s.OwnerOrganization.DisplayName ?? s.OwnerOrganization.LegalName)
                         : null));
             CreateMap<CreateProjectDTO, Project>();
-            CreateMap<UpdateProjectDTO, Project>()
-                .ForAllMembers(o => o.Condition((src, dest, val) => val != null));
+            PartialUpdateMap<UpdateProjectDTO, Project>();
             CreateMap<ProjectLocation, ProjectLocationResponseDTO>();
             CreateMap<ContractPackage, ContractPackageResponseDTO>()
                 .ForMember(d => d.Assignments, o => o.Ignore());
             CreateMap<CreateContractPackageDTO, ContractPackage>();
-            CreateMap<UpdateContractPackageDTO, ContractPackage>()
-                .ForAllMembers(o => o.Condition((src, dest, val) => val != null));
+            PartialUpdateMap<UpdateContractPackageDTO, ContractPackage>();
             CreateMap<PackageAssignment, PackageAssignmentResponseDTO>();
 
             // Notification: set thời điểm gửi + chưa đọc khi tạo
@@ -79,8 +88,7 @@ namespace Application.Mapping
             CreateMap<CreateNotificationDTO, Notification>()
                 .ForMember(d => d.SendAt, o => o.MapFrom(_ => DateTime.UtcNow))
                 .ForMember(d => d.IsRead, o => o.MapFrom(_ => false));
-            CreateMap<UpdateNotificationDTO, Notification>()
-                .ForAllMembers(o => o.Condition((src, dest, val) => val != null));
+            PartialUpdateMap<UpdateNotificationDTO, Notification>();
 
             // --- Module C/D/E/F ---
             Crud<Folder, CreateFolderDTO, UpdateFolderDTO, FolderResponseDTO>();
