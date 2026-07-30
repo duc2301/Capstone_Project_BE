@@ -157,9 +157,9 @@ namespace Application.Services
                     ProjectParticipantId = permission.ProjectParticipantId,
                     CanView = permission.CanView,
                     CanEdit = permission.CanEdit,
-                    CanUpdate = permission.CanUpdate,
-                    CanDownload = permission.CanDownload,
-                    CanVerify = permission.CanVerify,
+                    //CanUpdate = permission.CanUpdate,
+                    //CanDownload = permission.CanDownload,
+                    //CanVerify = permission.CanVerify,
                     CanApprove = permission.CanApprove,
                     Status = permission.Status
                 };
@@ -215,9 +215,9 @@ namespace Application.Services
                 ProjectParticipantId = participantId,
                 CanView = true,
                 CanEdit = isWip,
-                CanUpdate = isWip,
-                CanDownload = true,
-                CanVerify = true,
+                //CanUpdate = isWip,
+                //CanDownload = true,
+                //CanVerify = true,
                 CanApprove = true,
                 Status = PermissionStatus.Active
             };
@@ -393,10 +393,10 @@ namespace Application.Services
                     FolderId = mirror.Id,
                     ProjectParticipantId = permission.ProjectParticipantId,
                     CanView = permission.CanView,
-                    CanDownload = permission.CanDownload,
+                    //CanDownload = permission.CanDownload,
                     CanEdit = false,
-                    CanUpdate = false,
-                    CanVerify = false,
+                    //CanUpdate = false,
+                    //CanVerify = false,
                     CanApprove = false,
                     Status = permission.Status
                 });

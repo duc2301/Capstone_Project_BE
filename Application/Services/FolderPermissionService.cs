@@ -77,9 +77,9 @@ namespace Application.Services
                     perm.Status = PermissionStatus.Inactive;
                     perm.CanView = false;
                     perm.CanEdit = false;
-                    perm.CanUpdate = false;
-                    perm.CanDownload = false;
-                    perm.CanVerify = false;
+                    //perm.CanUpdate = false;
+                    //perm.CanDownload = false;
+                    //perm.CanVerify = false;
                     perm.CanApprove = false;
 
                     updatedParticipantIds.Add(participantId);
@@ -98,10 +98,10 @@ namespace Application.Services
                     // Update existing rows if the group was previously assigned permissions but then removed
                     permission.CanView = u.CanView;
                     permission.CanEdit = u.CanEdit;
-                    permission.CanUpdate = u.CanUpdate;
-                    permission.CanDownload = u.CanDownload;
-                    permission.CanVerify = u.CanVerify;
-                    permission.CanApprove = u.CanApprove;
+                    //permission.CanUpdate = u.CanUpdate;
+                    //permission.CanDownload = u.CanDownload;
+                    //permission.CanVerify = u.CanVerify;
+                    permission.CanApprove = true;
                     permission.Status = PermissionStatus.Active;
 
                 }
@@ -119,10 +119,10 @@ namespace Application.Services
 
                 permission.CanView = u.CanView;
                 permission.CanEdit = u.CanEdit;
-                permission.CanUpdate = u.CanUpdate;
-                permission.CanDownload = u.CanDownload;
-                permission.CanVerify = u.CanVerify;
-                permission.CanApprove = u.CanApprove;
+                //permission.CanUpdate = u.CanUpdate;
+                //permission.CanDownload = u.CanDownload;
+                //permission.CanVerify = u.CanVerify;
+                permission.CanApprove = true;
                 permission.Status = PermissionStatus.Active;
 
                 updatedParticipantIds.Add(u.ProjectParticipantId);
