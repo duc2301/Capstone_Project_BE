@@ -6,11 +6,8 @@ using Domain.Entities;
 
 namespace Application.Services
 {
-    /// <summary>
-    /// Centralized permission evaluation. Baseline flow only:
-    /// look up the user's permission record and check the requested flag —
-    /// no inheritance, no PM/Admin bypass, no caching yet.
-    /// </summary>
+    // Nơi tập trung đánh giá phân quyền. Quyền file: dòng riêng của file là ghi đè,
+    // không có thì thừa hưởng quyền thư mục chứa nó. Chưa có bypass PM/Admin và caching.
     public class PermissionCheckingService : IPermissionCheckingService
     {
         private readonly IPermissionCheckingRepository _permissionCheckingRepository;
@@ -44,24 +41,25 @@ namespace Application.Services
             => CheckFolderAsync(folderId, accountId, fp => fp.CanApprove, "Approve");
 
         // ===== File permissions =====
+        // Tham số thứ 2 là quyền tương ứng ở thư mục, dùng khi file chưa có dòng riêng.
 
         public Task CanViewFileAsync(Guid fileItemId, Guid accountId)
-            => CheckFileAsync(fileItemId, accountId, fp => fp.CanView, "View");
+            => CheckFileAsync(fileItemId, accountId, fp => fp.CanView, fp => fp.CanView, "View");
 
         public Task CanEditFileAsync(Guid fileItemId, Guid accountId)
-            => CheckFileAsync(fileItemId, accountId, fp => fp.CanEdit, "Edit");
+            => CheckFileAsync(fileItemId, accountId, fp => fp.CanEdit, fp => fp.CanEdit, "Edit");
 
         public Task CanUpdateFileAsync(Guid fileItemId, Guid accountId)
-            => CheckFileAsync(fileItemId, accountId, fp => fp.CanUpdate, "Update");
+            => CheckFileAsync(fileItemId, accountId, fp => fp.CanUpdate, fp => fp.CanUpdate, "Update");
 
         public Task CanDownloadFileAsync(Guid fileItemId, Guid accountId)
-            => CheckFileAsync(fileItemId, accountId, fp => fp.CanDownload, "Download");
+            => CheckFileAsync(fileItemId, accountId, fp => fp.CanDownload, fp => fp.CanDownload, "Download");
 
         public Task CanVerifyFileAsync(Guid fileItemId, Guid accountId)
-            => CheckFileAsync(fileItemId, accountId, fp => fp.CanVerify, "Verify");
+            => CheckFileAsync(fileItemId, accountId, fp => fp.CanVerify, fp => fp.CanVerify, "Verify");
 
         public Task CanApproveFileAsync(Guid fileItemId, Guid accountId)
-            => CheckFileAsync(fileItemId, accountId, fp => fp.CanApprove, "Approve");
+            => CheckFileAsync(fileItemId, accountId, fp => fp.CanApprove, fp => fp.CanApprove, "Approve");
 
         // ===== Current-user permission retrieval (viewing only) =====
 
@@ -208,13 +206,31 @@ namespace Application.Services
                     $"You do not have '{action}' permission on this folder.", 403);
         }
 
+        // Dòng riêng của file phải là quyết định cuối: nếu vẫn cho rơi về quyền thư mục
+        // thì một lệnh chặn ở cấp file sẽ vô nghĩa.
         private async Task CheckFileAsync(
-            Guid fileItemId, Guid accountId, Func<FilePermission, bool> hasPermission, string action)
+            Guid fileItemId, Guid accountId,
+            Func<FilePermission, bool> hasFilePermission,
+            Func<FolderPermission, bool> hasFolderPermission,
+            string action)
         {
-            var permission = await _permissionCheckingRepository
+            var filePermission = await _permissionCheckingRepository
                 .GetUserFilePermissionAsync(fileItemId, accountId);
 
-            if (permission == null || !hasPermission(permission))
+            if (filePermission != null)
+            {
+                if (hasFilePermission(filePermission)) return;
+                throw new ApiExceptionResponse(
+                    $"You do not have '{action}' permission on this file.", 403);
+            }
+
+            var fileItem = await _permissionCheckingRepository.GetFileItemAsync(fileItemId)
+                ?? throw new ApiExceptionResponse("File not found.", 404);
+
+            var folderPermission = await _permissionCheckingRepository
+                .GetUserFolderPermissionAsync(fileItem.FolderId, accountId);
+
+            if (folderPermission == null || !hasFolderPermission(folderPermission))
                 throw new ApiExceptionResponse(
                     $"You do not have '{action}' permission on this file.", 403);
         }

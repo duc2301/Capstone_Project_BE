@@ -128,6 +128,8 @@ namespace Infrastructure.Configurations
             services.AddSingleton<ILoiCheckQueue, LoiCheckQueue>();
             services.AddScoped<ILoiConformanceService, Application.Services.Loi.LoiConformanceService>();
             services.AddScoped<ILoiCheckService, Application.Services.Loi.LoiCheckService>();
+            // Từ điển quy đổi tên tham số theo dự án (người dùng xác nhận gợi ý ánh xạ).
+            services.AddScoped<ILoiAliasService, Application.Services.Loi.LoiAliasService>();
             services.AddSingleton<IFileTextExtractor, FileTextExtractorService>();
             services.AddSingleton<ITextChunker, TextChunkerService>();
 
