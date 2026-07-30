@@ -12,9 +12,9 @@ namespace Application.Interfaces.IServices
         // Folder permissions
         Task CanViewFolderAsync(Guid folderId, Guid accountId);
         Task CanEditFolderAsync(Guid folderId, Guid accountId);
-        Task CanUpdateFolderAsync(Guid folderId, Guid accountId);
-        Task CanDownloadFolderAsync(Guid folderId, Guid accountId);
-        Task CanVerifyFolderAsync(Guid folderId, Guid accountId);
+        //Task CanUpdateFolderAsync(Guid folderId, Guid accountId);
+        //Task CanDownloadFolderAsync(Guid folderId, Guid accountId);
+        //Task CanVerifyFolderAsync(Guid folderId, Guid accountId);
         Task CanApproveFolderAsync(Guid folderId, Guid accountId);
 
         Task CanUploadToFolderAsync(Guid folderId, Guid accountId);
@@ -22,9 +22,9 @@ namespace Application.Interfaces.IServices
         // File permissions
         Task CanViewFileAsync(Guid fileItemId, Guid accountId);
         Task CanEditFileAsync(Guid fileItemId, Guid accountId);
-        Task CanUpdateFileAsync(Guid fileItemId, Guid accountId);
-        Task CanDownloadFileAsync(Guid fileItemId, Guid accountId);
-        Task CanVerifyFileAsync(Guid fileItemId, Guid accountId);
+        //Task CanUpdateFileAsync(Guid fileItemId, Guid accountId);
+        //Task CanDownloadFileAsync(Guid fileItemId, Guid accountId);
+        //Task CanVerifyFileAsync(Guid fileItemId, Guid accountId);
         Task CanApproveFileAsync(Guid fileItemId, Guid accountId);
 
         // ===== Current-user permission retrieval (viewing only, no authorization) =====

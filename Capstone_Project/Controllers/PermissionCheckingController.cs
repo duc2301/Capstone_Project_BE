@@ -71,26 +71,26 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("You have 'Edit' permission on this folder."));
         }
 
-        [HttpGet("folders/{folderId:guid}/can-update")]
-        public async Task<IActionResult> CanUpdateFolder(Guid folderId)
-        {
-            await _permissionCheckingService.CanUpdateFolderAsync(folderId, User.GetAccountId());
-            return Ok(ApiResponse.Success("You have 'Update' permission on this folder."));
-        }
+        //[HttpGet("folders/{folderId:guid}/can-update")]
+        //public async Task<IActionResult> CanUpdateFolder(Guid folderId)
+        //{
+        //    await _permissionCheckingService.CanUpdateFolderAsync(folderId, User.GetAccountId());
+        //    return Ok(ApiResponse.Success("You have 'Update' permission on this folder."));
+        //}
 
-        [HttpGet("folders/{folderId:guid}/can-download")]
-        public async Task<IActionResult> CanDownloadFolder(Guid folderId)
-        {
-            await _permissionCheckingService.CanDownloadFolderAsync(folderId, User.GetAccountId());
-            return Ok(ApiResponse.Success("You have 'Download' permission on this folder."));
-        }
+        //[HttpGet("folders/{folderId:guid}/can-download")]
+        //public async Task<IActionResult> CanDownloadFolder(Guid folderId)
+        //{
+        //    await _permissionCheckingService.CanDownloadFolderAsync(folderId, User.GetAccountId());
+        //    return Ok(ApiResponse.Success("You have 'Download' permission on this folder."));
+        //}
 
-        [HttpGet("folders/{folderId:guid}/can-verify")]
-        public async Task<IActionResult> CanVerifyFolder(Guid folderId)
-        {
-            await _permissionCheckingService.CanVerifyFolderAsync(folderId, User.GetAccountId());
-            return Ok(ApiResponse.Success("You have 'Verify' permission on this folder."));
-        }
+        //[HttpGet("folders/{folderId:guid}/can-verify")]
+        //public async Task<IActionResult> CanVerifyFolder(Guid folderId)
+        //{
+        //    await _permissionCheckingService.CanVerifyFolderAsync(folderId, User.GetAccountId());
+        //    return Ok(ApiResponse.Success("You have 'Verify' permission on this folder."));
+        //}
 
         [HttpGet("folders/{folderId:guid}/can-approve")]
         public async Task<IActionResult> CanApproveFolder(Guid folderId)
@@ -117,26 +117,26 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("You have 'Edit' permission on this file."));
         }
 
-        [HttpGet("files/{fileItemId:guid}/can-update")]
-        public async Task<IActionResult> CanUpdateFile(Guid fileItemId)
-        {
-            await _permissionCheckingService.CanUpdateFileAsync(fileItemId, User.GetAccountId());
-            return Ok(ApiResponse.Success("You have 'Update' permission on this file."));
-        }
+        //[HttpGet("files/{fileItemId:guid}/can-update")]
+        //public async Task<IActionResult> CanUpdateFile(Guid fileItemId)
+        //{
+        //    await _permissionCheckingService.CanUpdateFileAsync(fileItemId, User.GetAccountId());
+        //    return Ok(ApiResponse.Success("You have 'Update' permission on this file."));
+        //}
 
-        [HttpGet("files/{fileItemId:guid}/can-download")]
-        public async Task<IActionResult> CanDownloadFile(Guid fileItemId)
-        {
-            await _permissionCheckingService.CanDownloadFileAsync(fileItemId, User.GetAccountId());
-            return Ok(ApiResponse.Success("You have 'Download' permission on this file."));
-        }
+        //[HttpGet("files/{fileItemId:guid}/can-download")]
+        //public async Task<IActionResult> CanDownloadFile(Guid fileItemId)
+        //{
+        //    await _permissionCheckingService.CanDownloadFileAsync(fileItemId, User.GetAccountId());
+        //    return Ok(ApiResponse.Success("You have 'Download' permission on this file."));
+        //}
 
-        [HttpGet("files/{fileItemId:guid}/can-verify")]
-        public async Task<IActionResult> CanVerifyFile(Guid fileItemId)
-        {
-            await _permissionCheckingService.CanVerifyFileAsync(fileItemId, User.GetAccountId());
-            return Ok(ApiResponse.Success("You have 'Verify' permission on this file."));
-        }
+        //[HttpGet("files/{fileItemId:guid}/can-verify")]
+        //public async Task<IActionResult> CanVerifyFile(Guid fileItemId)
+        //{
+        //    await _permissionCheckingService.CanVerifyFileAsync(fileItemId, User.GetAccountId());
+        //    return Ok(ApiResponse.Success("You have 'Verify' permission on this file."));
+        //}
 
         [HttpGet("files/{fileItemId:guid}/can-approve")]
         public async Task<IActionResult> CanApproveFile(Guid fileItemId)

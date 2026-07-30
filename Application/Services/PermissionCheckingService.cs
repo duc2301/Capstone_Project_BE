@@ -28,17 +28,17 @@ namespace Application.Services
         public Task CanEditFolderAsync(Guid folderId, Guid accountId)
             => CheckFolderAsync(folderId, accountId, fp => fp.CanEdit, "Edit");
 
-        public Task CanUpdateFolderAsync(Guid folderId, Guid accountId)
-            => CheckFolderAsync(folderId, accountId, fp => fp.CanUpdate, "Update");
+        //public Task CanUpdateFolderAsync(Guid folderId, Guid accountId)
+        //    => CheckFolderAsync(folderId, accountId, fp => fp.CanUpdate, "Update");
 
         public Task CanUploadToFolderAsync(Guid folderId, Guid accountId)
-            => CheckFolderAsync(folderId, accountId, fp => fp.CanEdit || fp.CanUpdate, "Edit/Update");
+            => CheckFolderAsync(folderId, accountId, fp => fp.CanEdit, "Edit");
 
-        public Task CanDownloadFolderAsync(Guid folderId, Guid accountId)
-            => CheckFolderAsync(folderId, accountId, fp => fp.CanDownload, "Download");
+        //public Task CanDownloadFolderAsync(Guid folderId, Guid accountId)
+        //    => CheckFolderAsync(folderId, accountId, fp => fp.CanDownload, "Download");
 
-        public Task CanVerifyFolderAsync(Guid folderId, Guid accountId)
-            => CheckFolderAsync(folderId, accountId, fp => fp.CanVerify, "Verify");
+        //public Task CanVerifyFolderAsync(Guid folderId, Guid accountId)
+        //    => CheckFolderAsync(folderId, accountId, fp => fp.CanVerify, "Verify");
 
         public Task CanApproveFolderAsync(Guid folderId, Guid accountId)
             => CheckFolderAsync(folderId, accountId, fp => fp.CanApprove, "Approve");
@@ -51,14 +51,14 @@ namespace Application.Services
         public Task CanEditFileAsync(Guid fileItemId, Guid accountId)
             => CheckFileAsync(fileItemId, accountId, fp => fp.CanEdit, "Edit");
 
-        public Task CanUpdateFileAsync(Guid fileItemId, Guid accountId)
-            => CheckFileAsync(fileItemId, accountId, fp => fp.CanUpdate, "Update");
+        //public Task CanUpdateFileAsync(Guid fileItemId, Guid accountId)
+        //    => CheckFileAsync(fileItemId, accountId, fp => fp.CanUpdate, "Update");
 
-        public Task CanDownloadFileAsync(Guid fileItemId, Guid accountId)
-            => CheckFileAsync(fileItemId, accountId, fp => fp.CanDownload, "Download");
+        //public Task CanDownloadFileAsync(Guid fileItemId, Guid accountId)
+        //    => CheckFileAsync(fileItemId, accountId, fp => fp.CanDownload, "Download");
 
-        public Task CanVerifyFileAsync(Guid fileItemId, Guid accountId)
-            => CheckFileAsync(fileItemId, accountId, fp => fp.CanVerify, "Verify");
+        //public Task CanVerifyFileAsync(Guid fileItemId, Guid accountId)
+        //    => CheckFileAsync(fileItemId, accountId, fp => fp.CanVerify, "Verify");
 
         public Task CanApproveFileAsync(Guid fileItemId, Guid accountId)
             => CheckFileAsync(fileItemId, accountId, fp => fp.CanApprove, "Approve");
@@ -172,9 +172,9 @@ namespace Application.Services
             ProjectParticipantId = fp.ProjectParticipantId,
             CanView = fp.CanView,
             CanEdit = fp.CanEdit,
-            CanUpdate = fp.CanUpdate,
-            CanDownload = fp.CanDownload,
-            CanVerify = fp.CanVerify,
+            //CanUpdate = fp.CanUpdate,
+            //CanDownload = fp.CanDownload,
+            //CanVerify = fp.CanVerify,
             CanApprove = fp.CanApprove,
             Status = fp.Status
         };
@@ -188,9 +188,9 @@ namespace Application.Services
             ProjectParticipantId = fp.ProjectParticipantId,
             CanView = fp.CanView,
             CanEdit = fp.CanEdit,
-            CanUpdate = fp.CanUpdate,
-            CanDownload = fp.CanDownload,
-            CanVerify = fp.CanVerify,
+            //CanUpdate = fp.CanUpdate,
+            //CanDownload = fp.CanDownload,
+            //CanVerify = fp.CanVerify,
             CanApprove = fp.CanApprove,
             Status = fp.Status
         };
