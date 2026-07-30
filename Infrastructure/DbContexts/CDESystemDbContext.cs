@@ -125,6 +125,13 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(p => p.OwnerOrganizationId)
                 .OnDelete(DeleteBehavior.SetNull);
 
+            // Xoá doanh nghiệp không kéo theo tài khoản — chỉ gỡ liên kết.
+            modelBuilder.Entity<Account>()
+                .HasOne(a => a.Organization)
+                .WithMany()
+                .HasForeignKey(a => a.OrganizationId)
+                .OnDelete(DeleteBehavior.SetNull);
+
             // Cascade Restrict cho các cây tự tham chiếu — tránh "multiple cascade paths"
             // và bảo vệ dữ liệu khỏi xóa lan khi xóa node cha.
             modelBuilder.Entity<Folder>()

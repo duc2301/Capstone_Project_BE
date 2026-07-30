@@ -16,6 +16,9 @@ namespace Application.DTOs.RequestDTOs.Account
         [MinLength(6)]
         public string Password { get; set; } = null!;
 
+        // Doanh nghiệp/công ty trực thuộc — không bắt buộc.
+        public Guid? OrganizationId { get; set; }
+
         // Role hệ thống không nhận từ client — service ép AccountRole.User.
         // Muốn cấp Admin -> đổi trực tiếp ở quản trị (UPDATE Account).
     }
