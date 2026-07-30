@@ -224,23 +224,23 @@ INSERT INTO "Folders" ("Id","ProjectId","Name","Area","ParentFolderId","IsTempla
 --    P2 (Ban QLDA) KHÔNG cần dòng nào — ProjectAdmin bypass trong service.
 --    P3 (Không Quyền) cố tình KHÔNG có dòng nào.
 -- ============================================================================
-INSERT INTO "FolderPermissions" ("Id","FolderId","ProjectParticipantId","CanView","CanEdit","CanUpdate","CanDownload","CanVerify","CanApprove","Status") VALUES
+INSERT INTO "FolderPermissions" ("Id","FolderId","ProjectParticipantId","CanView","CanEdit","CanApprove","Status") VALUES
 -- F1 01-WIP: view ✓
-('ff200000-0000-0000-0000-000000000001','ff100000-0000-0000-0000-000000000001','dd300000-0000-0000-0000-000000000002',true,false,false,true,false,false,0),
+('ff200000-0000-0000-0000-000000000001','ff100000-0000-0000-0000-000000000001','dd300000-0000-0000-0000-000000000002',true,false,false,0),
 -- F2 Kiến trúc: view ✓ (case 2 — có quyền view folder)
-('ff200000-0000-0000-0000-000000000002','ff100000-0000-0000-0000-000000000002','dd300000-0000-0000-0000-000000000002',true,true,true,true,false,false,0),
+('ff200000-0000-0000-0000-000000000002','ff100000-0000-0000-0000-000000000002','dd300000-0000-0000-0000-000000000002',true,true,false,0),
 -- F3 Kết cấu: view ✓
-('ff200000-0000-0000-0000-000000000003','ff100000-0000-0000-0000-000000000003','dd300000-0000-0000-0000-000000000002',true,false,false,true,false,false,0),
+('ff200000-0000-0000-0000-000000000003','ff100000-0000-0000-0000-000000000003','dd300000-0000-0000-0000-000000000002',true,false,false,0),
 -- (F4 MEP: KHÔNG có dòng — case 6, không quyền view folder)
 -- F5 02-Shared: row Active nhưng CanView=false — case 6 (từ chối tường minh)
-('ff200000-0000-0000-0000-000000000004','ff100000-0000-0000-0000-000000000005','dd300000-0000-0000-0000-000000000002',false,false,false,false,false,false,0),
+('ff200000-0000-0000-0000-000000000004','ff100000-0000-0000-0000-000000000005','dd300000-0000-0000-0000-000000000002',false,false,false,0),
 -- F6 Báo cáo phối hợp: view ✓ (cha F5 ẩn ⇒ test node mồ côi nổi lên root)
-('ff200000-0000-0000-0000-000000000005','ff100000-0000-0000-0000-000000000006','dd300000-0000-0000-0000-000000000002',true,false,false,true,false,false,0),
+('ff200000-0000-0000-0000-000000000005','ff100000-0000-0000-0000-000000000006','dd300000-0000-0000-0000-000000000002',true,false,false,0),
 -- F7 03-Published: CanView=true nhưng Status=INACTIVE ⇒ không được tính — case 6
-('ff200000-0000-0000-0000-000000000006','ff100000-0000-0000-0000-000000000007','dd300000-0000-0000-0000-000000000002',true,false,false,true,false,false,1),
+('ff200000-0000-0000-0000-000000000006','ff100000-0000-0000-0000-000000000007','dd300000-0000-0000-0000-000000000002',true,false,false,1),
 -- F1 cho P4 (participant INACTIVE): CanView=true nhưng participant đã rời dự án
 -- ⇒ tree.noperm vẫn KHÔNG thấy gì (test quyền phụ thuộc trạng thái participant)
-('ff200000-0000-0000-0000-000000000007','ff100000-0000-0000-0000-000000000001','dd300000-0000-0000-0000-000000000004',true,true,true,true,true,true,0);
+('ff200000-0000-0000-0000-000000000007','ff100000-0000-0000-0000-000000000001','dd300000-0000-0000-0000-000000000004',true,true,true,0);
 
 -- ============================================================================
 -- 9) FILE ITEMS  FileType: Pdf=0 | Status(FileItemStatus): Draft=0, Approved=2
@@ -282,15 +282,15 @@ INSERT INTO "FileVersionStates" ("Id","FileItemId","IsCurrent","Stage","WorkingR
 -- 11) FILE PERMISSIONS  (6 cờ bool + Status: Active=0, Inactive=1)
 --     Gán cho P1 (nhóm Kỹ sư) — phục vụ case 1/3/5 ở cấp file.
 -- ============================================================================
-INSERT INTO "FilePermissions" ("Id","FileItemId","ProjectParticipantId","CanView","CanEdit","CanUpdate","CanDownload","CanVerify","CanApprove","Status") VALUES
+INSERT INTO "FilePermissions" ("Id","FileItemId","ProjectParticipantId","CanView","CanEdit","CanApprove","Status") VALUES
 -- A1: CÓ quyền view file — case 1
-('ff500000-0000-0000-0000-000000000001','ff300000-0000-0000-0000-000000000001','dd300000-0000-0000-0000-000000000002',true,false,false,true,false,false,0),
+('ff500000-0000-0000-0000-000000000001','ff300000-0000-0000-0000-000000000001','dd300000-0000-0000-0000-000000000002',true,false,false,0),
 -- A2: KHÔNG có quyền view file (row Active, CanView=false) — case 3/5
-('ff500000-0000-0000-0000-000000000002','ff300000-0000-0000-0000-000000000002','dd300000-0000-0000-0000-000000000002',false,false,false,false,false,false,0),
+('ff500000-0000-0000-0000-000000000002','ff300000-0000-0000-0000-000000000002','dd300000-0000-0000-0000-000000000002',false,false,false,0),
 -- (A3: cố tình KHÔNG có dòng — case 3, file không được cấp quyền riêng)
 -- C1: file CanView=true nhưng folder MEP không view được — quyền file không "cứu" được folder
-('ff500000-0000-0000-0000-000000000003','ff300000-0000-0000-0000-000000000005','dd300000-0000-0000-0000-000000000002',true,false,false,true,false,false,0),
+('ff500000-0000-0000-0000-000000000003','ff300000-0000-0000-0000-000000000005','dd300000-0000-0000-0000-000000000002',true,false,false,0),
 -- E1: CanView=true nhưng Status=INACTIVE ⇒ không tính — case 5
-('ff500000-0000-0000-0000-000000000004','ff300000-0000-0000-0000-000000000007','dd300000-0000-0000-0000-000000000002',true,false,false,true,false,false,1);
+('ff500000-0000-0000-0000-000000000004','ff300000-0000-0000-0000-000000000007','dd300000-0000-0000-0000-000000000002',true,false,false,1);
 
 COMMIT;

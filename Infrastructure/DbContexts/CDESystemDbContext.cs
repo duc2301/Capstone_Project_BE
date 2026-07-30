@@ -91,6 +91,7 @@ namespace Infrastructure.DbContexts
         // --- File Versioning (trạng thái version hiện hành của tài liệu) ---
         public virtual DbSet<FileVersionState> FileVersionStates { get; set; }
 
+        public virtual DbSet<LoiComponent> LoiComponents { get; set; }
         public virtual DbSet<LoiRequirement> LoiRequirements { get; set; }
         public virtual DbSet<LoiFieldAlias> LoiFieldAliases { get; set; }
         public virtual DbSet<FileVersionLoiCheck> FileVersionLoiChecks { get; set; }
@@ -122,6 +123,13 @@ namespace Infrastructure.DbContexts
                 .HasOne(p => p.OwnerOrganization)
                 .WithMany()
                 .HasForeignKey(p => p.OwnerOrganizationId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // Xoá doanh nghiệp không kéo theo tài khoản — chỉ gỡ liên kết.
+            modelBuilder.Entity<Account>()
+                .HasOne(a => a.Organization)
+                .WithMany()
+                .HasForeignKey(a => a.OrganizationId)
                 .OnDelete(DeleteBehavior.SetNull);
 
             // Cascade Restrict cho các cây tự tham chiếu — tránh "multiple cascade paths"
@@ -516,16 +524,24 @@ namespace Infrastructure.DbContexts
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
+            modelBuilder.Entity<LoiComponent>(b =>
+            {
+                // Tra theo mã đã chuẩn hoá khi đối chiếu từng cấu kiện trong file IFC.
+                b.HasIndex(x => x.CodeNormalized).IsUnique();
+            });
+
             modelBuilder.Entity<LoiRequirement>(b =>
             {
+                // Truy vấn chính: lấy toàn bộ yêu cầu của một mã cấu kiện trong một bộ môn.
                 b.HasIndex(x => new { x.Discipline, x.ComponentCode });
-                b.HasIndex(x => new { x.Discipline, x.IsCommon });
+                b.HasIndex(x => x.ParamNameNormalized);
             });
 
             modelBuilder.Entity<LoiFieldAlias>(b =>
             {
-                b.HasIndex(x => x.AliasNormalized);
-                b.HasIndex(x => new { x.FieldNameNormalized, x.AliasNormalized }).IsUnique();
+                // Truy vấn chính: alias dùng chung (ProjectId null) + alias riêng của dự án.
+                b.HasIndex(x => new { x.ProjectId, x.AliasNormalized });
+                b.HasIndex(x => new { x.ProjectId, x.FieldNameNormalized, x.AliasNormalized }).IsUnique();
             });
 
             // Lịch sử versioning: nhiều dòng / FileItem (append-only), mỗi dòng snapshot 1 version.
