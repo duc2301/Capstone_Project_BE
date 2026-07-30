@@ -10,9 +10,9 @@ namespace Application.DTOs.RequestDTOs.Permission
 
         public bool CanView { get; set; }
         public bool CanEdit { get; set; }
-        public bool CanUpdate { get; set; }
-        public bool CanDownload { get; set; }
-        public bool CanVerify { get; set; }
-        public bool CanApprove { get; set; }
+        //public bool CanUpdate { get; set; }
+        //public bool CanDownload { get; set; }
+        //public bool CanVerify { get; set; }
+        //public bool CanApprove { get; set; }
     }
 }

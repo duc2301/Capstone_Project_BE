@@ -316,7 +316,7 @@ namespace Application.Services
                 return true;
 
             var permission = await _permissionRepository.GetUserFolderPermissionAsync(folder.Id, actorId);
-            return permission is { CanEdit: true } or { CanUpdate: true };
+            return permission is { CanEdit: true };
         }
 
         private async Task RequireCanModifyLinksAsync(Folder folder, Guid actorId, bool isSystemAdmin)
