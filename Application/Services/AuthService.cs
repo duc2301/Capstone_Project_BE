@@ -187,7 +187,7 @@ namespace Application.Services
 
             await _unitOfWork.CommitAsync();
 
-            var frontendBase = _configuration["FrontendLocalBaseUrl"]?.TrimEnd('/');
+            var frontendBase = _configuration["FrontendDeployBaseUrl"]!.TrimEnd('/');
             var resetLink = $"{frontendBase}/reset-password?email={Uri.EscapeDataString(account.Email)}&token={token}";
 
             var subject = "Đặt lại mật khẩu";

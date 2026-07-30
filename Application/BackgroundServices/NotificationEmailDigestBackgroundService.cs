@@ -65,7 +65,7 @@ namespace Application.BackgroundServices
             var digestRepo = scope.ServiceProvider.GetRequiredService<INotificationDigestRepository>();
             var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
             var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
-            var frontendBaseUrl = configuration["FrontendLocalBaseUrl"]?.TrimEnd('/') ?? "http://localhost:5173";
+            var frontendBaseUrl = configuration["FrontendDeployBaseUrl"]!.TrimEnd('/');
 
             var cutoff = DateTime.UtcNow.Subtract(_notificationDelay);
 
