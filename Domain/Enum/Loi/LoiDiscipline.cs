@@ -4,8 +4,6 @@ namespace Domain.Enum.Loi
     {
         KienTrucKetCau = 0,
 
-        Mep = 1,
-
-        Bridge = 2
+        Mep = 1
     }
 }

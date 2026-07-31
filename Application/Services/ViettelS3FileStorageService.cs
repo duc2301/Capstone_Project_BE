@@ -58,11 +58,15 @@ namespace Application.Services
             }
         }
 
-        public async Task<StoredFile> SaveAsync(
+        public Task<StoredFile> SaveAsync(
             Stream content, Guid projectId, Guid folderId, string extension, CancellationToken ct = default)
+            => SaveToPrefixAsync(content, $"{projectId}/{folderId}", extension, ct);
+
+        public async Task<StoredFile> SaveToPrefixAsync(
+            Stream content, string prefix, string extension, CancellationToken ct = default)
         {
             var ext = NormalizeExt(extension);
-            var key = string.Join('/', projectId.ToString(), folderId.ToString(), $"{Guid.NewGuid():N}{ext}");
+            var key = string.Join('/', NormalizePrefix(prefix), $"{Guid.NewGuid():N}{ext}");
 
             // Đệm vào bộ nhớ để tính SHA-256 + độ dài (S3 cần ContentLength).
             // TODO: file lớn (IFC/CAD) nên chuyển sang multipart/TransferUtility để khỏi nạp hết vào RAM.
@@ -158,6 +162,20 @@ namespace Application.Services
                 || string.IsNullOrWhiteSpace(_secretKey) || string.IsNullOrWhiteSpace(_bucket))
                 throw new ApiExceptionResponse(
                     "Object Storage chưa được cấu hình: thiếu FileStorage:S3:Endpoint/AccessKey/SecretKey/Bucket.", 500);
+        }
+
+        private static string NormalizePrefix(string prefix)
+        {
+            var segments = prefix
+                .Replace('\\', '/')
+                .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(s => s != "." && s != "..")
+                .ToArray();
+
+            if (segments.Length == 0)
+                throw new ApiExceptionResponse("Invalid storage prefix.", 400);
+
+            return string.Join('/', segments);
         }
 
         private static string NormalizeExt(string ext)

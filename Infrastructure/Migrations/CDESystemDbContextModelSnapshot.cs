@@ -30,6 +30,9 @@ namespace Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("AvatarStoragePath")
+                        .HasColumnType("text");
+
                     b.Property<DateTime?>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -45,6 +48,9 @@ namespace Infrastructure.Migrations
 
                     b.Property<bool>("IsEmailVerified")
                         .HasColumnType("boolean");
+
+                    b.Property<Guid?>("OrganizationId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
@@ -70,6 +76,8 @@ namespace Infrastructure.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
 
                     b.ToTable("Accounts");
                 });
@@ -977,6 +985,9 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int>("ElementsNotCoveredByStandard")
+                        .HasColumnType("integer");
+
                     b.Property<int>("ElementsWithUnknownType")
                         .HasColumnType("integer");
 
@@ -989,17 +1000,29 @@ namespace Infrastructure.Migrations
                     b.Property<string>("MissingSummaryJson")
                         .HasColumnType("text");
 
+                    b.Property<string>("NotCoveredSummaryJson")
+                        .HasColumnType("text");
+
                     b.Property<string>("ParserUsed")
                         .HasColumnType("text");
 
                     b.Property<string>("SchemaName")
                         .HasColumnType("text");
 
+                    b.Property<string>("SectionsJson")
+                        .HasColumnType("text");
+
                     b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TargetStage")
                         .HasColumnType("integer");
 
                     b.Property<int>("TotalElements")
                         .HasColumnType("integer");
+
+                    b.Property<string>("UnmappedSummaryJson")
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1449,6 +1472,35 @@ namespace Infrastructure.Migrations
                     b.ToTable("JointVentureMembers");
                 });
 
+            modelBuilder.Entity("Domain.Entities.LoiComponent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("CodeNormalized")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Discipline")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CodeNormalized")
+                        .IsUnique();
+
+                    b.ToTable("LoiComponents");
+                });
+
             modelBuilder.Entity("Domain.Entities.LoiFieldAlias", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1459,15 +1511,24 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByAccountId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("FieldNameNormalized")
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("ProjectId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("AliasNormalized");
+                    b.HasIndex("ProjectId", "AliasNormalized");
 
-                    b.HasIndex("FieldNameNormalized", "AliasNormalized")
+                    b.HasIndex("ProjectId", "FieldNameNormalized", "AliasNormalized")
                         .IsUnique();
 
                     b.ToTable("LoiFieldAliases");
@@ -1496,20 +1557,28 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<bool>("IsCommon")
-                        .HasColumnType("boolean");
-
                     b.Property<int>("ParamGroup")
                         .HasColumnType("integer");
+
+                    b.Property<string>("ParamName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ParamNameNormalized")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<int>("Stage")
                         .HasColumnType("integer");
 
+                    b.Property<string>("Variant")
+                        .HasColumnType("text");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("Discipline", "ComponentCode");
+                    b.HasIndex("ParamNameNormalized");
 
-                    b.HasIndex("Discipline", "IsCommon");
+                    b.HasIndex("Discipline", "ComponentCode");
 
                     b.ToTable("LoiRequirements");
                 });
@@ -2036,6 +2105,9 @@ namespace Infrastructure.Migrations
                     b.Property<string>("ProjectDescription")
                         .HasColumnType("text");
 
+                    b.Property<string>("ProjectImageStoragePath")
+                        .HasColumnType("text");
+
                     b.Property<string>("ProjectImageUrl")
                         .HasColumnType("text");
 
@@ -2241,6 +2313,16 @@ namespace Infrastructure.Migrations
                     b.HasIndex("RequestedBy");
 
                     b.ToTable("ZoneReturnRequests");
+                });
+
+            modelBuilder.Entity("Domain.Entities.Account", b =>
+                {
+                    b.HasOne("Domain.Entities.Organization", "Organization")
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Organization");
                 });
 
             modelBuilder.Entity("Domain.Entities.ApprovalRequest", b =>

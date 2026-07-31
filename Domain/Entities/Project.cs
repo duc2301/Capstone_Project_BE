@@ -1,4 +1,4 @@
-
+﻿
 using Domain.Enum.Project;
 
 namespace Domain.Entities
@@ -11,7 +11,11 @@ namespace Domain.Entities
         public string? ProjectDescription { get; set; }
         public Guid? ManagerAccountId { get; set; }   // Admin gán qua POST /api/projects/{id}/manager
         public string? ProjectCode { get; set; }
+
         public string? ProjectImageUrl { get; set; }
+
+        public string? ProjectImageStoragePath { get; set; }
+
         public ProjectStatus Status { get; set; }     // Planning/Active/OnHold/Completed/Closed
 
         public Guid? OwnerOrganizationId { get; set; }
