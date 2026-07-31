@@ -7,5 +7,11 @@ namespace Domain.Entities
         public string FieldNameNormalized { get; set; } = null!;
 
         public string AliasNormalized { get; set; } = null!;
+
+        public Guid? ProjectId { get; set; }
+
+        public Guid? CreatedByAccountId { get; set; }
+
+        public DateTime? CreatedAt { get; set; }
     }
 }

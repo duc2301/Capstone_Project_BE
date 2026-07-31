@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using Application.DTOs.RequestDTOs.Auth;
 using Application.DTOs.ResponseDTOs.Auth;
 using Application.ExceptionMiddleware;
@@ -88,17 +88,22 @@ namespace Application.Services
             if (account == null || !BCrypt.Net.BCrypt.Verify(request.Password, account.PasswordHash))
                 throw new ApiExceptionResponse("Invalid email or password.", 401);
 
+            EnsureAccountCanSignIn(account);
+
+            var memberships = await LoadGroupMembershipsAsync(account.Id);
+            var response = await IssueTokensAsync(account, memberships);
+            await _unitOfWork.CommitAsync();
+            return response;
+        }
+
+        private static void EnsureAccountCanSignIn(Account account)
+        {
             if (account.Status == AccountStatus.PendingVerification)
                 throw new ApiExceptionResponse(
                     "Tài khoản chưa được xác thực email. Vui lòng kiểm tra hộp thư và nhập mã OTP.", 403);
 
             if (account.Status == AccountStatus.Suspended || account.Status == AccountStatus.Inactive)
                 throw new ApiExceptionResponse("Account is not active.", 403);
-
-            var memberships = await LoadGroupMembershipsAsync(account.Id);
-            var response = await IssueTokensAsync(account, memberships);
-            await _unitOfWork.CommitAsync();
-            return response;
         }
 
         public async Task<AuthResponseDTO> GoogleLogin(GoogleLoginDTO request)
@@ -163,6 +168,8 @@ namespace Application.Services
 
             var account = await _unitOfWork.AccountRepository.GetByIdAsync(stored.AccountId)
                 ?? throw new ApiExceptionResponse("Account not found.", 401);
+
+            EnsureAccountCanSignIn(account);
 
             // Refresh -> reload memberships để claim luôn cập nhật nhóm mới nhất
             var memberships = await LoadGroupMembershipsAsync(account.Id);

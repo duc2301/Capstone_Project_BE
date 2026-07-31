@@ -8,6 +8,8 @@ namespace Domain.Enum.Loi
 
         Warning = 2,
 
-        Unknown = 3
+        Unknown = 3,
+
+        Critical = 4
     }
 }
