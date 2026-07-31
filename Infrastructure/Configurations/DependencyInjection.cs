@@ -60,7 +60,6 @@ namespace Infrastructure.Configurations
             else
                 services.AddSingleton<IFileStorageService, LocalFileStorageService>();
             services.AddScoped<IFileUploadService, FileUploadService>();
-            services.AddScoped<IImageUploadService, ImageUploadService>();
             // File Versioning: tính P{Rev}.{Ver} / C{PubRev} tập trung 1 chỗ — Upload/Publish chỉ gọi vào
             // (FileVersionRepository truy cập qua IUnitOfWork.FileVersionRepository, giống FolderPermission)
             services.AddScoped<IFileVersionService, FileVersionService>();
@@ -129,8 +128,6 @@ namespace Infrastructure.Configurations
             services.AddSingleton<ILoiCheckQueue, LoiCheckQueue>();
             services.AddScoped<ILoiConformanceService, Application.Services.Loi.LoiConformanceService>();
             services.AddScoped<ILoiCheckService, Application.Services.Loi.LoiCheckService>();
-            // Từ điển quy đổi tên tham số theo dự án (người dùng xác nhận gợi ý ánh xạ).
-            services.AddScoped<ILoiAliasService, Application.Services.Loi.LoiAliasService>();
             services.AddSingleton<IFileTextExtractor, FileTextExtractorService>();
             services.AddSingleton<ITextChunker, TextChunkerService>();
 

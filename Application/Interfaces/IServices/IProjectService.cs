@@ -9,8 +9,6 @@ namespace Application.Interfaces.IServices
         Task<ProjectResponseDTO?> GetByIdAsync(Guid id);
         Task<ProjectResponseDTO> CreateAsync(CreateProjectDTO dto, Guid actorId);
         Task<ProjectResponseDTO> UpdateAsync(Guid id, UpdateProjectDTO dto, Guid actorId);
-        Task<ProjectResponseDTO> SetImageAsync(
-            Guid id, Stream content, string fileName, long sizeBytes, Guid actorId, CancellationToken ct = default);
         Task DeleteAsync(Guid id, Guid actorId);
     }
 }

@@ -1,4 +1,4 @@
-﻿using Domain.Enum.Account;
+using Domain.Enum.Account;
 using System.ComponentModel.DataAnnotations;
 
 namespace Domain.Entities
@@ -11,11 +11,6 @@ namespace Domain.Entities
         public string PasswordHash { get; set; } = null!;
         public AccountRole? Role { get; set; }
         public AccountStatus? Status { get; set; }
-
-        public Guid? OrganizationId { get; set; }
-        public string? AvatarStoragePath { get; set; }
-
-
         public string? ResetPasswordToken { get; set; }
         public DateTime? ResetPasswordTokenExpiresAt { get; set; }
 
@@ -26,7 +21,5 @@ namespace Domain.Entities
 
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
-
-        public Organization? Organization { get; set; }
     }
 }

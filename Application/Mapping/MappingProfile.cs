@@ -56,13 +56,7 @@ namespace Application.Mapping
         public MappingProfile()
         {
             // --- Account (giữ nguyên bản gốc) ---
-            CreateMap<Account, AccountResponseDTO>()
-                .ForMember(d => d.OrganizationName, o => o.MapFrom(s =>
-                    s.Organization != null
-                        ? (s.Organization.DisplayName ?? s.Organization.LegalName)
-                        : null))
-                .ForMember(d => d.ManagedProjects, o => o.Ignore())
-                .ForMember(d => d.AvatarUrl, o => o.Ignore());
+            CreateMap<Account, AccountResponseDTO>();
             CreateMap<CreateAccountDTO, Account>();
             PartialUpdateMap<UpdateAccountDTO, Account>();
 

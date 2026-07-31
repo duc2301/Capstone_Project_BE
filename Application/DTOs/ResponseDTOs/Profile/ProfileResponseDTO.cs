@@ -1,4 +1,4 @@
-﻿namespace Application.DTOs.ResponseDTOs.Profile
+namespace Application.DTOs.ResponseDTOs.Profile
 {
     // Profile của user hiện tại — đọc bằng JWT, không nhận id từ ngoài.
     public class ProfileResponseDTO : IResponseDto
@@ -10,8 +10,6 @@
         public string? Status { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
-
-        public string? AvatarUrl { get; set; }
 
         // Quan hệ user trong CDE — nhóm + vai trò trong nhóm
         public IList<ProfileGroupDTO> Groups { get; set; } = new List<ProfileGroupDTO>();

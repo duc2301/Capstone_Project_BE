@@ -12,6 +12,7 @@ using Domain.Entities;
 using Domain.Enum.Audit;
 using Domain.Enum.Cde;
 using Domain.Enum.File;
+using Domain.Enum.Loi;
 
 namespace Application.Services
 {
@@ -31,6 +32,7 @@ namespace Application.Services
         private readonly IPermissionCheckingService _permission;
         private readonly IFileStorageService _storage;
         private readonly IModelTranslationQueue _translationQueue;
+        private readonly ILoiCheckQueue _loiCheckQueue;
         private readonly IMapper _mapper;
         private readonly INamingConventionService _naming;
         private readonly INameMatchContentBackgroundService _nameMatchContentBackgroundService;
@@ -38,13 +40,14 @@ namespace Application.Services
         private readonly IFileLinkService _fileLink;
         private readonly IAuditLogService _auditLog;
 
-        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, IMapper mapper, INamingConventionService naming, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService, IFileLinkService fileLink, IAuditLogService auditLog, IPermissionCheckingService permission)
+        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, ILoiCheckQueue loiCheckQueue, IMapper mapper, INamingConventionService naming, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService, IFileLinkService fileLink, IAuditLogService auditLog, IPermissionCheckingService permission)
         {
             _auditLog = auditLog;
             _permission = permission;
             _unitOfWork = unitOfWork;
             _storage = storage;
             _translationQueue = translationQueue;
+            _loiCheckQueue = loiCheckQueue;
             _mapper = mapper;
             _naming = naming;
             _nameMatchContentBackgroundService = nameMatchContentBackgroundService;
@@ -166,6 +169,9 @@ namespace Application.Services
             // Đã validate scope từ đầu flow (trước khi lưu file) nên tới đây chỉ tạo row, commit chung ở dưới.
             await StageRelatedFileLinksAsync(fileItem.Id, folder, dto, actor, isSystemAdmin);
 
+            // [TẠM TẮT] Cổng kiểm LOI (advisory) — chức năng chưa hoàn thiện. Mở lại cả khối này khi xong.
+            // if (dto.FileType == FileType.Ifc)
+            //     await _unitOfWork.Repository<FileVersionLoiCheck>().CreateAsync(NewLoiPending(version.VersionStateId!.Value, now));
             await _auditLog.LogAsync(
                 LogScope.Group,
                 isNewDocument ? AuditAction.Upload : AuditAction.NewVersion,
@@ -179,8 +185,9 @@ namespace Application.Services
 
             if (AutoTranslateModelsOnUpload && IsModelType(dto.FileType))
                 _translationQueue.Enqueue(version.VersionStateId!.Value);
-
-            // Không tự kiểm LOI lúc upload: người dùng phải chọn giai đoạn thiết kế trước khi kiểm.
+            // [TẠM TẮT] LOI check queue — mở lại khi chức năng hoàn thiện.
+            // if (dto.FileType == FileType.Ifc)
+            //     _loiCheckQueue.Enqueue(version.VersionStateId!.Value);
             _nameMatchContentBackgroundService.Enqueue(fileItem.Id);
 
             return new FileUploadResultDTO
@@ -265,6 +272,17 @@ namespace Application.Services
 
         // Chỉ model IFC/CAD mới cần dịch lên APS (xem ModelTranslationWorker).
         private static bool IsModelType(FileType type) => type is FileType.Ifc or FileType.Cad;
+
+        // Bản ghi kiểm LOI ở trạng thái chờ (để FE hiện "đang kiểm" ngay sau upload .ifc).
+        private static FileVersionLoiCheck NewLoiPending(Guid fileVersionId, DateTime now) => new()
+        {
+            Id = Guid.NewGuid(),
+            FileVersionId = fileVersionId,
+            Status = LoiCheckStatus.Pending,
+            Verdict = LoiVerdict.None,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
 
         private async Task<bool> IsSystemDocumentFolderAsync(Folder folder)
         {

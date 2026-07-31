@@ -6,8 +6,6 @@ namespace Application.Interfaces.IServices
     {
         Task<StoredFile> SaveAsync(Stream content, Guid projectId, Guid folderId, string extension, CancellationToken ct = default);
 
-        Task<StoredFile> SaveToPrefixAsync(Stream content, string prefix, string extension, CancellationToken ct = default);
-
         // Mở luồng đọc theo StoragePath đã lưu trong FileVersion.
         Task<Stream> OpenReadAsync(string storagePath, CancellationToken ct = default);
 

@@ -507,7 +507,3 @@ appsettings.*.json
 
 CLAUDE.md
 docs/harness/
-
-# Bo test giu O LOCAL, khong day len repo (nhom se co setup test rieng sau).
-# Ban goc nam o FE/docs/loi/tests-backup/ - copy vao day de chay: dotnet test Tests/Tests.csproj
-Tests/
