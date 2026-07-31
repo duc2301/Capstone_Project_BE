@@ -9,8 +9,6 @@ namespace Application.Interfaces.IServices
         Task<AccountResponseDTO?> GetByIdAsync(Guid id);
         Task<AccountResponseDTO> CreateAsync(CreateAccountDTO dto, Guid actorId);
         Task<AccountResponseDTO> UpdateAsync(Guid id, UpdateAccountDTO dto, Guid actorId);
-        Task<AccountResponseDTO> SetAvatarAsync(
-            Guid id, Stream content, string fileName, long sizeBytes, Guid actorId, CancellationToken ct = default);
         Task DeleteAsync(Guid id, Guid actorId);
     }
 }

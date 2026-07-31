@@ -19,15 +19,10 @@ namespace Application.Services
                 : configured;
         }
 
-        public Task<StoredFile> SaveAsync(
+        public async Task<StoredFile> SaveAsync(
             Stream content, Guid projectId, Guid folderId, string extension, CancellationToken ct = default)
-            => SaveToPrefixAsync(content, $"{projectId}/{folderId}", extension, ct);
-
-        public async Task<StoredFile> SaveToPrefixAsync(
-            Stream content, string prefix, string extension, CancellationToken ct = default)
         {
-            var safePrefix = NormalizePrefix(prefix);
-            var dir = Path.Combine(_root, Path.Combine(safePrefix.Split('/')));
+            var dir = Path.Combine(_root, projectId.ToString(), folderId.ToString());
             Directory.CreateDirectory(dir);
 
             var ext = NormalizeExt(extension);
@@ -47,7 +42,7 @@ namespace Application.Services
             }
 
             // Lưu path tương đối dùng '/' cho nhất quán đa nền tảng.
-            var relative = string.Join('/', safePrefix, fileName);
+            var relative = string.Join('/', projectId.ToString(), folderId.ToString(), fileName);
             return new StoredFile(relative, size, checksum);
         }
 
@@ -99,20 +94,6 @@ namespace Application.Services
             if (!full.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase))
                 throw new ApiExceptionResponse("Invalid storage path.", 400);
             return full;
-        }
-
-        private static string NormalizePrefix(string prefix)
-        {
-            var segments = prefix
-                .Replace('\\', '/')
-                .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Where(s => s != "." && s != "..")
-                .ToArray();
-
-            if (segments.Length == 0)
-                throw new ApiExceptionResponse("Invalid storage prefix.", 400);
-
-            return string.Join('/', segments);
         }
 
         private static string NormalizeExt(string ext)

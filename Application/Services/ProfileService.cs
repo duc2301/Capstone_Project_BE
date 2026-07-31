@@ -1,4 +1,4 @@
-﻿using Application.DTOs.RequestDTOs.Profile;
+using Application.DTOs.RequestDTOs.Profile;
 using Application.DTOs.ResponseDTOs.Profile;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
@@ -10,12 +10,10 @@ namespace Application.Services
     public class ProfileService : IProfileService
     {
         private readonly IUnitOfWork _unitOfWork;
-        private readonly IImageUploadService _imageUpload;
 
-        public ProfileService(IUnitOfWork unitOfWork, IImageUploadService imageUpload)
+        public ProfileService(IUnitOfWork unitOfWork)
         {
             _unitOfWork = unitOfWork;
-            _imageUpload = imageUpload;
         }
 
         public async Task<ProfileResponseDTO> GetMyProfileAsync(Guid accountId)
@@ -99,7 +97,6 @@ namespace Application.Services
                 Status = account.Status?.ToString(),
                 CreatedAt = account.CreatedAt,
                 UpdatedAt = account.UpdatedAt,
-                AvatarUrl = await _imageUpload.GetImageUrlAsync(account.AvatarStoragePath),
                 Groups = memberships.Select(m => new ProfileGroupDTO
                 {
                     GroupId = m.GroupId,

@@ -3,7 +3,6 @@ using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
 using Domain.Enum.Loi;
-using Microsoft.Extensions.Logging;
 
 namespace Application.Services.Loi
 {
@@ -15,28 +14,21 @@ namespace Application.Services.Loi
         private readonly IUnitOfWork _uow;
         private readonly IIfcLoiExtractor _extractor;
         private readonly IFileStorageService _storage;
-        private readonly ILogger<LoiConformanceService> _logger;
+        private readonly INotificationService _notifier;
 
         public LoiConformanceService(
-            IUnitOfWork uow,
-            IIfcLoiExtractor extractor,
-            IFileStorageService storage,
-            ILogger<LoiConformanceService> logger)
+            IUnitOfWork uow, IIfcLoiExtractor extractor, IFileStorageService storage, INotificationService notifier)
         {
             _uow = uow;
             _extractor = extractor;
             _storage = storage;
-            _logger = logger;
+            _notifier = notifier;
         }
 
         public async Task CheckAndSaveAsync(Guid fileVersionId, CancellationToken ct = default)
         {
             var version = await _uow.Repository<FileVersionState>().GetByIdAsync(fileVersionId);
-            if (version is null || version.StoragePath is null)
-            {
-                _logger.LogWarning("Bỏ qua kiểm LOI: FileVersion {Id} không tồn tại hoặc chưa có nội dung.", fileVersionId);
-                return;
-            }
+            if (version is null || version.StoragePath is null) return;
 
             var check = (await _uow.Repository<FileVersionLoiCheck>()
                 .FindAsync(c => c.FileVersionId == fileVersionId)).FirstOrDefault();
@@ -54,21 +46,15 @@ namespace Application.Services.Loi
 
             try
             {
-                var requirements = (await _uow.Repository<LoiRequirement>().GetAllAsync()).ToList();
-
-                // Alias dùng chung + alias riêng của dự án chứa file.
-                var projectId = await GetProjectIdAsync(version.FileItemId);
-                var aliases = (await _uow.Repository<LoiFieldAlias>()
-                        .FindAsync(a => a.ProjectId == null || a.ProjectId == projectId))
-                    .ToList();
+                var requirements = (await _uow.Repository<LoiRequirement>()
+                    .FindAsync(r => r.Discipline == LoiDiscipline.KienTrucKetCau)).ToList();
+                var aliases = (await _uow.Repository<LoiFieldAlias>().GetAllAsync()).ToList();
 
                 IfcLoiModel model;
                 await using (var stream = await _storage.OpenReadAsync(version.StoragePath!, ct))
                     model = await _extractor.ExtractAsync(stream, ct);
 
-                var components = (await _uow.Repository<LoiComponent>().GetAllAsync()).ToList();
-
-                var result = LoiEvaluator.Evaluate(model, requirements, aliases, components, check.TargetStage);
+                var result = LoiEvaluator.Evaluate(model, requirements, aliases);
 
                 check.Status = LoiCheckStatus.Done;
                 check.Verdict = result.Verdict;
@@ -76,50 +62,48 @@ namespace Application.Services.Loi
                 check.TotalElements = result.TotalElements;
                 check.ConformantElements = result.ConformantElements;
                 check.ElementsWithUnknownType = result.ElementsWithUnknownType;
-                check.ElementsNotCoveredByStandard = result.ElementsNotCoveredByStandard;
                 check.SchemaName = model.SchemaName;
                 check.MissingSummaryJson = JsonSerializer.Serialize(result.Missing);
-                check.UnmappedSummaryJson = JsonSerializer.Serialize(result.Unmapped);
-                check.NotCoveredSummaryJson = JsonSerializer.Serialize(result.NotCovered);
-                check.SectionsJson = JsonSerializer.Serialize(result.Sections);
                 check.CheckedAt = DateTime.UtcNow;
                 check.UpdatedAt = check.CheckedAt.Value;
                 await _uow.CommitAsync();
+
+                if (result.Verdict == LoiVerdict.Warning)
+                    await NotifyUploaderAsync(version, result);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 check.Status = LoiCheckStatus.Pending;
-                await SaveStatusAsync(fileVersionId);
+                try { await _uow.CommitAsync(); } catch {}
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Kiểm LOI thất bại cho FileVersion {Id}.", fileVersionId);
                 check.Status = LoiCheckStatus.Failed;
                 check.Verdict = LoiVerdict.Unknown;
                 check.Error = Truncate(ex.Message, MaxErrorLength);
                 check.UpdatedAt = DateTime.UtcNow;
-                await SaveStatusAsync(fileVersionId);
+                try { await _uow.CommitAsync(); } catch {}
             }
         }
 
-        private async Task<Guid?> GetProjectIdAsync(Guid fileItemId)
-        {
-            var fileItem = await _uow.Repository<FileItem>().GetByIdAsync(fileItemId);
-            if (fileItem is null) return null;
-
-            var folder = await _uow.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
-            return folder?.ProjectId;
-        }
-
-        private async Task SaveStatusAsync(Guid fileVersionId)
+        private async Task NotifyUploaderAsync(FileVersionState version, LoiEvalResult result)
         {
             try
             {
-                await _uow.CommitAsync();
+                var fileItem = await _uow.Repository<FileItem>().GetByIdAsync(version.FileItemId);
+                var recipient = version.UploadedByAccountId ?? fileItem?.CreatedByAccountId;
+                if (recipient is not Guid account) return;
+
+                var name = fileItem?.Name ?? "file";
+                await _notifier.NotifyAsync(
+                    account,
+                    $"Kiểm LOI \"{name}\": còn cấu kiện thiếu trường thông tin phi hình học (đạt {result.CoveragePercent}%). Bấm để xem chi tiết.",
+                    senderName: "Kiểm LOI",
+                    linkType: "FileItem",
+                    linkId: version.FileItemId.ToString());
             }
-            catch (Exception ex)
+            catch
             {
-                _logger.LogError(ex, "Không lưu được trạng thái kiểm LOI của FileVersion {Id}.", fileVersionId);
             }
         }
 

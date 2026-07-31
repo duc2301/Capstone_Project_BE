@@ -9,64 +9,22 @@ namespace Application.Services.Loi
         public string EntityType { get; init; } = string.Empty;
         public string? Name { get; init; }
 
-        public string? GlobalId { get; init; }
-
         public Dictionary<string, string?> Properties { get; } = new();
     }
 
     public sealed class IfcLoiModel
     {
         public string? SchemaName { get; init; }
-
-        // Bộ đọc này cố nhặt được gì hay nấy nên file rác vẫn chạy trót lọt -> cần cờ này
-        // để báo cáo không khen nhầm file không phải IFC là "đúng chuẩn STEP".
-        public bool IsStepFile { get; init; }
-
         public List<IfcElementInfo> Elements { get; } = new();
     }
 
     public sealed class IfcStepPropertyExtractor : IIfcLoiExtractor
     {
-        // Cả file nạp vào RAM nên phải chặn sớm, kẻo model khổng lồ kéo sập tiến trình.
-        public const long DefaultMaxFileSizeBytes = 200L * 1024 * 1024;
-
-        private readonly long _maxFileSizeBytes;
-
-        public IfcStepPropertyExtractor() : this(DefaultMaxFileSizeBytes) { }
-
-        public IfcStepPropertyExtractor(long maxFileSizeBytes)
-        {
-            if (maxFileSizeBytes <= 0)
-                throw new ArgumentOutOfRangeException(nameof(maxFileSizeBytes));
-            _maxFileSizeBytes = maxFileSizeBytes;
-        }
-
         public async Task<IfcLoiModel> ExtractAsync(Stream ifcStream, CancellationToken ct = default)
         {
-            return Parse(await ReadAllWithLimitAsync(ifcStream, _maxFileSizeBytes, ct));
-        }
-
-        // Đếm trong lúc đọc thay vì kiểm Stream.Length: stream S3 không seek được nên
-        // CanSeek = false, kiểm theo Length sẽ bị bỏ qua âm thầm. Latin1 nên 1 ký tự = 1 byte.
-        private static async Task<string> ReadAllWithLimitAsync(
-            Stream ifcStream, long maxFileSizeBytes, CancellationToken ct)
-        {
-            const int bufferSize = 81920;
-
             using var reader = new StreamReader(ifcStream, Encoding.Latin1, detectEncodingFromByteOrderMarks: false);
-            var buffer = new char[bufferSize];
-            var text = new StringBuilder();
-
-            int read;
-            while ((read = await reader.ReadAsync(buffer.AsMemory(), ct)) > 0)
-            {
-                if (text.Length + read > maxFileSizeBytes)
-                    throw new InvalidOperationException(
-                        $"File IFC lớn hơn {maxFileSizeBytes / (1024 * 1024)}MB nên không kiểm LOI được.");
-
-                text.Append(buffer, 0, read);
-            }
-            return text.ToString();
+            var text = await reader.ReadToEndAsync(ct);
+            return Parse(text);
         }
 
         public static IfcLoiModel Parse(string text)
@@ -75,42 +33,25 @@ namespace Application.Services.Loi
             var instances = ParseInstances(text);
 
             var props = new Dictionary<int, (string name, string? value)>();
-            var propertyContainers = new Dictionary<int, List<int>>();
-            var relsByProperties = new List<(List<int> elems, int containerId)>();
-            var relsByType = new List<(List<int> elems, int typeId)>();
+            var psets = new Dictionary<int, (string name, List<int> propIds)>();
+            var rels = new List<(List<int> elems, int psetId)>();
 
             foreach (var (id, inst) in instances)
             {
                 var kw = inst.keyword;
-                // IfcPropertySet: HasProperties ở index 4; IfcElementQuantity: Quantities ở index 5.
-                // Lệch một nấc là báo thiếu oan cả nhóm — đã từng vấp.
                 if (kw == "IFCPROPERTYSET")
                 {
                     var p = SplitTopLevel(inst.body);
                     if (p.Count < 5) continue;
-                    propertyContainers[id] = ParseRefList(p[4]);
-                }
-                else if (kw == "IFCELEMENTQUANTITY")
-                {
-                    var p = SplitTopLevel(inst.body);
-                    if (p.Count < 6) continue;
-                    propertyContainers[id] = ParseRefList(p[5]);
+                    psets[id] = (IfcFieldText.Decode(p[2]), ParseRefList(p[4]));
                 }
                 else if (kw == "IFCRELDEFINESBYPROPERTIES")
                 {
                     var p = SplitTopLevel(inst.body);
                     if (p.Count < 6) continue;
-                    var containerRef = ParseRef(p[5]);
-                    if (containerRef is null) continue;
-                    relsByProperties.Add((ParseRefList(p[4]), containerRef.Value));
-                }
-                else if (kw == "IFCRELDEFINESBYTYPE")
-                {
-                    var p = SplitTopLevel(inst.body);
-                    if (p.Count < 6) continue;
-                    var typeRef = ParseRef(p[5]);
-                    if (typeRef is null) continue;
-                    relsByType.Add((ParseRefList(p[4]), typeRef.Value));
+                    var psetRef = ParseRef(p[5]);
+                    if (psetRef is null) continue;
+                    rels.Add((ParseRefList(p[4]), psetRef.Value));
                 }
                 else if (kw.StartsWith("IFCPROPERTY", StringComparison.Ordinal))
                 {
@@ -120,129 +61,47 @@ namespace Application.Services.Loi
                     string? value = kw == "IFCPROPERTYSINGLEVALUE" && p.Count > 2 ? ExtractNominalValue(p[2]) : null;
                     props[id] = (name, value);
                 }
-                else if (kw.StartsWith("IFCQUANTITY", StringComparison.Ordinal))
-                {
-                    var p = SplitTopLevel(inst.body);
-                    if (p.Count == 0) continue;
-                    var name = IfcFieldText.Decode(p[0]);
-                    string? value = p.Count > 3 ? ExtractNominalValue(p[3]) : null;
-                    props[id] = (name, value);
-                }
             }
 
             var builders = new Dictionary<int, IfcElementInfo>();
-
-            IfcElementInfo GetOrCreate(int elemId)
+            foreach (var (elemIds, psetId) in rels)
             {
-                if (!builders.TryGetValue(elemId, out var element))
-                {
-                    element = BuildElement(elemId, instances);
-                    builders[elemId] = element;
-                }
-                return element;
-            }
-
-            void ApplyContainer(IfcElementInfo element, int containerId, bool overwriteExisting)
-            {
-                if (!propertyContainers.TryGetValue(containerId, out var propIds)) return;
-                foreach (var pid in propIds)
-                {
-                    if (!props.TryGetValue(pid, out var pr)) continue;
-                    var key = IfcFieldText.Normalize(pr.name);
-                    if (key.Length == 0) continue;
-                    if (!overwriteExisting && element.Properties.ContainsKey(key)) continue;
-                    element.Properties[key] = pr.value;
-                }
-            }
-
-            // Property gắn thẳng ở cấu kiện THẮNG property kế thừa từ Type.
-            foreach (var (elemIds, containerId) in relsByProperties)
-                foreach (var elemId in elemIds)
-                    ApplyContainer(GetOrCreate(elemId), containerId, overwriteExisting: true);
-
-            foreach (var (elemIds, typeId) in relsByType)
-            {
-                var containers = ReadTypePropertySets(typeId, instances);
-                if (containers.Count == 0) continue;
+                if (!psets.TryGetValue(psetId, out var pset)) continue;
                 foreach (var elemId in elemIds)
                 {
-                    var element = GetOrCreate(elemId);
-                    foreach (var containerId in containers)
-                        ApplyContainer(element, containerId, overwriteExisting: false);
+                    if (!builders.TryGetValue(elemId, out var element))
+                    {
+                        element = BuildElement(elemId, instances);
+                        builders[elemId] = element;
+                    }
+                    foreach (var pid in pset.propIds)
+                    {
+                        if (!props.TryGetValue(pid, out var pr)) continue;
+                        var key = IfcFieldText.Normalize(pr.name);
+                        if (key.Length == 0) continue;
+                        element.Properties[key] = pr.value;
+                    }
                 }
             }
 
-            foreach (var (id, inst) in instances)
-                if (!builders.ContainsKey(id) && IsProduct(inst.body))
-                    builders[id] = BuildElement(id, instances);
-
-            var model = new IfcLoiModel { SchemaName = schema, IsStepFile = LooksLikeStepFile(text) };
+            var model = new IfcLoiModel { SchemaName = schema };
             model.Elements.AddRange(builders.Values);
             return model;
-        }
-
-        private static List<int> ReadTypePropertySets(
-            int typeId, Dictionary<int, (string keyword, string body)> instances)
-        {
-            if (!instances.TryGetValue(typeId, out var inst)) return new List<int>();
-            var p = SplitTopLevel(inst.body);
-            return p.Count < 6 ? new List<int>() : ParseRefList(p[5]);
-        }
-
-        private static bool IsProduct(string body)
-        {
-            if (!StartsWithGuidLiteral(body)) return false;
-
-            var p = SplitTopLevel(body);
-            if (p.Count < 7) return false;
-
-            return IsRefOrNull(p[5]) && IsRefOrNull(p[6]);
-        }
-
-        private static bool StartsWithGuidLiteral(string body)
-        {
-            const int guidLiteralLength = 24;
-
-            int i = 0;
-            while (i < body.Length && char.IsWhiteSpace(body[i])) i++;
-
-            return i + guidLiteralLength <= body.Length
-                   && body[i] == '\''
-                   && body[i + guidLiteralLength - 1] == '\'';
-        }
-
-        private static bool IsRefOrNull(string token)
-        {
-            token = token.Trim();
-            return token == "$" || token == "*" || (token.Length > 1 && token[0] == '#');
         }
 
         private static IfcElementInfo BuildElement(int elemId, Dictionary<int, (string keyword, string body)> instances)
         {
             string entityType = "UNKNOWN";
             string? name = null;
-            string? globalId = null;
             if (instances.TryGetValue(elemId, out var inst))
             {
                 entityType = inst.keyword;
                 var p = SplitTopLevel(inst.body);
-                // Mọi IfcRoot mở đầu bằng GlobalId, Name ở index 2.
-                if (p.Count > 0 && p[0].StartsWith('\'')) globalId = IfcFieldText.Decode(p[0]);
                 if (p.Count > 2 && p[2].StartsWith('\'')) name = IfcFieldText.Decode(p[2]);
             }
-            return new IfcElementInfo { EntityType = entityType, Name = name, GlobalId = globalId };
+            return new IfcElementInfo { EntityType = entityType, Name = name };
         }
 
-        // Chỉ kiểm VỎ (ISO-10303-21 + khối DATA), không kiểm ngữ pháp — đủ để không
-        // khen nhầm file rác là đúng chuẩn.
-        private static bool LooksLikeStepFile(string text)
-        {
-            var start = 0;
-            while (start < text.Length && (char.IsWhiteSpace(text[start]) || text[start] == '﻿')) start++;
-
-            return string.CompareOrdinal(text, start, "ISO-10303-21", 0, 12) == 0
-                   && text.IndexOf("DATA;", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
 
         private static string? ExtractSchema(string text)
         {
@@ -308,9 +167,6 @@ namespace Application.Services.Loi
                         p++;
                     }
                 }
-
-                // Entity chưa đóng ngoặc (file bị cắt giữa chừng): bỏ, kẻo Substring độ dài âm.
-                if (depth > 0) break;
 
                 result[id] = (keyword, s.Substring(bodyStart, p - 1 - bodyStart));
                 i = p;

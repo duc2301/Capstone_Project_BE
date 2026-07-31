@@ -1,4 +1,4 @@
-﻿using Application.DTOs.ApiResponseDTO;
+using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Project;
 using Application.DTOs.ResponseDTOs.Project;
 using Application.ExceptionMiddleware;
@@ -43,22 +43,6 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("BEP parsed", result));
         }
 
-
-        [HttpPost("{id:guid}/image")]
-        [Authorize(Roles = "Admin")]
-        [Consumes("multipart/form-data")]
-        [RequestSizeLimit(6_291_456)]
-        [RequestFormLimits(MultipartBodyLengthLimit = 6_291_456)]
-        public async Task<IActionResult> UploadImage(Guid id, IFormFile file, CancellationToken ct)
-        {
-            if (file == null || file.Length == 0)
-                throw new ApiExceptionResponse("No file provided.", 400);
-
-            await using var stream = file.OpenReadStream();
-            var result = await _projectService.SetImageAsync(
-                id, stream, file.FileName, file.Length, User.GetAccountId(), ct);
-            return Ok(ApiResponse.Success("Project image updated", result));
-        }
 
         // Admin gán 1 account hiện có làm Project Manager.
         // 1 account có thể làm PM nhiều dự án.
