@@ -18,7 +18,7 @@ using Domain.Enum.Project;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Application.Services
+namespace Infrastructure.Adapters.SmartCA
 {
     /// <summary>
     /// Xu ly nghiep vu ky so VNPT SmartCA cho approval request cua file CDE.

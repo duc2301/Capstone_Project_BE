@@ -7,7 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
-namespace Application.Services
+namespace Infrastructure.Adapters.Ai
 {
     public class ChunkContextEnricher : IChunkContextEnricher
     {

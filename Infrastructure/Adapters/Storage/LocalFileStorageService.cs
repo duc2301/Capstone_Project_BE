@@ -3,7 +3,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Microsoft.Extensions.Configuration;
 
-namespace Application.Services
+namespace Infrastructure.Adapters.Storage
 {
     // Lưu file lên đĩa local. Gốc lưu trữ lấy từ cấu hình "FileStorage:RootPath",
     // mặc định <BaseDirectory>/App_Data/uploads. Bố cục: {root}/{projectId}/{folderId}/{guid}{ext}

@@ -18,7 +18,7 @@ using iText.Layout.Element;
 using iText.Layout.Properties;
 using Microsoft.Extensions.Logging;
 
-namespace Application.Services
+namespace Infrastructure.Adapters.Signing
 {
     /// <summary>
     /// Stamp chu ky truc quan "Đã ký số" vao ban PDF/Word/Excel goc sau khi VNPT SmartCA da ky thanh cong,

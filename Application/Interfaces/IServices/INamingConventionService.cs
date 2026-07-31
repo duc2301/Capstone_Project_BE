@@ -25,18 +25,12 @@ namespace Application.Interfaces.IServices
         Task<NamingConventionResponseDTO> SetLockedValueAsync(Guid fieldId, SetLockedValueDTO dto, Guid actor);
         Task<NamingConventionResponseDTO> RemoveLockedValueAsync(Guid fieldId);
 
-        // --- Gán folder ---
-        // Chỉ Leader của group phụ trách folder (hoặc Admin hệ thống) được gán/gỡ/tùy chỉnh.
         Task<NamingConventionResponseDTO> AssignFoldersAsync(Guid conventionId, AssignFoldersDTO dto, Guid actor, string? actorRole);
         Task UnassignFolderAsync(Guid folderId, Guid actor, string? actorRole);
 
-        // --- Tùy chỉnh field áp dụng theo folder (Leader) ---
-        // Bật/tắt các field KHÔNG bắt buộc; field bắt buộc/khóa luôn áp dụng.
         Task<FolderFieldSelectionResponseDTO> GetFolderFieldSelectionAsync(Guid folderId);
         Task<FolderFieldSelectionResponseDTO> SetFolderFieldSelectionAsync(Guid folderId, IEnumerable<Guid> fieldIds, Guid actor, string? actorRole);
 
-        // --- Upload flow ---
-        // Payload cho dialog upload: convention đang áp cho folder (hoặc HasNamingConvention = false).
         Task<FolderNamingConventionResponseDTO> GetByFolderAsync(Guid folderId);
 
         // Validate lựa chọn + tự chèn locked values + ghép tên theo delimiter, giữ nguyên đuôi file.
