@@ -1,4 +1,4 @@
-using Application.DTOs.RequestDTOs.Project;
+﻿using Application.DTOs.RequestDTOs.Project;
 using Application.DTOs.ResponseDTOs.Project;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
@@ -16,21 +16,31 @@ namespace Application.Services
         private readonly IMapper _mapper;
         private readonly IFolderBootstrapService _folderBootstrap;
         private readonly IAuditLogService _auditLog;
+        private readonly IImageUploadService _imageUpload;
 
         public ProjectService(IUnitOfWork unitOfWork, IMapper mapper, IFolderBootstrapService folderBootstrap,
-            IAuditLogService auditLog)
+            IAuditLogService auditLog, IImageUploadService imageUpload)
         {
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _folderBootstrap = folderBootstrap;
             _auditLog = auditLog;
+            _imageUpload = imageUpload;
         }
 
         private const string OwnerInclude = "OwnerOrganization";
+        private const string ProjectImagePrefix = "project-images";
 
         public async Task<IEnumerable<ProjectResponseDTO>> GetAllAsync()
-            => _mapper.Map<IEnumerable<ProjectResponseDTO>>(
-                await _unitOfWork.Repository<Project>().GetAllAsync(OwnerInclude));
+        {
+            var entities = (await _unitOfWork.Repository<Project>().GetAllAsync(OwnerInclude)).ToList();
+            var dtos = _mapper.Map<List<ProjectResponseDTO>>(entities);
+
+            for (var i = 0; i < dtos.Count; i++)
+                dtos[i].ProjectImageUrl = await ResolveImageUrlAsync(entities[i]);
+
+            return dtos;
+        }
 
         public async Task<ProjectResponseDTO?> GetByIdAsync(Guid id)
         {
@@ -40,8 +50,39 @@ namespace Application.Services
             if (entity == null) return null;
 
             var dto = _mapper.Map<ProjectResponseDTO>(entity);
+            dto.ProjectImageUrl = await ResolveImageUrlAsync(entity);
             dto.Location = await GetDefaultLocationAsync(id);
             return dto;
+        }
+
+        public async Task<ProjectResponseDTO> SetImageAsync(
+            Guid id, Stream content, string fileName, long sizeBytes, Guid actorId, CancellationToken ct = default)
+        {
+            var entity = await _unitOfWork.Repository<Project>().GetByIdAsync(id)
+                ?? throw new ApiExceptionResponse($"Project with ID {id} not found.", 404);
+
+            entity.ProjectImageStoragePath = await _imageUpload.SaveImageAsync(
+                content, fileName, sizeBytes, $"{ProjectImagePrefix}/{id}", ct);
+            entity.ProjectImageUrl = null;
+            entity.UpdatedAt = DateTime.UtcNow;
+
+            _unitOfWork.Repository<Project>().Update(entity);
+
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Update, nameof(Project), entity.Id.ToString(), actorId,
+                detail: $"Cập nhật ảnh dự án '{entity.ProjectName}'", projectId: entity.Id);
+
+            await _unitOfWork.CommitAsync();
+
+            return await GetByIdAsync(id) ?? _mapper.Map<ProjectResponseDTO>(entity);
+        }
+
+        private async Task<string?> ResolveImageUrlAsync(Project entity)
+        {
+            if (!string.IsNullOrWhiteSpace(entity.ProjectImageStoragePath))
+                return await _imageUpload.GetImageUrlAsync(entity.ProjectImageStoragePath);
+
+            return entity.ProjectImageUrl;
         }
 
         public async Task<ProjectResponseDTO> CreateAsync(CreateProjectDTO dto, Guid actorId)

@@ -3,6 +3,7 @@ using System;
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Pgvector;
@@ -12,9 +13,11 @@ using Pgvector;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    partial class CDESystemDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260730072413_AddAccountAvatarAndProjectImageStorage")]
+    partial class AddAccountAvatarAndProjectImageStorage
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -901,7 +904,16 @@ namespace Infrastructure.Migrations
                     b.Property<bool>("CanApprove")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("CanDownload")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("CanEdit")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("CanUpdate")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("CanVerify")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("CanView")
@@ -1219,7 +1231,16 @@ namespace Infrastructure.Migrations
                     b.Property<bool>("CanApprove")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("CanDownload")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("CanEdit")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("CanUpdate")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("CanVerify")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("CanView")

@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace Application.DTOs.RequestDTOs.Account
 {
@@ -15,5 +15,9 @@ namespace Application.DTOs.RequestDTOs.Account
 
         [StringLength(50)]
         public string? Status { get; set; }
+
+        public Guid? OrganizationId { get; set; }
+
+        public bool? ClearOrganization { get; set; }
     }
 }
