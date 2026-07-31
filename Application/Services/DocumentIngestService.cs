@@ -125,7 +125,7 @@ namespace Application.Services
 
             var vectors = await _embedding.EmbedBatchAsync(toEmbed, ct);
             for (int i = 0; i < childEntities.Count; i++)
-                childEntities[i].Embedding = new Vector(vectors[i]);
+                childEntities[i].Embedding = vectors[i];
 
             foreach (var old in existing)
                 _unitOfWork.Repository<Document>().Delete(old);

@@ -1,14 +1,15 @@
 using Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Pgvector;
 
 namespace Infrastructure.DbContexts
 {
     public class CDESystemDbContext : DbContext
     {
-        private readonly IConfiguration _configuration;        
+        private readonly IConfiguration _configuration;
 
-        public CDESystemDbContext(DbContextOptions<CDESystemDbContext> options, IConfiguration configuration) : base(options) 
+        public CDESystemDbContext(DbContextOptions<CDESystemDbContext> options, IConfiguration configuration) : base(options)
         {
             _configuration = configuration;
         }
@@ -85,7 +86,7 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<NamingConventionLockedValue> NamingConventionLockedValues { get; set; }
         public virtual DbSet<FileNamingMetadata> FileNamingMetadata { get; set; }
         public virtual DbSet<FolderNamingField> FolderNamingFields { get; set; }
-        
+
         public virtual DbSet<FileLink> FileLinks { get; set; }
 
         // --- File Versioning (trạng thái version hiện hành của tài liệu) ---
@@ -266,17 +267,17 @@ namespace Infrastructure.DbContexts
             modelBuilder.Entity<JointVentureMember>(entity =>
             {
                 entity.HasKey(e => e.Id);
-                
+
                 entity.HasOne(e => e.JointVenture)
                     .WithMany()
                     .HasForeignKey(e => e.JointVentureId)
                     .OnDelete(DeleteBehavior.Cascade);
-                
+
                 entity.HasOne(e => e.MemberOrganization)
                     .WithMany()
                     .HasForeignKey(e => e.MemberOrganizationId)
                     .OnDelete(DeleteBehavior.Restrict);
-                    
+
                 entity.HasIndex(e => new { e.JointVentureId, e.MemberOrganizationId }).IsUnique();
             });
 
@@ -436,18 +437,22 @@ namespace Infrastructure.DbContexts
                 b.HasIndex(p => p.ProjectId);
                 b.HasIndex(p => p.DocumentId);
             });
-            
+
             modelBuilder.Entity<DocumentChildChunk>(b =>
             {
                 b.Property(c => c.Embedding)
-                    .HasColumnType($"vector({embeddingDimension})");
+                    .HasColumnType($"vector({embeddingDimension})")
+                    .HasConversion(
+                        v => !v.IsEmpty ? new Vector(v) : null,
+                        v => v != null ? v.Memory : default
+                    );
 
                 b.HasOne(c => c.ParentChunk)
                     .WithMany(p => p.ChildChunks)
                     .HasForeignKey(c => c.ParentChunkId)
                     .OnDelete(DeleteBehavior.Cascade);
 
-                b.HasIndex(c => c.ProjectId);      
+                b.HasIndex(c => c.ProjectId);
                 b.HasIndex(c => c.DocumentId);
                 b.HasIndex(c => c.ParentChunkId);
             });

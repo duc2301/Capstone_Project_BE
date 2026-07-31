@@ -1,7 +1,7 @@
 using Amazon.Runtime;
 using Microsoft.Extensions.Logging;
 
-namespace Application.Services
+namespace Infrastructure.Adapters.Storage
 {
     // Log request đã ký (Authorization/SignedHeaders + các header x-amz-*) và body lỗi từ Cloudian.
     // Body lỗi S3/Cloudian thường chứa <CanonicalRequest>/<StringToSign> -> so để biết field nào lệch chữ ký.

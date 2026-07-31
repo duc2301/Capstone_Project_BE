@@ -4,7 +4,7 @@ using MailKit.Security;
 using Microsoft.Extensions.Configuration;
 using MimeKit;
 
-namespace Application.Services
+namespace Infrastructure.Adapters.Identity
 {
     /// <summary>
     /// Gửi email thật qua Gmail SMTP.

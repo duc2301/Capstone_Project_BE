@@ -23,30 +23,5 @@ namespace Application.DTOs.ResponseDTOs.Loi
         public List<LoiUncoveredComponentDTO> NotCovered { get; set; } = new();
 
         public List<LoiSectionDTO> Sections { get; set; } = new();
-    }
-
-    public class LoiUncoveredComponentDTO
-    {
-        public string ComponentCode { get; set; } = string.Empty;
-        public string ComponentName { get; set; } = string.Empty;
-        public int ElementCount { get; set; }
-    }
-
-    public class LoiUnmappedParamDTO
-    {
-        public string ParamNameInModel { get; set; } = string.Empty;
-        public string SuggestedParamName { get; set; } = string.Empty;
-        public string SuggestedParamNameNormalized { get; set; } = string.Empty;
-        public double Confidence { get; set; }
-        public int ElementCount { get; set; }
-    }
-
-    public class LoiMissingFieldDTO
-    {
-        public string FieldName { get; set; } = string.Empty;
-        public string? Variant { get; set; }
-        public LoiParamGroup Group { get; set; }
-        public LoiStage Stage { get; set; }
-        public int MissingCount { get; set; }
-    }
+    }           
 }
