@@ -507,3 +507,5 @@ appsettings.*.json
 
 CLAUDE.md
 docs/harness/
+
+Tests/
