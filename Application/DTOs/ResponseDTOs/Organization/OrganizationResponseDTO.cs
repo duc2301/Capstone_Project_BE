@@ -14,6 +14,7 @@ namespace Application.DTOs.ResponseDTOs.Organization
         public bool IsJointVenture { get; set; }
         public Guid? RepresentativeOrganizationId { get; set; }
         public List<Guid> JointVentureMemberIds { get; set; } = new List<Guid>();
+        public int ParticipatingProjectsCount { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
     }

@@ -24,6 +24,10 @@ namespace Capstone_Project.Controllers
         public async Task<IActionResult> GetById(Guid id)
             => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByIdAsync(id)));
 
+        [HttpGet("{id:guid}/projects")]
+        public async Task<IActionResult> GetProjects(Guid id)
+            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetProjectsByOrganizationAsync(id)));
+
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateOrganizationDTO dto)
             => Ok(ApiResponse.Success("Created successfully", await _service.CreateAsync(dto)));

@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using Domain.Enum.Project;
 
 namespace Application.DTOs.RequestDTOs.Project
