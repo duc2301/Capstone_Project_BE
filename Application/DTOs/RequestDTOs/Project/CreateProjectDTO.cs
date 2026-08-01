@@ -15,7 +15,7 @@ namespace Application.DTOs.RequestDTOs.Project
         [StringLength(50)]
         public string? ProjectCode { get; set; }
 
-        public ProjectStatus Status { get; set; } = ProjectStatus.Planning;
+        public ProjectStatus Status { get; set; } = ProjectStatus.Active;
 
         public Guid? OwnerOrganizationId { get; set; }
 

@@ -45,7 +45,7 @@ namespace Capstone_Project.Controllers
 
 
         [HttpPost("{id:guid}/image")]
-        [Authorize(Roles = "Admin")]
+        [Authorize]
         [Consumes("multipart/form-data")]
         [RequestSizeLimit(6_291_456)]
         [RequestFormLimits(MultipartBodyLengthLimit = 6_291_456)]
@@ -56,7 +56,7 @@ namespace Capstone_Project.Controllers
 
             await using var stream = file.OpenReadStream();
             var result = await _projectService.SetImageAsync(
-                id, stream, file.FileName, file.Length, User.GetAccountId(), ct);
+                id, stream, file.FileName, file.Length, User.GetAccountId(), User.IsAdmin(), ct);
             return Ok(ApiResponse.Success("Project image updated", result));
         }
 
@@ -130,10 +130,10 @@ namespace Capstone_Project.Controllers
         }
 
         [HttpPut("{id:guid}")]
-        [Authorize(Roles = "Admin")]
+        [Authorize]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateProjectDTO dto)
         {
-            var result = await _projectService.UpdateAsync(id, dto, User.GetAccountId());
+            var result = await _projectService.UpdateAsync(id, dto, User.GetAccountId(), User.IsAdmin());
             return Ok(ApiResponse.Success("Project updated", result));
         }
 

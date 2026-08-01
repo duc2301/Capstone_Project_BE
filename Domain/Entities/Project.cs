@@ -16,7 +16,7 @@ namespace Domain.Entities
 
         public string? ProjectImageStoragePath { get; set; }
 
-        public ProjectStatus Status { get; set; }     // Planning/Active/OnHold/Completed/Closed
+        public ProjectStatus Status { get; set; }
 
         public Guid? OwnerOrganizationId { get; set; }
 

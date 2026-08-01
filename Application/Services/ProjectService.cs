@@ -34,12 +34,52 @@ namespace Application.Services
         public async Task<IEnumerable<ProjectResponseDTO>> GetAllAsync()
         {
             var entities = (await _unitOfWork.Repository<Project>().GetAllAsync(OwnerInclude)).ToList();
+            return await BuildListAsync(entities);
+        }
+
+        public async Task<List<ProjectResponseDTO>> GetByIdsAsync(IReadOnlyCollection<Guid> ids)
+        {
+            if (ids.Count == 0) return new List<ProjectResponseDTO>();
+
+            var entities = (await _unitOfWork.Repository<Project>()
+                    .FindAsync(p => ids.Contains(p.Id), OwnerInclude))
+                .ToList();
+
+            return await BuildListAsync(entities);
+        }
+
+        private async Task<List<ProjectResponseDTO>> BuildListAsync(List<Project> entities)
+        {
             var dtos = _mapper.Map<List<ProjectResponseDTO>>(entities);
+            var locations = await GetDefaultLocationsAsync(entities.Select(e => e.Id).ToList());
 
             for (var i = 0; i < dtos.Count; i++)
+            {
                 dtos[i].ProjectImageUrl = await ResolveImageUrlAsync(entities[i]);
+                locations.TryGetValue(entities[i].Id, out var location);
+                dtos[i].Location = location;
+            }
 
             return dtos;
+        }
+
+        private async Task<Dictionary<Guid, ProjectLocationResponseDTO>> GetDefaultLocationsAsync(
+            IReadOnlyCollection<Guid> projectIds)
+        {
+            var result = new Dictionary<Guid, ProjectLocationResponseDTO>();
+            if (projectIds.Count == 0) return result;
+
+            var locations = (await _unitOfWork.Repository<ProjectLocation>()
+                    .FindAsync(l => projectIds.Contains(l.ProjectId)))
+                .ToList();
+
+            foreach (var group in locations.GroupBy(l => l.ProjectId))
+            {
+                var location = group.FirstOrDefault(l => l.IsDefault) ?? group.First();
+                result[group.Key] = _mapper.Map<ProjectLocationResponseDTO>(location);
+            }
+
+            return result;
         }
 
         public async Task<ProjectResponseDTO?> GetByIdAsync(Guid id)
@@ -56,10 +96,13 @@ namespace Application.Services
         }
 
         public async Task<ProjectResponseDTO> SetImageAsync(
-            Guid id, Stream content, string fileName, long sizeBytes, Guid actorId, CancellationToken ct = default)
+            Guid id, Stream content, string fileName, long sizeBytes, Guid actorId, bool isSystemAdmin,
+            CancellationToken ct = default)
         {
             var entity = await _unitOfWork.Repository<Project>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Project with ID {id} not found.", 404);
+
+            RequireAdminOrManager(entity, actorId, isSystemAdmin);
 
             entity.ProjectImageStoragePath = await _imageUpload.SaveImageAsync(
                 content, fileName, sizeBytes, $"{ProjectImagePrefix}/{id}", ct);
@@ -75,6 +118,14 @@ namespace Application.Services
             await _unitOfWork.CommitAsync();
 
             return await GetByIdAsync(id) ?? _mapper.Map<ProjectResponseDTO>(entity);
+        }
+
+        private static void RequireAdminOrManager(Project entity, Guid actorId, bool isSystemAdmin)
+        {
+            if (isSystemAdmin || entity.ManagerAccountId == actorId) return;
+
+            throw new ApiExceptionResponse(
+                "Only a system administrator or the project manager can edit this project.", 403);
         }
 
         private async Task<string?> ResolveImageUrlAsync(Project entity)
@@ -172,10 +223,13 @@ namespace Application.Services
             if (dto.Longitude.HasValue) location.Longitude = dto.Longitude;
         }
 
-        public async Task<ProjectResponseDTO> UpdateAsync(Guid id, UpdateProjectDTO dto, Guid actorId)
+        public async Task<ProjectResponseDTO> UpdateAsync(
+            Guid id, UpdateProjectDTO dto, Guid actorId, bool isSystemAdmin)
         {
             var entity = await _unitOfWork.Repository<Project>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Project with ID {id} not found.", 404);
+
+            RequireAdminOrManager(entity, actorId, isSystemAdmin);
 
             _ = await ResolveOwnerOrganizationAsync(dto.OwnerOrganizationId);
 
