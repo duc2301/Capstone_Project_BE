@@ -6,6 +6,7 @@ using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 
 using Domain.Entities;
+using Domain.Enum.ContractPackage;
 using Application.DTOs.ResponseDTOs.Folder;
 
 namespace Application.Services
@@ -124,23 +125,12 @@ namespace Application.Services
             // Auto-generate code if empty
             if (string.IsNullOrWhiteSpace(entity.Code))
             {
-                // Derive work-type abbreviation from WorkTypes field
-                var workTypeAbbr = "GEN"; // default = General
+                // WorkTypes lưu MÃ loại công việc ("STR,MEP"); mã đầu tiên là phần viết tắt của mã gói thầu.
+                var workTypeAbbr = WorkTypeCode.General;
                 if (!string.IsNullOrWhiteSpace(dto.WorkTypes))
                 {
-                    var firstType = dto.WorkTypes.Split(',')[0].Trim().ToLower();
-                    workTypeAbbr = firstType switch
-                    {
-                        "xây dựng thô" or "xây dựng" => "XDT",
-                        "kết cấu" or "structure" => "STR",
-                        "kiến trúc" or "architecture" => "ARC",
-                        "cơ điện" or "m&e" or "mep" => "MEP",
-                        "hoàn thiện" or "finishing" => "FIN",
-                        "bê tông cốt thép" => "STR",
-                        _ => firstType.Length >= 3
-                            ? firstType[..3].ToUpper()
-                            : firstType.ToUpper()
-                    };
+                    var firstCode = dto.WorkTypes.Split(',')[0].Trim().ToUpperInvariant();
+                    if (WorkTypeCode.IsValid(firstCode)) workTypeAbbr = firstCode;
                 }
 
                 var projectPackagesCount = (await _unitOfWork.Repository<ContractPackage>()
