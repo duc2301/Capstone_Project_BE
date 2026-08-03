@@ -138,7 +138,7 @@ namespace Application.Services
                 await _auditLog.LogAsync(
                     LogScope.Project, AuditAction.Create, nameof(ProjectParticipant),
                     participant.Id.ToString(), actor,
-                    detail: $"Thêm nhóm tham gia dự án (vai trò {participant.Role})",
+                    detail: $"Thêm nhóm {participant.Group.Name} tham gia vào dự án {participant.Project.ProjectName})",
                     projectId: projectId, groupId: participant.GroupId);
 
             await _unitOfWork.CommitAsync();

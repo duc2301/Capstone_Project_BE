@@ -83,9 +83,11 @@ namespace Application.Services
 
             await _unitOfWork.Repository<ProjectInvitation>().CreateAsync(invitation);
 
+            var user = await _unitOfWork.Repository<Account>().GetByIdAsync(inviter);
+
             await _auditLog.LogAsync(
                 LogScope.Project, AuditAction.Invite, nameof(ProjectInvitation), invitation.Id.ToString(), inviter,
-                detail: $"Mời vào nhóm '{group.Name}' (vai trò {RoleLabel(dto.Role)}) của dự án '{project.ProjectName}'",
+                detail: $"Mời {user.UserName} vào nhóm '{group.Name}' (vai trò {RoleLabel(dto.Role)}) của dự án '{project.ProjectName}'",
                 projectId: dto.ProjectId, groupId: dto.InvitedGroupId);
 
             await _unitOfWork.CommitAsync();

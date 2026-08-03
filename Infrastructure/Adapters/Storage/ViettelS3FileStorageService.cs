@@ -4,10 +4,11 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
+using Application.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
-namespace Application.Services
+namespace Infrastructure.Adapters.Storage
 {
     // Lưu file lên Viettel Cloud Object Storage (S3-compatible, nền Cloudian HyperStore).
     // Cấu hình ở "FileStorage:S3:*". StoragePath = object key dạng {projectId}/{folderId}/{guid}{ext}.

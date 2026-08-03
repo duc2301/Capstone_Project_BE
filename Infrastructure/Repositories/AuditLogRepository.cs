@@ -50,10 +50,16 @@ namespace Infrastructure.Repositories
                 query = query.Where(l => l.ActorAccountId == filter.ActorId.Value);
 
             if (filter.From.HasValue)
-                query = query.Where(l => l.CreatedAt >= filter.From.Value);
+            {
+                var from = DateTime.SpecifyKind(filter.From.Value, DateTimeKind.Utc);
+                query = query.Where(l => l.CreatedAt >= from);
+            }
 
             if (filter.To.HasValue)
-                query = query.Where(l => l.CreatedAt <= filter.To.Value);
+            {
+                var toExclusive = DateTime.SpecifyKind(filter.To.Value.Date.AddDays(1), DateTimeKind.Utc);
+                query = query.Where(l => l.CreatedAt < toExclusive);
+            }
 
             var total = await query.CountAsync();
 

@@ -7,7 +7,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Application.Services
+namespace Infrastructure.Adapters.Identity
 {
     // Giống JwtService của ChemXLab, thích ứng entity Account + refresh token
     // và multi-valued "Group" claim cho từng nhóm account thuộc.

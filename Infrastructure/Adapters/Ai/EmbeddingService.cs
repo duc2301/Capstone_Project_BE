@@ -6,7 +6,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 
-namespace Application.Services
+namespace Infrastructure.Adapters.Ai
 {
     public class EmbeddingService : IEmbeddingService
     {
