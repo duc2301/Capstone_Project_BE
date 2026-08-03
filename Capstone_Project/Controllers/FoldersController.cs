@@ -2,7 +2,6 @@ using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Folder;
 using Application.Interfaces.IServices;
 using Capstone_Project.Extensions;
-using Domain.Enum.Cde;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -26,14 +25,8 @@ namespace Capstone_Project.Controllers
             _bootstrap = bootstrap;
         }
 
-        // Cây thư mục CDE của 1 dự án, đã lọc theo quyền View của người gọi.
-        // Lọc theo khu vực qua ?area=Wip|Shared|Published|Archived (tùy chọn).
-        [HttpGet("tree")]
-        public async Task<IActionResult> GetTree([FromQuery] Guid projectId, [FromQuery] CdeArea? area)
-        {
-            var tree = true;
-            return Ok(ApiResponse.Success("CDE tree retrieved", tree));
-        }
+        // Cây thư mục CDE: xem FolderTreeController (GET api/folder-tree/tree) — bản ở đây chỉ là
+        // stub trả về "true", không bao giờ gọi FolderTreeService, nên đã được gỡ bỏ.
 
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetById(Guid id)

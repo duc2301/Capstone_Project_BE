@@ -29,10 +29,6 @@ namespace Application.Services
             _permission = permission;
         }
 
-        public async Task<IEnumerable<FolderResponseDTO>> GetAllAsync()
-            => _mapper.Map<IEnumerable<FolderResponseDTO>>(
-                await _unitOfWork.Repository<Folder>().GetAllAsync());
-
         public async Task<FolderResponseDTO?> GetByIdAsync(Guid id)
         {
             var entity = await _unitOfWork.Repository<Folder>().GetByIdAsync(id);
