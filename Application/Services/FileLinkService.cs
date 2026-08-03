@@ -135,6 +135,7 @@ namespace Application.Services
                         DisplayVersion = version?.DisplayVersion,
                         Format = version?.Format,
                         SizeBytes = version?.FileSizeBytes ?? 0,
+                        CreatedAt = f.CreatedAt,
                         UpdatedAt = f.UpdatedAt,
                         AlreadyLinked = linkedIds.Contains(f.Id)
                     };

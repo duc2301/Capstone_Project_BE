@@ -180,12 +180,12 @@ INSERT INTO "GroupMembers" ("Id","GroupId","AccountId","Role","Status","JoinedAt
 ('cc200000-0000-0000-0000-000000000005','cc100000-0000-0000-0000-000000000004','aa100000-0000-0000-0000-000000000003',0,0,'2026-03-02 08:20:00+07');
 
 -- ============================================================================
--- 5) PROJECT  Status: Active=1
+-- 5) PROJECT  Status: Active=0
 --    ⚠️ Cột "Phase" ĐÃ BỎ (migration AddProjectOwnerAndContactAddress).
 --    OwnerOrganizationId = chủ đầu tư · ContactAddress = địa chỉ liên hệ.
 -- ============================================================================
 INSERT INTO "Projects" ("Id","ProjectName","ProjectDescription","Status","ManagerAccountId","OwnerOrganizationId","ContactAddress","CreatedAt","UpdatedAt") VALUES
-('dd100000-0000-0000-0000-000000000001','Dự án Test Phân Quyền CDE','Dự án riêng để test api/folder-tree: quyền View trên cây folder và files.',1,'aa100000-0000-0000-0000-000000000001','bb100000-0000-0000-0000-000000000001','99 Đường Test, Quận 1, TP.HCM','2026-03-03 08:00:00+07',NULL);
+('dd100000-0000-0000-0000-000000000001','Dự án Test Phân Quyền CDE','Dự án riêng để test api/folder-tree: quyền View trên cây folder và files.',0,'aa100000-0000-0000-0000-000000000001','bb100000-0000-0000-0000-000000000001','99 Đường Test, Quận 1, TP.HCM','2026-03-03 08:00:00+07',NULL);
 
 -- ============================================================================
 -- 6) PROJECT PARTICIPANTS  Role: ProjectAdmin=0, Member=1 | Status: Active=0, Inactive=1

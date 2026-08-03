@@ -11,6 +11,8 @@ namespace Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql("DELETE FROM \"DocumentChunks\" WHERE \"Embedding\" IS NULL;");
+
             migrationBuilder.AlterColumn<Vector>(
                 name: "Embedding",
                 table: "DocumentChunks",

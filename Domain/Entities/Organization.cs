@@ -1,4 +1,4 @@
-
+﻿
 
 namespace Domain.Entities
 {
@@ -10,6 +10,7 @@ namespace Domain.Entities
         public string TaxCode { get; set; } = null!;
         public string LegalName { get; set; } = null!;   // tên đăng ký với nhà nước
         public string? DisplayName { get; set; }
+        public string? InternationalName { get; set; }
         public Guid OrganizationTypeId { get; set; }     // FK -> bảng lookup OrganizationType
         public string? Address { get; set; }
         public string? Phone { get; set; }

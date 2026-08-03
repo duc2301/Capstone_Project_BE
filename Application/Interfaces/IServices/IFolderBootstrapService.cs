@@ -1,4 +1,4 @@
-using Application.DTOs.ResponseDTOs.Folder;
+﻿using Application.DTOs.ResponseDTOs.Folder;
 
 namespace Application.Interfaces.IServices
 {
@@ -19,5 +19,7 @@ namespace Application.Interfaces.IServices
         // Kế thừa Area/OwnerGroup/OwnerOrganization từ folder cha.
         // actorId/actorRole do controller lấy từ JWT truyền vào để kiểm tra quyền.
         Task<FolderResponseDTO> CreateChildFolderAsync(Guid parentFolderId, string name, Guid actorId, string? actorRole);
+
+        Task EnsureCanManageFolderAsync(Guid folderId, Guid actorId, string? actorRole);
     }
 }
