@@ -20,6 +20,25 @@ namespace Application.Interfaces.IRepositories
         /// </summary>
         Task<FilePermission?> GetUserFilePermissionAsync(Guid fileItemId, Guid accountId);
 
+        // ===== Project-admin (PM) full access =====
+        // Reimplemented here rather than reused from FolderTreeRepository so the permission module
+        // owns its own data access (FolderTreeService keeps its own copies of these queries).
+
+        /// <summary>True if the account is an active ProjectAdmin (PM) participant of the project.</summary>
+        Task<bool> HasProjectAdminAccessAsync(Guid projectId, Guid accountId);
+
+        /// <summary>True if the account is an active ProjectAdmin of the project that owns the folder.</summary>
+        Task<bool> HasProjectAdminAccessByFolderAsync(Guid folderId, Guid accountId);
+
+        /// <summary>True if the account is an active ProjectAdmin of the project that owns the file.</summary>
+        Task<bool> HasProjectAdminAccessByFileAsync(Guid fileItemId, Guid accountId);
+
+        /// <summary>
+        /// FolderIds in the project the account can View
+        /// (active GroupMember -> active ProjectParticipant -> active FolderPermission with CanView).
+        /// </summary>
+        Task<HashSet<Guid>> GetViewableFolderIdsAsync(Guid projectId, Guid accountId);
+
         // ===== Current-user permission retrieval (viewing only) =====
 
         Task<Account?> GetAccountAsync(Guid accountId);

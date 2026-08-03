@@ -47,6 +47,58 @@ namespace Infrastructure.Repositories
                 .FirstOrDefaultAsync();
         }
 
+        // ===== Project-admin (PM) full access =====
+        // Mirrors FolderTreeRepository.HasFullAccessAsync / GetViewableFolderIdsAsync. Kept as a
+        // separate copy so the permission module does not depend on the folder-tree module.
+
+        public async Task<bool> HasProjectAdminAccessAsync(Guid projectId, Guid accountId)
+        {
+            return await _context.ProjectParticipants
+                .AnyAsync(pp => pp.ProjectId == projectId
+                             && pp.Status == ProjectParticipantStatus.Active
+                             && pp.Role == ProjectParticipantRole.ProjectAdmin
+                             && pp.Group.Members.Any(m =>
+                                    m.AccountId == accountId && m.Status == GroupMemberStatus.Active));
+        }
+
+        public async Task<bool> HasProjectAdminAccessByFolderAsync(Guid folderId, Guid accountId)
+        {
+            return await _context.ProjectParticipants
+                .AnyAsync(pp => pp.Status == ProjectParticipantStatus.Active
+                             && pp.Role == ProjectParticipantRole.ProjectAdmin
+                             && _context.Folders.Any(f => f.Id == folderId && f.ProjectId == pp.ProjectId)
+                             && pp.Group.Members.Any(m =>
+                                    m.AccountId == accountId && m.Status == GroupMemberStatus.Active));
+        }
+
+        public async Task<bool> HasProjectAdminAccessByFileAsync(Guid fileItemId, Guid accountId)
+        {
+            return await _context.ProjectParticipants
+                .AnyAsync(pp => pp.Status == ProjectParticipantStatus.Active
+                             && pp.Role == ProjectParticipantRole.ProjectAdmin
+                             && _context.FileItems.Any(fi => fi.Id == fileItemId
+                                    && fi.Folder.ProjectId == pp.ProjectId)
+                             && pp.Group.Members.Any(m =>
+                                    m.AccountId == accountId && m.Status == GroupMemberStatus.Active));
+        }
+
+        public async Task<HashSet<Guid>> GetViewableFolderIdsAsync(Guid projectId, Guid accountId)
+        {
+            var folderIds = await _context.FolderPermissions
+                .Where(fp => fp.Folder.ProjectId == projectId
+                          && fp.Status == PermissionStatus.Active
+                          && fp.CanView
+                          && fp.ProjectParticipant != null
+                          && fp.ProjectParticipant.Status == ProjectParticipantStatus.Active
+                          && fp.ProjectParticipant.Group.Members.Any(m =>
+                                m.AccountId == accountId && m.Status == GroupMemberStatus.Active))
+                .Select(fp => fp.FolderId)
+                .Distinct()
+                .ToListAsync();
+
+            return folderIds.ToHashSet();
+        }
+
         // ===== Current-user permission retrieval (viewing only) =====
 
         public async Task<Account?> GetAccountAsync(Guid accountId)

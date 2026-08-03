@@ -24,7 +24,7 @@ namespace Capstone_Project.Controllers
         [HttpGet("system")]
         public async Task<IActionResult> GetSystem([FromQuery] AuditLogFilterDTO filter)
         {
-            var result = await _auditLogService.GetSystemAsync(filter, User.IsAdmin());
+            var result = await _auditLogService.GetSystemAsync(filter, User.GetAccountId());
             return Ok(ApiResponse.Success("Audit logs retrieved", result));
         }
 
@@ -33,7 +33,7 @@ namespace Capstone_Project.Controllers
         public async Task<IActionResult> GetByProject(Guid projectId, [FromQuery] AuditLogFilterDTO filter)
         {
             var result = await _auditLogService.GetByProjectAsync(
-                projectId, filter, User.GetAccountId(), User.IsAdmin());
+                projectId, filter, User.GetAccountId());
             return Ok(ApiResponse.Success("Project audit logs retrieved", result));
         }
 

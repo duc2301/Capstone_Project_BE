@@ -1,7 +1,6 @@
 using Application.DTOs.ResponseDTOs.FileItem;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IBackgroundServices;
-using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
@@ -26,8 +25,7 @@ namespace Application.Services
         private static readonly string[] TextExts = { ".txt", ".csv" };
 
         private readonly IUnitOfWork _unitOfWork;
-        private readonly IFolderTreeRepository _folderTree;
-        private readonly IPermissionCheckingRepository _permissionRepo;
+        private readonly IPermissionCheckingService _permission;
         private readonly IFileStorageService _storage;
         private readonly IOfficeToPdfConverter _officeConverter;
         private readonly IModelTranslationQueue _translationQueue;
@@ -35,41 +33,26 @@ namespace Application.Services
 
         public FileViewService(
             IUnitOfWork unitOfWork,
-            IFolderTreeRepository folderTree,
-            IPermissionCheckingRepository permissionRepo,
+            IPermissionCheckingService permission,
             IFileStorageService storage,
             IOfficeToPdfConverter officeConverter,
             IModelTranslationQueue translationQueue,
             ILogger<FileViewService> logger)
         {
             _unitOfWork = unitOfWork;
-            _folderTree = folderTree;
-            _permissionRepo = permissionRepo;
+            _permission = permission;
             _storage = storage;
             _officeConverter = officeConverter;
             _translationQueue = translationQueue;
             _logger = logger;
         }
 
-        private async Task RequireCanViewAsync(FileItem fileItem, Guid actorId, bool isSystemAdmin)
-        {
-            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
-                ?? throw new ApiExceptionResponse("File folder not found.", 404);
-
-            var allowed = isSystemAdmin
-                || await _folderTree.HasFullAccessAsync(folder.ProjectId, actorId)
-                || (await _permissionRepo.GetUserFolderPermissionAsync(folder.Id, actorId)) is { CanView: true };
-
-            if (!allowed)
-                throw new ApiExceptionResponse("Bạn không có quyền xem file này.", 403);
-        }
-
-        public async Task<FileViewInfoDTO> GetViewInfoAsync(Guid fileItemId, Guid actor, bool isSystemAdmin, CancellationToken ct = default)
+        public async Task<FileViewInfoDTO> GetViewInfoAsync(Guid fileItemId, Guid actor, CancellationToken ct = default)
         {
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
-            await RequireCanViewAsync(fileItem, actor, isSystemAdmin);
+            await _permission.CanViewFileAsync(fileItem.Id, actor);
 
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
@@ -125,12 +108,12 @@ namespace Application.Services
         }
 
         // Dịch lại model (khi Failed, hoặc người dùng chủ động làm mới): reset trạng thái + đẩy lại vào hàng đợi nền.
-        public async Task RetranslateAsync(Guid fileItemId, Guid actor, bool isSystemAdmin, CancellationToken ct = default)
+        public async Task RetranslateAsync(Guid fileItemId, Guid actor, CancellationToken ct = default)
         {
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
-            await RequireCanViewAsync(fileItem, actor, isSystemAdmin);
+            await _permission.CanViewFileAsync(fileItem.Id, actor);
 
             if (fileItem.FileType is not (FileType.Ifc or FileType.Cad))
                 throw new ApiExceptionResponse("File này không phải model 3D/CAD nên không cần dịch.", 400);
@@ -223,12 +206,12 @@ namespace Application.Services
         }
 
         // ---- Bytes PDF hiệu dụng cho pdf.js (markup 2D) — same-origin, né CORS presigned + hết hạn URL ----
-        public async Task<InlinePdfResult> OpenViewPdfAsync(Guid fileItemId, Guid actor, bool isSystemAdmin, CancellationToken ct = default)
+        public async Task<InlinePdfResult> OpenViewPdfAsync(Guid fileItemId, Guid actor, CancellationToken ct = default)
         {
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
-            await RequireCanViewAsync(fileItem, actor, isSystemAdmin);
+            await _permission.CanViewFileAsync(fileItem.Id, actor);
 
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);

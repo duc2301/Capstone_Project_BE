@@ -78,13 +78,13 @@ namespace Capstone_Project.Controllers
         // "Xem chi tiết": FE dựa vào Kind để hiển thị (model = APS viewer, inline = web, download = tải về).
         [HttpGet("{id:guid}/view")]
         public async Task<IActionResult> GetViewInfo(Guid id, CancellationToken ct)
-            => Ok(ApiResponse.Success("File view info", await _view.GetViewInfoAsync(id, User.GetAccountId(), User.IsAdmin(), ct)));
+            => Ok(ApiResponse.Success("File view info", await _view.GetViewInfoAsync(id, User.GetAccountId(), ct)));
 
         // Bytes PDF hiệu dụng (PDF gốc / Office đã convert) — FE render bằng pdf.js để markup 2D theo trang. Same-origin.
         [HttpGet("{id:guid}/view-pdf")]
         public async Task<IActionResult> GetViewPdf(Guid id, CancellationToken ct)
         {
-            var pdf = await _view.OpenViewPdfAsync(id, User.GetAccountId(), User.IsAdmin(), ct);
+            var pdf = await _view.OpenViewPdfAsync(id, User.GetAccountId(), ct);
             return File(pdf.Content, "application/pdf", pdf.FileName);
         }
 
@@ -92,7 +92,7 @@ namespace Capstone_Project.Controllers
         [HttpPost("{id:guid}/retranslate")]
         public async Task<IActionResult> Retranslate(Guid id, CancellationToken ct)
         {
-            await _view.RetranslateAsync(id, User.GetAccountId(), User.IsAdmin(), ct);
+            await _view.RetranslateAsync(id, User.GetAccountId(), ct);
             return Ok(ApiResponse.Success("Model re-translation queued"));
         }
 
@@ -151,7 +151,7 @@ namespace Capstone_Project.Controllers
         public async Task<IActionResult> GetRelatedFiles(Guid id, CancellationToken ct)
             => Ok(ApiResponse.Success(
                 "Related files retrieved",
-                await _fileLink.GetRelatedFilesAsync(id, User.GetAccountId(), User.IsAdmin(), ct)));
+                await _fileLink.GetRelatedFilesAsync(id, User.GetAccountId(), ct)));
 
         [HttpPost("{id:guid}/related-files")]
         public async Task<IActionResult> AddRelatedFiles(Guid id, [FromBody] LinkRelatedFilesDTO dto, CancellationToken ct)
@@ -161,13 +161,13 @@ namespace Capstone_Project.Controllers
 
             return Ok(ApiResponse.Success(
                 "Related files linked",
-                await _fileLink.AddLinksAsync(id, dto.RelatedFileItemIds, User.GetAccountId(), User.IsAdmin(), ct)));
+                await _fileLink.AddLinksAsync(id, dto.RelatedFileItemIds, User.GetAccountId(), ct)));
         }
 
         [HttpDelete("{id:guid}/related-files/{linkedFileItemId:guid}")]
         public async Task<IActionResult> RemoveRelatedFile(Guid id, Guid linkedFileItemId, CancellationToken ct)
         {
-            await _fileLink.RemoveLinkAsync(id, linkedFileItemId, User.GetAccountId(), User.IsAdmin(), ct);
+            await _fileLink.RemoveLinkAsync(id, linkedFileItemId, User.GetAccountId(), ct);
             return Ok(ApiResponse.Success("Related file unlinked"));
         }
 
@@ -177,7 +177,7 @@ namespace Capstone_Project.Controllers
             => Ok(ApiResponse.Success(
                 "Linkable files retrieved",
                 await _fileLink.GetLinkableFilesAsync(
-                    folderId, excludeFileItemId, User.GetAccountId(), User.IsAdmin(), ct)));
+                    folderId, excludeFileItemId, User.GetAccountId(), ct)));
 
         // Danh sách file trong 1 folder (FE gọi khi mở/chọn folder).
         [HttpGet("by-folder/{folderId:guid}")]

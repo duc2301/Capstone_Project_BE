@@ -13,16 +13,16 @@ namespace Application.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IAuditLogRepository _auditLogRepository;
-        private readonly IFolderTreeRepository _folderTreeRepository;
+        private readonly IPermissionCheckingService _permission;
 
         public AuditLogService(
             IUnitOfWork unitOfWork,
             IAuditLogRepository auditLogRepository,
-            IFolderTreeRepository folderTreeRepository)
+            IPermissionCheckingService permission)
         {
             _unitOfWork = unitOfWork;
             _auditLogRepository = auditLogRepository;
-            _folderTreeRepository = folderTreeRepository;
+            _permission = permission;
         }
 
         // ===== GHI =====
@@ -75,9 +75,9 @@ namespace Application.Services
 
         // ===== ĐỌC =====
 
-        public async Task<AuditLogPageDTO> GetSystemAsync(AuditLogFilterDTO filter, bool isSystemAdmin)
+        public async Task<AuditLogPageDTO> GetSystemAsync(AuditLogFilterDTO filter, Guid actorId)
         {
-            if (!isSystemAdmin)
+            if (!await _permission.HasSystemAdminAsync(actorId))
                 throw new ApiExceptionResponse("Only system admin can view system audit logs.", 403);
 
             // filter.ProjectId cho phép admin lọc về 1 dự án; null = mọi dự án.
@@ -85,15 +85,16 @@ namespace Application.Services
         }
 
         public async Task<AuditLogPageDTO> GetByProjectAsync(
-            Guid projectId, AuditLogFilterDTO filter, Guid actorId, bool isSystemAdmin)
+            Guid projectId, AuditLogFilterDTO filter, Guid actorId)
         {
             var project = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId)
                 ?? throw new ApiExceptionResponse("Project not found.", 404);
 
+            // Manager là chủ dự án (Project.ManagerAccountId) — quy tắc riêng của audit, không phải ACL.
             var isManager = project.ManagerAccountId == actorId;
-            var isProjectAdmin = await _folderTreeRepository.HasFullAccessAsync(projectId, actorId);
+            var hasFullAccess = await _permission.HasProjectFullAccessAsync(projectId, actorId);
 
-            if (!isSystemAdmin && !isManager && !isProjectAdmin)
+            if (!hasFullAccess && !isManager)
                 throw new ApiExceptionResponse(
                     "Only system admin or the project manager can view the project audit log.", 403);
 
@@ -107,7 +108,7 @@ namespace Application.Services
                 ?? throw new ApiExceptionResponse("Project not found.", 404);
 
             // Mặc định từ chối: chỉ thấy log gắn folder mình có quyền View, hoặc gắn nhóm mình.
-            var viewableFolderIds = await _folderTreeRepository.GetViewableFolderIdsAsync(projectId, actorId);
+            var viewableFolderIds = await _permission.GetViewableFolderIdsAsync(projectId, actorId);
             var myGroupIds = await _auditLogRepository.GetMyActiveGroupIdsAsync(projectId, actorId);
 
             // Không thuộc nhóm nào và không được xem folder nào -> trang rỗng (không lộ dữ liệu).
