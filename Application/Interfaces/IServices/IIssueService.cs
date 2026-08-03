@@ -1,4 +1,4 @@
-using Application.DTOs.RequestDTOs.Issue;
+﻿using Application.DTOs.RequestDTOs.Issue;
 using Application.DTOs.ResponseDTOs.Issue;
 
 namespace Application.Interfaces.IServices
@@ -16,6 +16,8 @@ namespace Application.Interfaces.IServices
 
         /// <summary>Danh dau issue la "Da giai quyet" (map sang IssueStatus.Closed, khong can sua file).</summary>
         Task<IssueResponseDTO> ResolveAsync(Guid issueId, Guid actorId);
+        Task<IssueResponseDTO> StartProgressAsync(Guid issueId, Guid actorId);
+        Task<IssueResponseDTO> MarkAnsweredAsync(Guid issueId, Guid actorId);
 
         Task<IEnumerable<Guid>> GetParticipantsAsync(Guid issueId);
         Task AddParticipantAsync(Guid issueId, Guid accountId, Guid actorId);
@@ -24,5 +26,6 @@ namespace Application.Interfaces.IServices
             Guid issueId, Stream content, string fileName, long fileSizeBytes, Guid actorId);
         Task<IEnumerable<Guid>> GetOpenIssueFileIdsAsync(IEnumerable<Guid> fileItemIds);
         Task<IEnumerable<AssignableMemberDTO>> GetAssignableMembersAsync(Guid fileItemId);
+        Task<IEnumerable<AssignableOrganizationDTO>> GetAssignableOrganizationsAsync(Guid fileItemId);
     }
 }

@@ -1,4 +1,4 @@
-using Application.DTOs.RequestDTOs.Issue;
+﻿using Application.DTOs.RequestDTOs.Issue;
 using Application.DTOs.ResponseDTOs.Common;
 using Application.DTOs.ResponseDTOs.Issue;
 using Application.ExceptionMiddleware;
@@ -11,6 +11,7 @@ using Domain.Enum.Cde;
 using Domain.Enum.Discussion;
 using Domain.Enum.Group;
 using Domain.Enum.Issue;
+using Domain.Enum.Permission;
 using Domain.Enum.Project;
 
 namespace Application.Services
@@ -237,6 +238,7 @@ namespace Application.Services
             var entity = _mapper.Map<Issue>(dto);
             entity.Id = Guid.NewGuid();
             entity.RaisedByAccountId = actorId;
+            entity.Status = IssueStatus.Open;
             var now = DateTime.UtcNow;
             entity.CreatedAt = now;
             entity.UpdatedAt = now;
@@ -254,6 +256,10 @@ namespace Application.Services
                     $"Bạn được gán issue \"{entity.Title}\".",
                     linkType: "Issue",
                     linkId: entity.Id.ToString());
+            }
+            else if (entity.AssignedToOrganizationId.HasValue)
+            {
+                await NotifyOrganizationLeadersAsync(entity, actorId);
             }
 
             var result = _mapper.Map<IssueResponseDTO>(entity);
@@ -324,6 +330,60 @@ namespace Application.Services
             if (issue.LinkedFileItemId.HasValue)
                 await _issueBroadcaster.IssueUpdatedAsync(issue.LinkedFileItemId.Value, result);
 
+            return result;
+        }
+
+        public async Task<IssueResponseDTO> StartProgressAsync(Guid issueId, Guid actorId)
+            => await TransitionAsync(issueId, actorId, IssueStatus.InProgress,
+                new[] { IssueStatus.Open, IssueStatus.Answered },
+                "Only the assignee can start working on this issue.",
+                title => $"Issue \"{title}\" da duoc nhan xu ly.");
+
+        public async Task<IssueResponseDTO> MarkAnsweredAsync(Guid issueId, Guid actorId)
+            => await TransitionAsync(issueId, actorId, IssueStatus.Answered,
+                new[] { IssueStatus.Open, IssueStatus.InProgress },
+                "Only the assignee can answer this issue.",
+                title => $"Issue \"{title}\" da duoc phan hoi, cho nguoi tao xac nhan.");
+
+        private async Task<IssueResponseDTO> TransitionAsync(
+            Guid issueId, Guid actorId, IssueStatus target, IssueStatus[] allowedFrom,
+            string forbiddenMessage, Func<string, string> notifyText)
+        {
+            var issue = await _unitOfWork.Repository<Issue>().GetByIdAsync(issueId)
+                ?? throw new ApiExceptionResponse("Issue not found.", 404);
+
+            if (issue.AssignedToAccountId.HasValue)
+            {
+                if (issue.AssignedToAccountId.Value != actorId)
+                    throw new ApiExceptionResponse(forbiddenMessage, 403);
+            }
+            else
+            {
+                var participantIds = await GetIssueParticipantAccountIdsAsync(issue);
+                if (!participantIds.Contains(actorId))
+                    throw new ApiExceptionResponse(forbiddenMessage, 403);
+            }
+
+            if (!allowedFrom.Contains(issue.Status))
+                throw new ApiExceptionResponse($"Cannot move this issue to {target} from {issue.Status}.", 400);
+
+            issue.Status = target;
+            issue.UpdatedAt = DateTime.UtcNow;
+            await _unitOfWork.CommitAsync();
+
+            var recipientIds = (await GetIssueParticipantAccountIdsAsync(issue))
+                .Where(id => id != actorId)
+                .ToList();
+            if (recipientIds.Count > 0)
+            {
+                await _notification.NotifyManyAsync(
+                    recipientIds, notifyText(issue.Title),
+                    linkType: "Issue", linkId: issue.Id.ToString());
+            }
+
+            var result = _mapper.Map<IssueResponseDTO>(issue);
+            if (issue.LinkedFileItemId.HasValue)
+                await _issueBroadcaster.IssueUpdatedAsync(issue.LinkedFileItemId.Value, result);
             return result;
         }
 
@@ -491,6 +551,85 @@ namespace Application.Services
                     GroupId = m.GroupId,
                     GroupName = groupNameById[m.GroupId]
                 });
+        }
+
+        private async Task NotifyOrganizationLeadersAsync(Issue issue, Guid actorId)
+        {
+            if (!issue.AssignedToOrganizationId.HasValue) return;
+
+            var groupIds = (await _unitOfWork.Repository<Group>().FindAsync(
+                    g => g.OrganizationId == issue.AssignedToOrganizationId.Value))
+                .Select(g => g.Id)
+                .ToHashSet();
+            if (groupIds.Count == 0) return;
+
+            var leaderIds = (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                    m => groupIds.Contains(m.GroupId)
+                      && m.Role == GroupMemberRole.Leader
+                      && m.Status == GroupMemberStatus.Active))
+                .Select(m => m.AccountId)
+                .Where(id => id != actorId)
+                .Distinct()
+                .ToList();
+            if (leaderIds.Count == 0) return;
+
+            await _notification.NotifyManyAsync(
+                leaderIds,
+                $"Đơn vị của bạn được giao issue \"{issue.Title}\".",
+                linkType: "Issue",
+                linkId: issue.Id.ToString());
+        }
+
+        public async Task<IEnumerable<AssignableOrganizationDTO>> GetAssignableOrganizationsAsync(Guid fileItemId)
+        {
+            var groupIds = await ResolveAssignableGroupIdsAsync(fileItemId);
+            if (groupIds.Count == 0) return Enumerable.Empty<AssignableOrganizationDTO>();
+
+            var groups = (await _unitOfWork.Repository<Group>().FindAsync(
+                    g => groupIds.Contains(g.Id) && g.OrganizationId != null))
+                .ToList();
+            if (groups.Count == 0) return Enumerable.Empty<AssignableOrganizationDTO>();
+
+            var organizationIds = groups.Select(g => g.OrganizationId!.Value).ToHashSet();
+            var organizationsById = (await _unitOfWork.Repository<Organization>().FindAsync(
+                    o => organizationIds.Contains(o.Id)))
+                .ToDictionary(o => o.Id);
+
+            return groups
+                .Where(g => organizationsById.ContainsKey(g.OrganizationId!.Value))
+                .GroupBy(g => g.OrganizationId!.Value)
+                .Select(grp => new AssignableOrganizationDTO
+                {
+                    OrganizationId = grp.Key,
+                    OrganizationName = organizationsById[grp.Key].DisplayName
+                        ?? organizationsById[grp.Key].LegalName,
+                    GroupNames = grp.Select(g => g.Name).OrderBy(n => n).ToList()
+                })
+                .OrderBy(o => o.OrganizationName)
+                .ToList();
+        }
+
+        private async Task<HashSet<Guid>> ResolveAssignableGroupIdsAsync(Guid fileItemId)
+        {
+            var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+                ?? throw new ApiExceptionResponse("File not found.", 404);
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
+                ?? throw new ApiExceptionResponse("File folder not found.", 404);
+
+            var permittedParticipantIds = (await _unitOfWork.Repository<FolderPermission>().FindAsync(
+                    fp => fp.FolderId == folder.Id
+                       && fp.Status == PermissionStatus.Active
+                       && fp.CanView
+                       && fp.ProjectParticipantId != null))
+                .Select(fp => fp.ProjectParticipantId!.Value)
+                .ToHashSet();
+            if (permittedParticipantIds.Count == 0) return new HashSet<Guid>();
+
+            return (await _unitOfWork.Repository<ProjectParticipant>().FindAsync(
+                    p => permittedParticipantIds.Contains(p.Id)
+                      && p.Status == ProjectParticipantStatus.Active))
+                .Select(p => p.GroupId)
+                .ToHashSet();
         }
 
         private async Task<IssueAttachmentResponseDTO> BuildAttachmentDtoAsync(IssueAttachment attachment)

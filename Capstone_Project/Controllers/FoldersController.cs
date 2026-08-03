@@ -1,4 +1,4 @@
-using Application.DTOs.ApiResponseDTO;
+﻿using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Folder;
 using Application.Interfaces.IServices;
 using Capstone_Project.Extensions;
@@ -55,14 +55,14 @@ namespace Capstone_Project.Controllers
         [HttpPut("{id:guid}")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateFolderDTO dto)
         {
-            //await _permission.RequireAsync(User.GetAccountId(), id, FolderAction.Edit);
+            await _bootstrap.EnsureCanManageFolderAsync(id, User.GetAccountId(), User.GetSystemRole());
             return Ok(ApiResponse.Success("Updated successfully", await _service.UpdateAsync(id, dto, User.GetAccountId())));
         }
 
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> Delete(Guid id)
         {
-            //await _permission.RequireAsync(User.GetAccountId(), id, FolderAction.Edit);
+            await _bootstrap.EnsureCanManageFolderAsync(id, User.GetAccountId(), User.GetSystemRole());
             await _service.DeleteAsync(id, User.GetAccountId());
             return Ok(ApiResponse.Success("Deleted successfully"));
         }

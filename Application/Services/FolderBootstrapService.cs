@@ -1,4 +1,4 @@
-using Application.DTOs.ResponseDTOs.Folder;
+﻿using Application.DTOs.ResponseDTOs.Folder;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
@@ -239,7 +239,18 @@ namespace Application.Services
             return null;
         }
 
-        private async Task EnsureCanCreateSubFolderAsync(Guid actor, Folder parent, string actorRole)
+        public async Task EnsureCanManageFolderAsync(Guid folderId, Guid actorId, string? actorRole)
+        {
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
+                ?? throw new ApiExceptionResponse("Folder not found.", 404);
+
+            if (folder.ParentFolderId == null)
+                throw new ApiExceptionResponse("Root CDE areas cannot be renamed, moved or deleted.", 400);
+
+            await EnsureCanCreateSubFolderAsync(actorId, folder, actorRole);
+        }
+
+        private async Task EnsureCanCreateSubFolderAsync(Guid actor, Folder parent, string? actorRole)
         {
             if (actorRole == AccountRole.Admin.ToString())
                 return;
