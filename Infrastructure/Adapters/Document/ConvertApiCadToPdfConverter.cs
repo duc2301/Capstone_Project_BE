@@ -4,7 +4,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Microsoft.Extensions.Configuration;
 
-namespace Application.Services
+namespace Infrastructure.Adapters.Document
 {
     // Convert DWG/DWGX -> PDF qua ConvertAPI (https://www.convertapi.com)
     public class ConvertApiCadToPdfConverter : ICadToPdfConverter

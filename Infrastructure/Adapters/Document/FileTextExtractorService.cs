@@ -6,7 +6,7 @@ using Syncfusion.Pdf.Parsing;
 using System.Text;
 
 
-namespace Application.Services
+namespace Infrastructure.Adapters.Document
 {
     public class FileTextExtractorService : IFileTextExtractor
     {

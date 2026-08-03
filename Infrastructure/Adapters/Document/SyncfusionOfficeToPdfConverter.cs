@@ -8,7 +8,7 @@ using Syncfusion.PresentationRenderer;
 using Syncfusion.XlsIO;
 using Syncfusion.XlsIORenderer;
 
-namespace Application.Services
+namespace Infrastructure.Adapters.Document
 {
     // Convert Office -> PDF bằng Syncfusion (Community license đăng ký ở Program.cs).
     public class SyncfusionOfficeToPdfConverter : IOfficeToPdfConverter

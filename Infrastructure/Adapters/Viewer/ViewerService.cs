@@ -8,7 +8,7 @@ using Application.Interfaces.IServices;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 
-namespace Application.Services
+namespace Infrastructure.Adapters.Viewer
 {
     public class ViewerService : IViewerService
     {

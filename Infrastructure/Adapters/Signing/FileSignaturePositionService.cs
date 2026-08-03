@@ -9,7 +9,7 @@ using Domain.Enum.Cde;
 using Domain.Enum.File;
 using iText.Kernel.Pdf;
 
-namespace Application.Services
+namespace Infrastructure.Adapters.Signing
 {
     /// <summary>
     /// Luu vi tri dat chu ky truc quan tren PDF/Word/Excel.

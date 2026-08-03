@@ -8,7 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Application.Services
+namespace Infrastructure.Adapters.Ai
 {
     public class AIService : IAIService
     {

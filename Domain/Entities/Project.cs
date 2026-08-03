@@ -1,4 +1,4 @@
-﻿
+
 using Domain.Enum.Project;
 
 namespace Domain.Entities

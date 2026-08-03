@@ -1,7 +1,7 @@
 using Application.Interfaces.IServices;
 using Microsoft.Extensions.Logging;
 
-namespace Application.Services
+namespace Infrastructure.Adapters.Identity
 {
     public class MockEmailService : IEmailService
     {
