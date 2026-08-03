@@ -12,14 +12,18 @@ namespace Domain.Entities
 
         public string? ComponentName { get; set; }
 
+        public string? Variant { get; set; }
+
         public string FieldName { get; set; } = null!;
 
         public string FieldNameNormalized { get; set; } = null!;
 
+        public string ParamName { get; set; } = null!;
+
+        public string ParamNameNormalized { get; set; } = null!;
+
         public LoiParamGroup ParamGroup { get; set; }
 
-        public int Stage { get; set; }
-
-        public bool IsCommon { get; set; }
+        public LoiStage Stage { get; set; }
     }
 }

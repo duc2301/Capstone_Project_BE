@@ -12,6 +12,8 @@ namespace Domain.Entities
 
         public LoiVerdict Verdict { get; set; }
 
+        public LoiStage TargetStage { get; set; } = LoiStage.SchematicDesign;
+
         public double CoveragePercent { get; set; }
 
         public int TotalElements { get; set; }
@@ -20,11 +22,19 @@ namespace Domain.Entities
 
         public int ElementsWithUnknownType { get; set; }
 
+        public int ElementsNotCoveredByStandard { get; set; }
+
         public string? SchemaName { get; set; }
 
         public string? ParserUsed { get; set; }
 
         public string? MissingSummaryJson { get; set; }
+
+        public string? UnmappedSummaryJson { get; set; }
+
+        public string? NotCoveredSummaryJson { get; set; }
+
+        public string? SectionsJson { get; set; }
 
         public string? Error { get; set; }
 
