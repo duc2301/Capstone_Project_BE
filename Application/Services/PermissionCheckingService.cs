@@ -3,13 +3,16 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Domain.Entities;
+using Domain.Enum.Account;
 
 namespace Application.Services
 {
     /// <summary>
-    /// Centralized permission evaluation. Baseline flow only:
-    /// look up the user's permission record and check the requested flag —
-    /// no inheritance, no PM/Admin bypass, no caching yet.
+    /// Centralized permission evaluation. Flow:
+    /// system admin bypasses everything; otherwise look up the user's permission record
+    /// and check the requested flag. A FilePermission record is an OVERRIDE — when a file
+    /// has none (the normal case, since they are only created by explicit admin action),
+    /// the check falls back to the owning folder's ACL. No PM bypass, no caching yet.
     /// </summary>
     public class PermissionCheckingService : IPermissionCheckingService
     {
@@ -45,23 +48,26 @@ namespace Application.Services
 
         // ===== File permissions =====
 
+        // Mỗi method truyền 2 selector cùng nghĩa: một đọc cờ trên FilePermission (override riêng
+        // của file), một đọc cờ tương ứng trên FolderPermission (dùng khi file chưa có override).
+
         public Task CanViewFileAsync(Guid fileItemId, Guid accountId)
-            => CheckFileAsync(fileItemId, accountId, fp => fp.CanView, "View");
+            => CheckFileAsync(fileItemId, accountId, fp => fp.CanView, fp => fp.CanView, "View");
 
         public Task CanEditFileAsync(Guid fileItemId, Guid accountId)
-            => CheckFileAsync(fileItemId, accountId, fp => fp.CanEdit, "Edit");
+            => CheckFileAsync(fileItemId, accountId, fp => fp.CanEdit, fp => fp.CanEdit, "Edit");
 
         //public Task CanUpdateFileAsync(Guid fileItemId, Guid accountId)
-        //    => CheckFileAsync(fileItemId, accountId, fp => fp.CanUpdate, "Update");
+        //    => CheckFileAsync(fileItemId, accountId, fp => fp.CanUpdate, fp => fp.CanUpdate, "Update");
 
         //public Task CanDownloadFileAsync(Guid fileItemId, Guid accountId)
-        //    => CheckFileAsync(fileItemId, accountId, fp => fp.CanDownload, "Download");
+        //    => CheckFileAsync(fileItemId, accountId, fp => fp.CanDownload, fp => fp.CanDownload, "Download");
 
         //public Task CanVerifyFileAsync(Guid fileItemId, Guid accountId)
-        //    => CheckFileAsync(fileItemId, accountId, fp => fp.CanVerify, "Verify");
+        //    => CheckFileAsync(fileItemId, accountId, fp => fp.CanVerify, fp => fp.CanVerify, "Verify");
 
         public Task CanApproveFileAsync(Guid fileItemId, Guid accountId)
-            => CheckFileAsync(fileItemId, accountId, fp => fp.CanApprove, "Approve");
+            => CheckFileAsync(fileItemId, accountId, fp => fp.CanApprove, fp => fp.CanApprove, "Approve");
 
         // ===== Current-user permission retrieval (viewing only) =====
 
@@ -197,26 +203,69 @@ namespace Application.Services
 
         // ===== Shared evaluation =====
 
+        /// <summary>
+        /// System admin bypasses every check. Resolved here rather than at each call site so
+        /// services that never receive an isSystemAdmin flag (FolderService, FileItemService…)
+        /// still get the bypass, and no caller can forget to apply it.
+        /// </summary>
+        private async Task<bool> IsSystemAdminAsync(Guid accountId)
+        {
+            var account = await _permissionCheckingRepository.GetAccountAsync(accountId);
+            return account?.Role == AccountRole.Admin;
+        }
+
         private async Task CheckFolderAsync(
             Guid folderId, Guid accountId, Func<FolderPermission, bool> hasPermission, string action)
         {
-            var permission = await _permissionCheckingRepository
-                .GetUserFolderPermissionAsync(folderId, accountId);
+            if (await IsSystemAdminAsync(accountId)) return;
 
-            if (permission == null || !hasPermission(permission))
+            if (!await HasFolderPermissionAsync(folderId, accountId, hasPermission))
                 throw new ApiExceptionResponse(
                     $"You do not have '{action}' permission on this folder.", 403);
         }
 
+        /// <summary>
+        /// A FilePermission record is an override granted per file by an admin. Most files never
+        /// get one (nothing creates them on upload), so when it is absent the decision defers to
+        /// the folder that holds the file — the ACL that IS bootstrapped, in FolderBootstrapService.
+        /// Present but denying wins: an explicit per-file record is not overridden by the folder.
+        /// </summary>
         private async Task CheckFileAsync(
-            Guid fileItemId, Guid accountId, Func<FilePermission, bool> hasPermission, string action)
+            Guid fileItemId,
+            Guid accountId,
+            Func<FilePermission, bool> hasFilePermission,
+            Func<FolderPermission, bool> hasFolderPermission,
+            string action)
         {
-            var permission = await _permissionCheckingRepository
+            if (await IsSystemAdminAsync(accountId)) return;
+
+            var filePermission = await _permissionCheckingRepository
                 .GetUserFilePermissionAsync(fileItemId, accountId);
 
-            if (permission == null || !hasPermission(permission))
+            if (filePermission != null)
+            {
+                if (hasFilePermission(filePermission)) return;
+
                 throw new ApiExceptionResponse(
                     $"You do not have '{action}' permission on this file.", 403);
+            }
+
+            var fileItem = await _permissionCheckingRepository.GetFileItemAsync(fileItemId)
+                ?? throw new ApiExceptionResponse("File not found.", 404);
+
+            if (await HasFolderPermissionAsync(fileItem.FolderId, accountId, hasFolderPermission)) return;
+
+            throw new ApiExceptionResponse(
+                $"You do not have '{action}' permission on this file.", 403);
+        }
+
+        private async Task<bool> HasFolderPermissionAsync(
+            Guid folderId, Guid accountId, Func<FolderPermission, bool> hasPermission)
+        {
+            var permission = await _permissionCheckingRepository
+                .GetUserFolderPermissionAsync(folderId, accountId);
+
+            return permission != null && hasPermission(permission);
         }
     }
 }

@@ -6,6 +6,7 @@ namespace Application.Interfaces.IServices
     /// Centralized permission checking. Features call the matching method here
     /// before running their business logic instead of implementing their own checks.
     /// Each method throws a 403 ApiExceptionResponse with a universal message when denied.
+    /// System admins bypass every check.
     /// </summary>
     public interface IPermissionCheckingService
     {
@@ -19,7 +20,9 @@ namespace Application.Interfaces.IServices
 
         Task CanUploadToFolderAsync(Guid folderId, Guid accountId);
 
-        // File permissions
+        // File permissions.
+        // A FilePermission record overrides the folder; when the file has none — the normal case,
+        // since nothing creates them on upload — the check falls back to the owning folder's ACL.
         Task CanViewFileAsync(Guid fileItemId, Guid accountId);
         Task CanEditFileAsync(Guid fileItemId, Guid accountId);
         //Task CanUpdateFileAsync(Guid fileItemId, Guid accountId);

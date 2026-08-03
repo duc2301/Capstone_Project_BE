@@ -216,7 +216,7 @@ namespace Application.Services
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
-            //await _permission.RequireAsync(actor, fileItem.FolderId, FolderAction.Download);
+            await _permission.CanViewFileAsync(fileItem.Id, actor);
 
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
@@ -245,7 +245,7 @@ namespace Application.Services
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
-            //await _permission.RequireAsync(actor, fileItem.FolderId, FolderAction.Download);
+            await _permission.CanViewFileAsync(fileItem.Id, actor);
 
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
