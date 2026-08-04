@@ -116,18 +116,18 @@ INSERT INTO "GroupMembers" ("Id","GroupId","AccountId","Role","Status","JoinedAt
 ('c1000000-0000-0000-0000-000000000009','c0000000-0000-0000-0000-000000000006','a0000000-0000-0000-0000-000000000009',0,1,'2026-01-13 08:00:00+07');
 
 -- ============================================================================
--- 5) PROJECTS  Status: Planning=0,Active=1,OnHold=2,Completed=3,Closed=4
+-- 5) PROJECTS  Status: Active=0, Completed=1
 --    ⚠️ Cột "Phase" ĐÃ BỎ (migration AddProjectOwnerAndContactAddress): hệ thống
---       không quản lý tiến độ, chỉ giữ Status để biết dự án còn hoạt động hay đã đóng.
+--       không quản lý tiến độ, chỉ giữ Status để biết dự án còn hoạt động hay đã xong.
 --    OwnerOrganizationId -> "Organizations" = CHỦ ĐẦU TƯ (nullable, ON DELETE SET NULL).
 --    ContactAddress      = địa chỉ liên hệ, TÁCH khỏi địa chỉ công trình ở "ProjectLocations".
 --    d0*3 để trống chủ đầu tư + địa chỉ liên hệ → test UI hiển thị "Chưa cập nhật".
 -- ============================================================================
 INSERT INTO "Projects" ("Id","ProjectName","ProjectDescription","Status","ManagerAccountId","OwnerOrganizationId","ContactAddress","CreatedAt","UpdatedAt") VALUES
-('d0000000-0000-0000-0000-000000000001','Khu phức hợp căn hộ Riverside Tower','Tổ hợp căn hộ cao cấp 3 tháp, 35 tầng ven sông Sài Gòn.',1,'a0000000-0000-0000-0000-000000000002','b0000000-0000-0000-0000-000000000001','Tầng 12, Tòa nhà ABC, 45 Lê Duẩn, Quận 1, TP.HCM','2026-01-15 08:00:00+07',NULL),
+('d0000000-0000-0000-0000-000000000001','Khu phức hợp căn hộ Riverside Tower','Tổ hợp căn hộ cao cấp 3 tháp, 35 tầng ven sông Sài Gòn.',0,'a0000000-0000-0000-0000-000000000002','b0000000-0000-0000-0000-000000000001','Tầng 12, Tòa nhà ABC, 45 Lê Duẩn, Quận 1, TP.HCM','2026-01-15 08:00:00+07',NULL),
 ('d0000000-0000-0000-0000-000000000002','Cầu vượt nút giao Cát Lái','Cầu vượt thép giảm ùn tắc nút giao Cát Lái, TP. Thủ Đức.',0,'a0000000-0000-0000-0000-000000000002','b0000000-0000-0000-0000-000000000002','45 Lê Duẩn, Quận 1, TP.HCM','2026-01-16 08:00:00+07',NULL),
-('d0000000-0000-0000-0000-000000000003','Nhà máy xử lý nước thải Bình Hưng','Nhà máy xử lý nước thải công suất 469.000 m3/ngày đêm.',2,NULL,NULL,NULL,'2026-01-17 08:00:00+07',NULL),
-('d0000000-0000-0000-0000-000000000004','Trung tâm thương mại Sài Gòn Center','TTTM kết hợp văn phòng cho thuê khu trung tâm Quận 1.',3,'a0000000-0000-0000-0000-000000000002','b0000000-0000-0000-0000-000000000001','123 Nguyễn Hữu Cảnh, Bình Thạnh, TP.HCM','2026-01-18 08:00:00+07','2026-02-01 10:30:00+07');
+('d0000000-0000-0000-0000-000000000003','Nhà máy xử lý nước thải Bình Hưng','Nhà máy xử lý nước thải công suất 469.000 m3/ngày đêm.',0,NULL,NULL,NULL,'2026-01-17 08:00:00+07',NULL),
+('d0000000-0000-0000-0000-000000000004','Trung tâm thương mại Sài Gòn Center','TTTM kết hợp văn phòng cho thuê khu trung tâm Quận 1.',1,'a0000000-0000-0000-0000-000000000002','b0000000-0000-0000-0000-000000000001','123 Nguyễn Hữu Cảnh, Bình Thạnh, TP.HCM','2026-01-18 08:00:00+07','2026-02-01 10:30:00+07');
 
 -- ============================================================================
 -- 6) PROJECT LOCATIONS

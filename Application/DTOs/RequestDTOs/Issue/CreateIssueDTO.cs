@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using Domain.Enum.Issue;
 
 namespace Application.DTOs.RequestDTOs.Issue
@@ -12,14 +12,12 @@ namespace Application.DTOs.RequestDTOs.Issue
         public IssueType Type { get; set; }
 
         [Required]
-        [StringLength(250)]
+        [StringLength(250, MinimumLength = 8)]
         public string Title { get; set; } = null!;
 
-        [StringLength(4000)]
-        public string? Description { get; set; }
-
         [Required]
-        public IssueStatus Status { get; set; }
+        [StringLength(4000, MinimumLength = 15)]
+        public string Description { get; set; } = null!;
 
         [Required]
         public IssuePriority Priority { get; set; }

@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace Application.DTOs.RequestDTOs.Organization
 {
@@ -12,6 +12,7 @@ namespace Application.DTOs.RequestDTOs.Organization
 
         [StringLength(300)]
         public string? DisplayName { get; set; }
+        public string? InternationalName { get; set; }
 
         public Guid? OrganizationTypeId { get; set; }
 

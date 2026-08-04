@@ -16,6 +16,7 @@ namespace Application.DTOs.ResponseDTOs.FileItem
         public string? DisplayVersion { get; set; }
         public string? Format { get; set; }
         public long SizeBytes { get; set; }
+        public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
 
         public bool AlreadyLinked { get; set; }

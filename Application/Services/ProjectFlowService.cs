@@ -18,19 +18,22 @@ namespace Application.Services
         private readonly IFolderBootstrapService _folderBootstrap;
         private readonly IMapper _mapper;
         private readonly IAuditLogService _auditLog;
+        private readonly IProjectService _projectService;
 
         public ProjectFlowService(
             IUnitOfWork unitOfWork,
             INotificationService notification,
             IFolderBootstrapService folderBootstrap,
             IMapper mapper,
-            IAuditLogService auditLog)
+            IAuditLogService auditLog,
+            IProjectService projectService)
         {
             _unitOfWork = unitOfWork;
             _notification = notification;
             _folderBootstrap = folderBootstrap;
             _mapper = mapper;
             _auditLog = auditLog;
+            _projectService = projectService;
         }
 
         // Admin gán 1 account hiện có làm PM của project.
@@ -159,11 +162,12 @@ namespace Application.Services
                 .Select(pp => pp.ProjectId)
                 .ToHashSet();
 
-            var projects = (await _unitOfWork.Repository<Project>()
+            var projectIds = (await _unitOfWork.Repository<Project>()
                     .FindAsync(p => participantProjectIds.Contains(p.Id) || p.ManagerAccountId == actor))
+                .Select(p => p.Id)
                 .ToList();
 
-            return projects.Select(_mapper.Map<ProjectResponseDTO>).ToList();
+            return await _projectService.GetByIdsAsync(projectIds);
         }
 
         public async Task<List<ParticipantResponseDTO>> GetParticipantsAsync(Guid projectId)

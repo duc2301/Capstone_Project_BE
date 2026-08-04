@@ -1,4 +1,4 @@
-using Application.DTOs.ApiResponseDTO;
+﻿using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Issue;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
@@ -40,6 +40,10 @@ namespace Capstone_Project.Controllers
             => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetOpenIssueFileIdsAsync(dto.FileItemIds)));
 
         //Danh sach nhom o vung WIP
+        [HttpGet("assignable-organizations/{fileItemId:guid}")]
+        public async Task<IActionResult> GetAssignableOrganizations(Guid fileItemId)
+            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAssignableOrganizationsAsync(fileItemId)));
+
         [HttpGet("assignable-members/{fileItemId:guid}")]
         public async Task<IActionResult> GetAssignableMembers(Guid fileItemId)
             => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAssignableMembersAsync(fileItemId)));
@@ -66,6 +70,14 @@ namespace Capstone_Project.Controllers
         [HttpPost("{id:guid}/resolve")]
         public async Task<IActionResult> Resolve(Guid id)
             => Ok(ApiResponse.Success("Issue resolved", await _service.ResolveAsync(id, User.GetAccountId())));
+
+        [HttpPost("{id:guid}/start")]
+        public async Task<IActionResult> StartProgress(Guid id)
+            => Ok(ApiResponse.Success("Issue in progress", await _service.StartProgressAsync(id, User.GetAccountId())));
+
+        [HttpPost("{id:guid}/answer")]
+        public async Task<IActionResult> MarkAnswered(Guid id)
+            => Ok(ApiResponse.Success("Issue answered", await _service.MarkAnsweredAsync(id, User.GetAccountId())));
 
         [HttpGet("{id:guid}/participants")]
         public async Task<IActionResult> GetParticipants(Guid id)
