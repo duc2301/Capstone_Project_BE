@@ -5,7 +5,9 @@ namespace Application.Interfaces.IServices
     /// <summary>
     /// Centralized permission checking. Features call the matching method here
     /// before running their business logic instead of implementing their own checks.
-    /// Each method throws a 403 ApiExceptionResponse with a universal message when denied.
+    /// Can* methods throw a 403 ApiExceptionResponse with a universal message when denied;
+    /// Has* methods return a bool for callers that filter or branch instead of gating.
+    /// System admins and project admins (PMs) bypass every check.
     /// </summary>
     public interface IPermissionCheckingService
     {
@@ -19,13 +21,30 @@ namespace Application.Interfaces.IServices
 
         Task CanUploadToFolderAsync(Guid folderId, Guid accountId);
 
-        // File permissions
+        // File permissions.
+        // A FilePermission record overrides the folder; when the file has none — the normal case,
+        // since nothing creates them on upload — the check falls back to the owning folder's ACL.
         Task CanViewFileAsync(Guid fileItemId, Guid accountId);
         Task CanEditFileAsync(Guid fileItemId, Guid accountId);
         //Task CanUpdateFileAsync(Guid fileItemId, Guid accountId);
         //Task CanDownloadFileAsync(Guid fileItemId, Guid accountId);
         //Task CanVerifyFileAsync(Guid fileItemId, Guid accountId);
         Task CanApproveFileAsync(Guid fileItemId, Guid accountId);
+
+        // ===== Non-throwing checks (for callers that filter a list or branch on access) =====
+        Task<bool> HasViewFolderAsync(Guid folderId, Guid accountId);
+        Task<bool> HasEditFolderAsync(Guid folderId, Guid accountId);
+        Task<bool> HasViewFileAsync(Guid fileItemId, Guid accountId);
+
+        // ===== Project-scoped =====
+        /// <summary>True if the account is a system admin.</summary>
+        Task<bool> HasSystemAdminAsync(Guid accountId);
+
+        /// <summary>True if the account has full access to the project (system admin or ProjectAdmin/PM).</summary>
+        Task<bool> HasProjectFullAccessAsync(Guid projectId, Guid accountId);
+
+        /// <summary>FolderIds in the project the account can View — for building filtered list views.</summary>
+        Task<HashSet<Guid>> GetViewableFolderIdsAsync(Guid projectId, Guid accountId);
 
         // ===== Current-user permission retrieval (viewing only, no authorization) =====
 

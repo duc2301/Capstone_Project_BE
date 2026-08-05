@@ -32,7 +32,7 @@ namespace Capstone_Project.Controllers
         [HttpGet("by-project/{projectId:guid}")]
         public async Task<IActionResult> GetByProject(Guid projectId)
             => Ok(ApiResponse.Success("Retrieved successfully",
-                await _service.GetByProjectAsync(projectId, User.GetAccountId(), User.IsAdmin())));
+                await _service.GetByProjectAsync(projectId, User.GetAccountId())));
 
 
         [HttpPost("open-file-ids")]

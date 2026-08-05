@@ -38,11 +38,11 @@ namespace Application.Interfaces.IServices
         // ===== ĐỌC =====
 
         // Admin hệ thống: nhật ký mọi dự án (có thể lọc theo 1 dự án qua filter.ProjectId).
-        Task<AuditLogPageDTO> GetSystemAsync(AuditLogFilterDTO filter, bool isSystemAdmin);
+        Task<AuditLogPageDTO> GetSystemAsync(AuditLogFilterDTO filter, Guid actorId);
 
         // Admin hoặc PM của dự án: toàn bộ nhật ký trong dự án.
         Task<AuditLogPageDTO> GetByProjectAsync(
-            Guid projectId, AuditLogFilterDTO filter, Guid actorId, bool isSystemAdmin);
+            Guid projectId, AuditLogFilterDTO filter, Guid actorId);
 
         // Thành viên: CHỈ nhật ký của folder mình được xem hoặc của nhóm mình.
         Task<AuditLogPageDTO> GetMyInProjectAsync(

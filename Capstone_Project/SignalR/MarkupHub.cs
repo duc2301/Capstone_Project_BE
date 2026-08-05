@@ -24,9 +24,8 @@ namespace Capstone_Project.SignalR
 
             var accountId = Context.User?.GetAccountIdOrNull()
                 ?? throw new HubException("Authentication required.");
-            var isAdmin = Context.User?.IsAdmin() ?? false;
 
-            if (!await _markupService.CanAccessFileMarkupAsync(id, accountId, isAdmin, Context.ConnectionAborted))
+            if (!await _markupService.CanAccessFileMarkupAsync(id, accountId, Context.ConnectionAborted))
                 throw new HubException("You do not have permission to view this file.");
 
             await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(fileItemId));

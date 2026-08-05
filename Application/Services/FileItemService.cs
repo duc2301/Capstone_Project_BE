@@ -16,6 +16,7 @@ namespace Application.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IFolderPermissionService _permission;
+        private readonly IPermissionCheckingService _permissionChecking;
         private readonly IFileZoneResolverService _zoneResolver;
         private readonly IIssueService _issueService;
         private readonly IFileVersionService _fileVersionService;
@@ -25,6 +26,7 @@ namespace Application.Services
         public FileItemService(
             IUnitOfWork unitOfWork,
             IFolderPermissionService permission,
+            IPermissionCheckingService permissionChecking,
             IFileZoneResolverService zoneResolver,
             IIssueService issueService,
             IFileVersionService fileVersionService,
@@ -33,6 +35,7 @@ namespace Application.Services
         {
             _unitOfWork = unitOfWork;
             _permission = permission;
+            _permissionChecking = permissionChecking;
             _zoneResolver = zoneResolver;
             _issueService = issueService;
             _fileVersionService = fileVersionService;
@@ -146,7 +149,8 @@ namespace Application.Services
         {
             _ = await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
                 ?? throw new ApiExceptionResponse("Folder not found.", 404);
-            //await _permission.RequireAsync(actorId, folderId, FolderAction.View);
+
+            await _permissionChecking.CanViewFolderAsync(folderId, actorId);
 
             var files = (await _unitOfWork.Repository<FileItem>()
                     .FindAsync(f => f.FolderId == folderId))

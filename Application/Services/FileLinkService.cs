@@ -1,6 +1,5 @@
 using Application.DTOs.ResponseDTOs.FileItem;
 using Application.ExceptionMiddleware;
-using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
@@ -10,39 +9,36 @@ namespace Application.Services
     public class FileLinkService : IFileLinkService
     {
         private readonly IUnitOfWork _unitOfWork;
-        private readonly IFolderTreeRepository _folderTreeRepository;
-        private readonly IPermissionCheckingRepository _permissionRepository;
+        private readonly IPermissionCheckingService _permission;
         private readonly IFileZoneResolverService _zoneResolver;
 
         public FileLinkService(
             IUnitOfWork unitOfWork,
-            IFolderTreeRepository folderTreeRepository,
-            IPermissionCheckingRepository permissionRepository,
+            IPermissionCheckingService permission,
             IFileZoneResolverService zoneResolver)
         {
             _unitOfWork = unitOfWork;
-            _folderTreeRepository = folderTreeRepository;
-            _permissionRepository = permissionRepository;
+            _permission = permission;
             _zoneResolver = zoneResolver;
         }
 
         public async Task<RelatedFilesResponseDTO> GetRelatedFilesAsync(
-            Guid fileItemId, Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
+            Guid fileItemId, Guid actorId, CancellationToken ct = default)
         {
             var source = await GetFileItemAsync(fileItemId);
             var sourceFolder = await GetFolderAsync(source.FolderId);
 
-            if (!await CanViewFolderAsync(sourceFolder, actorId, isSystemAdmin))
+            if (!await CanViewFolderAsync(sourceFolder, actorId))
                 throw new ApiExceptionResponse("You do not have permission to view this file.", 403);
 
-            var canLink = await CanModifyLinksAsync(sourceFolder, actorId, isSystemAdmin);
-            var files = await BuildRelatedFileDtosAsync(fileItemId, sourceFolder, actorId, isSystemAdmin);
+            var canLink = await CanModifyLinksAsync(sourceFolder, actorId);
+            var files = await BuildRelatedFileDtosAsync(fileItemId, sourceFolder, actorId);
 
             return new RelatedFilesResponseDTO { CanLink = canLink, Files = files };
         }
 
         private async Task<List<RelatedFileDTO>> BuildRelatedFileDtosAsync(
-            Guid fileItemId, Folder sourceFolder, Guid actorId, bool isSystemAdmin)
+            Guid fileItemId, Folder sourceFolder, Guid actorId)
         {
             var links = await GetLinksOfAsync(fileItemId);
             if (links.Count == 0) return new List<RelatedFileDTO>();
@@ -54,7 +50,7 @@ namespace Application.Services
                 .ToList();
             if (relatedFiles.Count == 0) return new List<RelatedFileDTO>();
 
-            var visibleFolderIds = await ResolveViewableFolderIdsAsync(sourceFolder.ProjectId, actorId, isSystemAdmin);
+            var visibleFolderIds = await ResolveViewableFolderIdsAsync(sourceFolder.ProjectId, actorId);
             if (visibleFolderIds != null)
                 relatedFiles = relatedFiles.Where(f => visibleFolderIds.Contains(f.FolderId)).ToList();
             if (relatedFiles.Count == 0) return new List<RelatedFileDTO>();
@@ -96,13 +92,13 @@ namespace Application.Services
         }
 
         public async Task<IEnumerable<LinkableFileDTO>> GetLinkableFilesAsync(
-            Guid folderId, Guid? excludeFileItemId, Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
+            Guid folderId, Guid? excludeFileItemId, Guid actorId, CancellationToken ct = default)
         {
             var folder = await GetFolderAsync(folderId);
 
-            await RequireCanModifyLinksAsync(folder, actorId, isSystemAdmin);
+            await RequireCanModifyLinksAsync(folder, actorId);
 
-            var scopeFolderIds = await ResolveScopeFolderIdsAsync(folder, actorId, isSystemAdmin);
+            var scopeFolderIds = await ResolveScopeFolderIdsAsync(folder, actorId);
             if (scopeFolderIds.Count == 0) return Enumerable.Empty<LinkableFileDTO>();
 
             var candidates = (await _unitOfWork.Repository<FileItem>()
@@ -146,42 +142,42 @@ namespace Application.Services
         }
 
         public async Task<RelatedFilesResponseDTO> AddLinksAsync(
-            Guid fileItemId, IReadOnlyCollection<Guid> relatedFileItemIds, Guid actorId, bool isSystemAdmin,
+            Guid fileItemId, IReadOnlyCollection<Guid> relatedFileItemIds, Guid actorId,
             CancellationToken ct = default)
         {
             var source = await GetFileItemAsync(fileItemId);
             var sourceFolder = await GetFolderAsync(source.FolderId);
 
-            await RequireCanModifyLinksAsync(sourceFolder, actorId, isSystemAdmin);
-            await StageLinksAsync(fileItemId, sourceFolder, relatedFileItemIds, actorId, isSystemAdmin);
+            await RequireCanModifyLinksAsync(sourceFolder, actorId);
+            await StageLinksAsync(fileItemId, sourceFolder, relatedFileItemIds, actorId);
             await _unitOfWork.CommitAsync();
 
-            return await GetRelatedFilesAsync(fileItemId, actorId, isSystemAdmin, ct);
+            return await GetRelatedFilesAsync(fileItemId, actorId, ct);
         }
 
         public async Task StageLinksOnUploadAsync(
             Guid fileItemId, Folder targetFolder, IReadOnlyCollection<Guid> relatedFileItemIds,
-            Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
-            => await StageLinksAsync(fileItemId, targetFolder, relatedFileItemIds, actorId, isSystemAdmin);
+            Guid actorId, CancellationToken ct = default)
+            => await StageLinksAsync(fileItemId, targetFolder, relatedFileItemIds, actorId);
 
         public async Task ValidateUploadLinkTargetsAsync(
             Folder targetFolder, IReadOnlyCollection<Guid> relatedFileItemIds,
-            Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
+            Guid actorId, CancellationToken ct = default)
         {
             var targetIds = relatedFileItemIds.Distinct().ToList();
             if (targetIds.Count == 0) return;
             // Chỉ kiểm phạm vi + quyền, KHÔNG ghi. Gọi TRƯỚC khi lưu file để lỗi thì chưa có file mồ côi
             // (hệ versioning mới commit FileItem giữa luồng nên không thể rollback bằng 1 commit cuối).
-            await ResolveValidatedTargetsAsync(targetFolder, targetIds, actorId, isSystemAdmin);
+            await ResolveValidatedTargetsAsync(targetFolder, targetIds, actorId);
         }
 
         public async Task RemoveLinkAsync(
-            Guid fileItemId, Guid linkedFileItemId, Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
+            Guid fileItemId, Guid linkedFileItemId, Guid actorId, CancellationToken ct = default)
         {
             var source = await GetFileItemAsync(fileItemId);
             var sourceFolder = await GetFolderAsync(source.FolderId);
 
-            await RequireCanModifyLinksAsync(sourceFolder, actorId, isSystemAdmin);
+            await RequireCanModifyLinksAsync(sourceFolder, actorId);
 
             var (first, second) = NormalizePair(fileItemId, linkedFileItemId);
             var link = (await _unitOfWork.Repository<FileLink>()
@@ -195,12 +191,12 @@ namespace Application.Services
 
         private async Task StageLinksAsync(
             Guid fileItemId, Folder sourceFolder, IReadOnlyCollection<Guid> relatedFileItemIds,
-            Guid actorId, bool isSystemAdmin)
+            Guid actorId)
         {
             var targetIds = relatedFileItemIds.Distinct().Where(id => id != fileItemId).ToList();
             if (targetIds.Count == 0) return;
 
-            var targets = await ResolveValidatedTargetsAsync(sourceFolder, targetIds, actorId, isSystemAdmin);
+            var targets = await ResolveValidatedTargetsAsync(sourceFolder, targetIds, actorId);
 
             var existingPairs = (await GetLinksOfAsync(fileItemId))
                 .Select(l => OtherEndOf(l, fileItemId))
@@ -226,9 +222,9 @@ namespace Application.Services
         // Kiểm file đích tồn tại + nằm trong phạm vi cho phép (ô của nhóm ở cùng khu vực, giao quyền View).
         // Trả về danh sách FileItem đích đã kiểm; ném lỗi nếu thiếu hoặc ngoài phạm vi. KHÔNG ghi gì.
         private async Task<List<FileItem>> ResolveValidatedTargetsAsync(
-            Folder sourceFolder, IReadOnlyCollection<Guid> targetIds, Guid actorId, bool isSystemAdmin)
+            Folder sourceFolder, IReadOnlyCollection<Guid> targetIds, Guid actorId)
         {
-            var scopeFolderIds = await ResolveScopeFolderIdsAsync(sourceFolder, actorId, isSystemAdmin);
+            var scopeFolderIds = await ResolveScopeFolderIdsAsync(sourceFolder, actorId);
 
             var targets = (await _unitOfWork.Repository<FileItem>()
                     .FindAsync(f => targetIds.Contains(f.Id)))
@@ -259,7 +255,7 @@ namespace Application.Services
             => a.CompareTo(b) <= 0 ? (a, b) : (b, a);
 
         private async Task<HashSet<Guid>> ResolveScopeFolderIdsAsync(
-            Folder anchorFolder, Guid actorId, bool isSystemAdmin)
+            Folder anchorFolder, Guid actorId)
         {
             var projectFolders = await _zoneResolver.GetProjectFoldersAsync(anchorFolder.ProjectId);
 
@@ -268,19 +264,20 @@ namespace Application.Services
 
             var scope = CollectSubtreeFolderIds(teamFolder, projectFolders);
 
-            var viewableFolderIds = await ResolveViewableFolderIdsAsync(anchorFolder.ProjectId, actorId, isSystemAdmin);
+            var viewableFolderIds = await ResolveViewableFolderIdsAsync(anchorFolder.ProjectId, actorId);
             if (viewableFolderIds != null) scope.IntersectWith(viewableFolderIds);
 
             return scope;
         }
 
+        // null = full access (no folder filter); otherwise the set of folders the user can View.
         private async Task<HashSet<Guid>?> ResolveViewableFolderIdsAsync(
-            Guid projectId, Guid actorId, bool isSystemAdmin)
+            Guid projectId, Guid actorId)
         {
-            if (isSystemAdmin || await _folderTreeRepository.HasFullAccessAsync(projectId, actorId))
+            if (await _permission.HasProjectFullAccessAsync(projectId, actorId))
                 return null;
 
-            return await _folderTreeRepository.GetViewableFolderIdsAsync(projectId, actorId);
+            return await _permission.GetViewableFolderIdsAsync(projectId, actorId);
         }
 
         private static HashSet<Guid> CollectSubtreeFolderIds(Folder root, IReadOnlyCollection<Folder> projectFolders)
@@ -306,23 +303,15 @@ namespace Application.Services
             return subtreeIds;
         }
 
-        private async Task<bool> CanViewFolderAsync(Folder folder, Guid actorId, bool isSystemAdmin)
-            => isSystemAdmin
-               || await _folderTreeRepository.HasFullAccessAsync(folder.ProjectId, actorId)
-               || await _folderTreeRepository.CanViewFolderAsync(folder.Id, actorId);
+        private Task<bool> CanViewFolderAsync(Folder folder, Guid actorId)
+            => _permission.HasViewFolderAsync(folder.Id, actorId);
 
-        private async Task<bool> CanModifyLinksAsync(Folder folder, Guid actorId, bool isSystemAdmin)
+        private Task<bool> CanModifyLinksAsync(Folder folder, Guid actorId)
+            => _permission.HasEditFolderAsync(folder.Id, actorId);
+
+        private async Task RequireCanModifyLinksAsync(Folder folder, Guid actorId)
         {
-            if (isSystemAdmin || await _folderTreeRepository.HasFullAccessAsync(folder.ProjectId, actorId))
-                return true;
-
-            var permission = await _permissionRepository.GetUserFolderPermissionAsync(folder.Id, actorId);
-            return permission is { CanEdit: true };
-        }
-
-        private async Task RequireCanModifyLinksAsync(Folder folder, Guid actorId, bool isSystemAdmin)
-        {
-            if (!await CanModifyLinksAsync(folder, actorId, isSystemAdmin))
+            if (!await CanModifyLinksAsync(folder, actorId))
                 throw new ApiExceptionResponse(
                     "Bạn cần quyền Sửa hoặc Cập nhật trên thư mục này để thay đổi tệp liên quan.", 403);
         }

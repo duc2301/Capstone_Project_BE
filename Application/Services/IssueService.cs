@@ -27,7 +27,10 @@ namespace Application.Services
         private readonly INotificationService _notification;
         private readonly IIssueBroadcaster _issueBroadcaster;
         private readonly IFileStorageService _storage;
+        // Data-only folder-tree access (project existence, folder names). Permission decisions go
+        // through _permission.
         private readonly IFolderTreeRepository _folderTreeRepository;
+        private readonly IPermissionCheckingService _permission;
 
         public IssueService(
             IUnitOfWork unitOfWork,
@@ -37,7 +40,8 @@ namespace Application.Services
             INotificationService notification,
             IIssueBroadcaster issueBroadcaster,
             IFileStorageService storage,
-            IFolderTreeRepository folderTreeRepository)
+            IFolderTreeRepository folderTreeRepository,
+            IPermissionCheckingService permission)
         {
             _unitOfWork = unitOfWork;
             _mapper = mapper;
@@ -47,6 +51,7 @@ namespace Application.Services
             _issueBroadcaster = issueBroadcaster;
             _storage = storage;
             _folderTreeRepository = folderTreeRepository;
+            _permission = permission;
         }
 
         public async Task<IEnumerable<IssueResponseDTO>> GetAllAsync()
@@ -80,7 +85,7 @@ namespace Application.Services
         }
 
         public async Task<IEnumerable<ProjectIssueListItemDTO>> GetByProjectAsync(
-            Guid projectId, Guid accountId, bool isSystemAdmin)
+            Guid projectId, Guid accountId)
         {
             if (!await _folderTreeRepository.ProjectExistsAsync(projectId))
                 throw new ApiExceptionResponse("Project not found.", 404);
@@ -98,11 +103,10 @@ namespace Application.Services
             var folderNameById = (await _folderTreeRepository.GetProjectFoldersAsync(projectId, null))
                 .ToDictionary(f => f.Id, f => f.Name);
 
-            var hasFullAccess = isSystemAdmin
-                || await _folderTreeRepository.HasFullAccessAsync(projectId, accountId);
+            var hasFullAccess = await _permission.HasProjectFullAccessAsync(projectId, accountId);
             var viewableFolderIds = hasFullAccess
                 ? new HashSet<Guid>()
-                : await _folderTreeRepository.GetViewableFolderIdsAsync(projectId, accountId);
+                : await _permission.GetViewableFolderIdsAsync(projectId, accountId);
 
             Guid? FolderOf(Issue issue)
                 => issue.LinkedFileItemId.HasValue && fileById.TryGetValue(issue.LinkedFileItemId.Value, out var file)

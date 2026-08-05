@@ -92,7 +92,7 @@ namespace Application.Services
             // ② Tệp liên quan: KIỂM phạm vi TRƯỚC khi lưu file — id sai/ngoài phạm vi thì fail ở đây,
             // chưa lưu byte nào (hệ versioning mới commit FileItem giữa luồng, không thể rollback file mồ côi).
             if (dto.RelatedFileItemIds is { Count: > 0 })
-                await _fileLink.ValidateUploadLinkTargetsAsync(folder, dto.RelatedFileItemIds, actor, isSystemAdmin, ct);
+                await _fileLink.ValidateUploadLinkTargetsAsync(folder, dto.RelatedFileItemIds, actor, ct);
 
             // ⑦ Lưu nội dung file (đĩa local).
             var stored = await _storage.SaveAsync(content, folder.ProjectId, folder.Id, ext, ct);
@@ -164,7 +164,7 @@ namespace Application.Services
 
             // ② Tệp liên quan (tùy chọn): stage row link cho CẢ file mới lẫn upload thay thế (fileItem đã có ở đây).
             // Đã validate scope từ đầu flow (trước khi lưu file) nên tới đây chỉ tạo row, commit chung ở dưới.
-            await StageRelatedFileLinksAsync(fileItem.Id, folder, dto, actor, isSystemAdmin);
+            await StageRelatedFileLinksAsync(fileItem.Id, folder, dto, actor);
 
             await _auditLog.LogAsync(
                 LogScope.Group,
@@ -208,7 +208,7 @@ namespace Application.Services
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
-            //await _permission.RequireAsync(actor, fileItem.FolderId, FolderAction.Download);
+            await _permission.CanViewFileAsync(fileItem.Id, actor);
 
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
@@ -237,7 +237,7 @@ namespace Application.Services
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
-            //await _permission.RequireAsync(actor, fileItem.FolderId, FolderAction.Download);
+            await _permission.CanViewFileAsync(fileItem.Id, actor);
 
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
@@ -254,12 +254,12 @@ namespace Application.Services
         // ---------- nội bộ ----------
 
         private async Task StageRelatedFileLinksAsync(
-            Guid fileItemId, Folder targetFolder, UploadFileDTO dto, Guid actor, bool isSystemAdmin)
+            Guid fileItemId, Folder targetFolder, UploadFileDTO dto, Guid actor)
         {
             if (dto.RelatedFileItemIds is not { Count: > 0 }) return;
 
             await _fileLink.StageLinksOnUploadAsync(
-                fileItemId, targetFolder, dto.RelatedFileItemIds, actor, isSystemAdmin);
+                fileItemId, targetFolder, dto.RelatedFileItemIds, actor);
         }
 
         // Chỉ model IFC/CAD mới cần dịch lên APS (xem ModelTranslationWorker).
