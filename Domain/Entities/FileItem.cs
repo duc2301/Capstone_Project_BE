@@ -14,6 +14,10 @@ namespace Domain.Entities
         public Guid? CurrentVersionId { get; set; }
         public Guid? SignedVersionId { get; set; }
         public Guid? CreatedByAccountId { get; set; }
+
+        // Bản lưu (mirror) trong vùng Archived: trỏ về file Published gốc đã niêm phong.
+        // NULL với file thường. Dùng để cộng dồn các phiên bản chính thức qua từng lần niêm phong.
+        public Guid? SourceFileItemId { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
 

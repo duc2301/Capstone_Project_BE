@@ -1,5 +1,6 @@
 using Application.DTOs.RequestDTOs.FileVersion;
 using Application.DTOs.ResponseDTOs.FileVersion;
+using Domain.Entities;
 
 namespace Application.Interfaces.IServices
 {
@@ -36,5 +37,9 @@ namespace Application.Interfaces.IServices
 
         // Toàn bộ lịch sử version (mới nhất trước), kèm snapshot dữ liệu file của từng version.
         Task<List<FileVersionHistoryItemDTO>> GetVersionHistoryAsync(Guid fileItemId);
+
+        // Niêm phong lưu trữ: append 1 dòng version cho FILE BẢN LƯU (trong Archived), copy nội dung +
+        // số hiệu (C{PubRev}) từ bản Published gốc. Cộng dồn qua từng lần niêm phong (giữ cả C01, C02...).
+        Task<FileVersionResult> AppendArchivedVersionAsync(Guid archivedFileItemId, FileVersionState sourcePublished);
     }
 }

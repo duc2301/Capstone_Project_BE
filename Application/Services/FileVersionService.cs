@@ -167,6 +167,24 @@ namespace Application.Services
             return current == null ? null : ToResult(current);
         }
 
+        // Niêm phong lưu trữ: append 1 dòng version cho FILE BẢN LƯU, copy nội dung + số hiệu bản Published gốc.
+        // Không nhân bản blob (trỏ cùng StoragePath) — dòng Published gốc bất biến (append-only) nên an toàn.
+        public async Task<FileVersionResult> AppendArchivedVersionAsync(Guid archivedFileItemId, FileVersionState sourcePublished)
+        {
+            if (sourcePublished.Stage != VersionStage.Published)
+                throw new InvalidOperationException("Chỉ niêm phong lưu trữ được bản Published.");
+
+            var current = await _unitOfWork.FileVersionRepository.GetCurrentStateAsync(archivedFileItemId);
+
+            // Giữ nguyên số hiệu bản Published gốc (C01, C02...) -> lịch sử bản lưu = đúng các bản chính thức.
+            var snapshot = NewSnapshot(archivedFileItemId, VersionStage.Archived,
+                sourcePublished.WorkingRevision, sourcePublished.WorkingVersion, sourcePublished.PublishedRevision);
+            CopyContentFrom(snapshot, sourcePublished);
+
+            await PersistSnapshotAsync(snapshot, current); // retire dòng cũ, insert dòng mới -> cộng dồn
+            return ToResult(snapshot);
+        }
+
         public async Task<List<FileVersionHistoryItemDTO>> GetVersionHistoryAsync(Guid fileItemId)
         {
             var history = await _unitOfWork.FileVersionRepository.GetHistoryAsync(fileItemId);
@@ -300,7 +318,8 @@ namespace Application.Services
 
         private static string FormatDisplayVersion(VersionStage stage, int workingRevision, int workingVersion, int publishedRevision)
         {
-            return stage == VersionStage.Published
+            // Archived = bản niêm phong của 1 bản Published -> hiển thị đúng số hiệu C{PubRev}.
+            return stage is VersionStage.Published or VersionStage.Archived
                 ? $"C{publishedRevision:00}"
                 : $"P{workingRevision:00}.{workingVersion:00}";
         }
