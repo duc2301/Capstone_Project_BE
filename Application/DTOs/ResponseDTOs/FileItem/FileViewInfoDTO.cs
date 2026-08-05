@@ -33,5 +33,15 @@ namespace Application.DTOs.ResponseDTOs.FileItem
         public string FileName { get; set; } = null!;
 
         public string? Format { get; set; }
+
+        public Guid FolderId { get; set; }
+
+        public Guid ProjectId { get; set; }
+
+        public Guid VersionStateId { get; set; }
+
+        public string? DisplayVersion { get; set; }
+
+        public bool IsCurrentVersion { get; set; }
     }
 }

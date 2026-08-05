@@ -1,3 +1,4 @@
+using Application.DTOs.RequestDTOs.Notification;
 using Application.DTOs.ResponseDTOs.Notification;
 
 namespace Application.Interfaces.IServices
@@ -22,9 +23,11 @@ namespace Application.Interfaces.IServices
             string? linkId = null);
 
         // GET /api/notifications/me — list của user hiện tại (accountId do controller lấy từ JWT)
-        Task<IEnumerable<NotificationResponseDTO>> GetMyAsync(Guid accountId);
+        Task<NotificationPageDTO> GetMyAsync(Guid accountId, NotificationFilterDTO filter);
 
         // POST /api/notifications/{id}/read (accountId do controller lấy từ JWT để kiểm tra chính chủ)
         Task MarkReadAsync(Guid notificationId, Guid accountId);
+
+        Task<int> MarkAllReadAsync(Guid accountId);
     }
 }

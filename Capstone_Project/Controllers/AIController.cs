@@ -1,10 +1,12 @@
 using Application.Interfaces.IServices;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
     [Route("api/ai")]
     [ApiController]
+    [Authorize(Roles = "Admin")]
     public class AIController : ControllerBase
     {
         private readonly IAIService _ai;

@@ -8,9 +8,9 @@ namespace Application.Interfaces.IServices
     {
         Task<IEnumerable<DiscussionResponseDTO>> GetAllAsync();
         Task<DiscussionResponseDTO?> GetByIdAsync(Guid id);
-        Task<DiscussionResponseDTO> CreateAsync(CreateDiscussionDTO dto);
+        Task<DiscussionResponseDTO> CreateAsync(CreateDiscussionDTO dto, Guid actorId);
         Task<DiscussionResponseDTO> UpdateAsync(Guid id, UpdateDiscussionDTO dto);
-        Task DeleteAsync(Guid id);
+        Task DeleteAsync(Guid id, Guid actorId);
 
         /// <summary>Tao 1 Discussion moi gan voi 1 doi tuong khac (vd Issue) — dung cho luong tu dong tao thread khi tao Issue.</summary>
         Task<DiscussionResponseDTO> CreateForScopeAsync(DiscussionScopeType scopeType, Guid scopeId, Guid projectId, string title, Guid actorId);

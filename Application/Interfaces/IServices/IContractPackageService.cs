@@ -8,9 +8,9 @@ namespace Application.Interfaces.IServices
         Task<IEnumerable<ContractPackageResponseDTO>> GetAllAsync();
         Task<IEnumerable<ContractPackageResponseDTO>> GetByProjectIdAsync(Guid projectId);
         Task<ContractPackageResponseDTO?> GetByIdAsync(Guid id);
-        Task<ContractPackageResponseDTO> CreateAsync(CreateContractPackageDTO dto);
-        Task<ContractPackageResponseDTO> UpdateAsync(Guid id, UpdateContractPackageDTO dto);
-        Task DeleteAsync(Guid id);
+        Task<ContractPackageResponseDTO> CreateAsync(CreateContractPackageDTO dto, Guid actorId);
+        Task<ContractPackageResponseDTO> UpdateAsync(Guid id, UpdateContractPackageDTO dto, Guid actorId);
+        Task DeleteAsync(Guid id, Guid actorId);
         
     }
 }

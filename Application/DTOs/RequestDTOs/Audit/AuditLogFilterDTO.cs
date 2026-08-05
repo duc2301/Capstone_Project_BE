@@ -8,7 +8,10 @@ namespace Application.DTOs.RequestDTOs.Audit
         public LogScope? Scope { get; set; }
         public AuditAction? Action { get; set; }
         public Guid? ActorId { get; set; }
+        public string? Search { get; set; }
         public Guid? ProjectId { get; set; }   // chỉ dùng ở view Admin (lọc theo dự án)
+        public string? EntityType { get; set; }
+        public string? EntityId { get; set; }
         public DateTime? From { get; set; }
         public DateTime? To { get; set; }
 

@@ -7,6 +7,7 @@ using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using Domain.Entities;
+using Domain.Enum.Audit;
 using Domain.Enum.Cde;
 using Domain.Enum.Discussion;
 using Domain.Enum.Group;
@@ -31,6 +32,7 @@ namespace Application.Services
         // through _permission.
         private readonly IFolderTreeRepository _folderTreeRepository;
         private readonly IPermissionCheckingService _permission;
+        private readonly IAuditLogService _auditLog;
 
         public IssueService(
             IUnitOfWork unitOfWork,
@@ -41,8 +43,10 @@ namespace Application.Services
             IIssueBroadcaster issueBroadcaster,
             IFileStorageService storage,
             IFolderTreeRepository folderTreeRepository,
-            IPermissionCheckingService permission)
+            IPermissionCheckingService permission,
+            IAuditLogService auditLog)
         {
+            _auditLog = auditLog;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _zoneResolver = zoneResolver;
@@ -248,6 +252,10 @@ namespace Application.Services
             entity.UpdatedAt = now;
 
             await _unitOfWork.Repository<Issue>().CreateAsync(entity);
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Create, nameof(Issue), entity.Id.ToString(), actorId,
+                detail: $"Tạo vấn đề '{entity.Title}'",
+                projectId: entity.ProjectId);
             await _unitOfWork.CommitAsync();
 
             await _discussionService.CreateForScopeAsync(
@@ -307,6 +315,10 @@ namespace Application.Services
 
             issue.Status = IssueStatus.Closed;
             issue.UpdatedAt = DateTime.UtcNow;
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.StatusChange, nameof(Issue), issue.Id.ToString(), actorId,
+                detail: $"Đánh dấu đã giải quyết vấn đề '{issue.Title}'",
+                projectId: issue.ProjectId);
             await _unitOfWork.CommitAsync();
             var discussion = (await _unitOfWork.Repository<Discussion>().FindAsync(
                     d => d.ScopeType == DiscussionScopeType.Issue && d.ScopeId == issueId))
@@ -371,8 +383,13 @@ namespace Application.Services
             if (!allowedFrom.Contains(issue.Status))
                 throw new ApiExceptionResponse($"Cannot move this issue to {target} from {issue.Status}.", 400);
 
+            var previous = issue.Status;
             issue.Status = target;
             issue.UpdatedAt = DateTime.UtcNow;
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.StatusChange, nameof(Issue), issue.Id.ToString(), actorId,
+                detail: $"Vấn đề '{issue.Title}': {previous} -> {target}",
+                projectId: issue.ProjectId);
             await _unitOfWork.CommitAsync();
 
             var recipientIds = (await GetIssueParticipantAccountIdsAsync(issue))

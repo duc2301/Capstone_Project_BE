@@ -4,6 +4,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
+using System.Text;
 using Domain.Entities;
 using Domain.Enum.Audit;
 
@@ -11,6 +12,9 @@ namespace Application.Services
 {
     public class AuditLogService : IAuditLogService
     {
+        private const int ExportMaxRows = 5000;
+        private const int VietnamUtcOffsetHours = 7;
+
         private readonly IUnitOfWork _unitOfWork;
         private readonly IAuditLogRepository _auditLogRepository;
         private readonly IPermissionCheckingService _permission;
@@ -124,6 +128,93 @@ namespace Application.Services
             }
 
             return await _auditLogRepository.QueryAsync(filter, projectId, viewableFolderIds, myGroupIds);
+        }
+
+        public async Task<AuditLogPageDTO> GetMyActivityAsync(AuditLogFilterDTO filter, Guid actorId)
+        {
+            filter.ActorId = actorId;
+            return await _auditLogRepository.QueryAsync(filter, filter.ProjectId, null, null);
+        }
+
+        public async Task<AuditLogPageDTO> GetByFileItemAsync(
+            Guid fileItemId, AuditLogFilterDTO filter, Guid actorId)
+        {
+            var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+                ?? throw new ApiExceptionResponse("File not found.", 404);
+
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
+                ?? throw new ApiExceptionResponse("File folder not found.", 404);
+
+            var hasFullAccess = await _permission.HasProjectFullAccessAsync(folder.ProjectId, actorId);
+            if (!hasFullAccess && !await _permission.HasViewFileAsync(fileItemId, actorId))
+                throw new ApiExceptionResponse("You do not have permission to view this file.", 403);
+
+            filter.EntityType = nameof(FileItem);
+            filter.EntityId = fileItemId.ToString();
+
+            return await _auditLogRepository.QueryAsync(filter, folder.ProjectId, null, null);
+        }
+
+        public async Task<AuditLogExportDTO> ExportCsvAsync(
+            Guid? projectId, AuditLogFilterDTO filter, Guid actorId)
+        {
+            if (projectId.HasValue)
+                await EnsureCanReadProjectAsync(projectId.Value, actorId);
+            else if (!await _permission.HasSystemAdminAsync(actorId))
+                throw new ApiExceptionResponse("Only system admin can export system audit logs.", 403);
+
+            var scopeProjectId = projectId ?? filter.ProjectId;
+            var rows = await _auditLogRepository.QueryAllAsync(
+                filter, scopeProjectId, null, null, ExportMaxRows);
+
+            var stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmm");
+            var prefix = projectId.HasValue ? "nhat-ky-du-an" : "nhat-ky-he-thong";
+
+            return new AuditLogExportDTO
+            {
+                Content = BuildCsv(rows),
+                FileName = $"{prefix}-{stamp}.csv",
+                ContentType = "text/csv"
+            };
+        }
+
+        private async Task EnsureCanReadProjectAsync(Guid projectId, Guid actorId)
+        {
+            var project = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId)
+                ?? throw new ApiExceptionResponse("Project not found.", 404);
+
+            var isManager = project.ManagerAccountId == actorId;
+            var hasFullAccess = await _permission.HasProjectFullAccessAsync(projectId, actorId);
+
+            if (!hasFullAccess && !isManager)
+                throw new ApiExceptionResponse(
+                    "Only system admin or the project manager can export the project audit log.", 403);
+        }
+
+        private static byte[] BuildCsv(List<AuditLogResponseDTO> rows)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("Thời gian (UTC+7),Người thao tác,Hành động,Phạm vi,Đối tượng,Mã đối tượng,Nội dung");
+
+            foreach (var row in rows)
+            {
+                sb.Append(CsvCell(row.CreatedAt?.AddHours(VietnamUtcOffsetHours).ToString("yyyy-MM-dd HH:mm:ss"))).Append(',');
+                sb.Append(CsvCell(row.ActorName)).Append(',');
+                sb.Append(CsvCell(row.Action.ToString())).Append(',');
+                sb.Append(CsvCell(row.Scope.ToString())).Append(',');
+                sb.Append(CsvCell(row.EntityType)).Append(',');
+                sb.Append(CsvCell(row.EntityId)).Append(',');
+                sb.AppendLine(CsvCell(row.Detail));
+            }
+
+            var utf8Bom = new UTF8Encoding(true);
+            return utf8Bom.GetPreamble().Concat(utf8Bom.GetBytes(sb.ToString())).ToArray();
+        }
+
+        private static string CsvCell(string? value)
+        {
+            if (string.IsNullOrEmpty(value)) return string.Empty;
+            return $"\"{value.Replace("\"", "\"\"")}\"";
         }
     }
 }

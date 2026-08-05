@@ -24,6 +24,10 @@ namespace Domain.Enum.Audit
         AcceptInvite,
         RejectInvite,
         Assign,
-        StatusChange
+        StatusChange,
+
+        Login,
+        Logout,
+        LoginFailed
     }
 }

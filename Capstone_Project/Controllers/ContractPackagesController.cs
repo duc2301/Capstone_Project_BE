@@ -1,6 +1,7 @@
 using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.ContractPackage;
 using Application.Interfaces.IServices;
+using Capstone_Project.Extensions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 
@@ -31,16 +32,16 @@ namespace Capstone_Project.Controllers
 
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateContractPackageDTO dto)
-            => Ok(ApiResponse.Success("Created successfully", await _service.CreateAsync(dto)));
+            => Ok(ApiResponse.Success("Created successfully", await _service.CreateAsync(dto, User.GetAccountId())));
 
         [HttpPut("{id:guid}")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateContractPackageDTO dto)
-            => Ok(ApiResponse.Success("Updated successfully", await _service.UpdateAsync(id, dto)));
+            => Ok(ApiResponse.Success("Updated successfully", await _service.UpdateAsync(id, dto, User.GetAccountId())));
 
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> Delete(Guid id)
         {
-            await _service.DeleteAsync(id);
+            await _service.DeleteAsync(id, User.GetAccountId());
             return Ok(ApiResponse.Success("Deleted successfully"));
         }
 

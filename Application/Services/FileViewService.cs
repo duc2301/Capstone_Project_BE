@@ -49,10 +49,7 @@ namespace Application.Services
 
         public async Task<FileViewInfoDTO> GetViewInfoAsync(Guid fileItemId, Guid actor, CancellationToken ct = default)
         {
-            var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
-                ?? throw new ApiExceptionResponse("File not found.", 404);
-
-            await _permission.CanViewFileAsync(fileItem.Id, actor);
+            var fileItem = await RequireViewableFileAsync(fileItemId, actor);
 
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
@@ -60,9 +57,45 @@ namespace Application.Services
             var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
 
+            return await BuildViewInfoAsync(fileItem, version, ct);
+        }
+
+        public async Task<FileViewInfoDTO> GetVersionViewInfoAsync(
+            Guid fileItemId, Guid versionStateId, Guid actor, CancellationToken ct = default)
+        {
+            var fileItem = await RequireViewableFileAsync(fileItemId, actor);
+            var version = await RequireVersionOfFileAsync(fileItem.Id, versionStateId);
+
+            return await BuildViewInfoAsync(fileItem, version, ct);
+        }
+
+        private async Task<FileItem> RequireViewableFileAsync(Guid fileItemId, Guid actor)
+        {
+            var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+                ?? throw new ApiExceptionResponse("File not found.", 404);
+
+            await _permission.CanViewFileAsync(fileItem.Id, actor);
+            return fileItem;
+        }
+
+        private async Task<FileVersionState> RequireVersionOfFileAsync(Guid fileItemId, Guid versionStateId)
+        {
+            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(versionStateId)
+                ?? throw new ApiExceptionResponse("Version not found.", 404);
+
+            if (version.FileItemId != fileItemId)
+                throw new ApiExceptionResponse("Version does not belong to this file.", 400);
+
+            return version;
+        }
+
+        private async Task<FileViewInfoDTO> BuildViewInfoAsync(
+            FileItem fileItem, FileVersionState version, CancellationToken ct)
+        {
             var format = version.Format ?? string.Empty;
             var ext = format.StartsWith('.') ? format.ToLowerInvariant() : "." + format.ToLowerInvariant();
             var fileName = $"{fileItem.Name}.{format}";
+            var hasStoredContent = !string.IsNullOrWhiteSpace(version.StoragePath);
 
             var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
                 ?? throw new ApiExceptionResponse("File folder not found.", 404);
@@ -70,11 +103,19 @@ namespace Application.Services
             var info = fileItem.FileType switch
             {
                 FileType.Ifc or FileType.Cad => await BuildModelAsync(version, fileName, format),
-                FileType.Pdf or FileType.Image => await BuildInlineAsync(version.StoragePath!, ext, fileName, format, ct),
-                FileType.Office => await BuildOfficeAsync(fileItem, version, ext, fileName, format, ct),
+                FileType.Pdf or FileType.Image when hasStoredContent
+                    => await BuildInlineAsync(version.StoragePath!, ext, fileName, format, ct),
+                FileType.Office when hasStoredContent
+                    => await BuildOfficeAsync(fileItem, version, ext, fileName, format, ct),
                 _ => Download(fileName, format),
             };
+
             info.Area = folder.Area;
+            info.FolderId = fileItem.FolderId;
+            info.ProjectId = folder.ProjectId;
+            info.VersionStateId = version.Id;
+            info.DisplayVersion = version.DisplayVersion;
+            info.IsCurrentVersion = fileItem.CurrentVersionId == version.Id;
             return info;
         }
 

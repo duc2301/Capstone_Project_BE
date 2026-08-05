@@ -29,7 +29,7 @@ namespace Capstone_Project.Controllers
 
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateDiscussionDTO dto)
-            => Ok(ApiResponse.Success("Created successfully", await _service.CreateAsync(dto)));
+            => Ok(ApiResponse.Success("Created successfully", await _service.CreateAsync(dto, User.GetAccountId())));
 
         [HttpPut("{id:guid}")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateDiscussionDTO dto)
@@ -38,7 +38,7 @@ namespace Capstone_Project.Controllers
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> Delete(Guid id)
         {
-            await _service.DeleteAsync(id);
+            await _service.DeleteAsync(id, User.GetAccountId());
             return Ok(ApiResponse.Success("Deleted successfully"));
         }
 

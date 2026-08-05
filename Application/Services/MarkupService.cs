@@ -4,6 +4,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
+using Domain.Enum.Audit;
 using Domain.Enum.File;
 
 namespace Application.Services
@@ -14,17 +15,20 @@ namespace Application.Services
         private readonly IPermissionCheckingService _permission;
         private readonly IMarkupBroadcaster _broadcaster;
         private readonly INotificationService _notification;
+        private readonly IAuditLogService _auditLog;
 
         public MarkupService(
             IUnitOfWork unitOfWork,
             IPermissionCheckingService permission,
             IMarkupBroadcaster broadcaster,
-            INotificationService notification)
+            INotificationService notification,
+            IAuditLogService auditLog)
         {
             _unitOfWork = unitOfWork;
             _permission = permission;
             _broadcaster = broadcaster;
             _notification = notification;
+            _auditLog = auditLog;
         }
 
 
@@ -55,6 +59,7 @@ namespace Application.Services
                 UpdatedAt = now,
             };
             await _unitOfWork.Repository<MarkupSet>().CreateAsync(set);
+            await LogMarkupAsync(AuditAction.Create, set, fileItem, actorId, $"Tạo bộ ghi chú '{set.Title}' trên '{fileItem.Name}'");
             await _unitOfWork.CommitAsync();
 
             var actorName = await GetAccountNameAsync(actorId);
@@ -135,9 +140,20 @@ namespace Application.Services
             set.Status = status;
             set.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<MarkupSet>().Update(set);
+            await LogMarkupAsync(AuditAction.StatusChange, set, fileItem, actorId, $"Bộ ghi chú '{set.Title}' chuyển sang {status}");
             await _unitOfWork.CommitAsync();
 
             return await BuildSetDetailDtoAsync(set);
+        }
+
+        private async Task LogMarkupAsync(
+            AuditAction action, MarkupSet set, FileItem fileItem, Guid actorId, string detail)
+        {
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
+            await _auditLog.LogAsync(
+                LogScope.Group, action, nameof(MarkupSet), set.Id.ToString(), actorId,
+                detail: detail,
+                projectId: folder?.ProjectId, folderId: fileItem.FolderId);
         }
 
         public async Task<MarkupSetResponseDTO> LinkToIssueAsync(

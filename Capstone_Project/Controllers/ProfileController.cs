@@ -1,5 +1,6 @@
 using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Profile;
+using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Capstone_Project.Extensions;
 using Microsoft.AspNetCore.Authorization;
@@ -41,6 +42,22 @@ namespace Capstone_Project.Controllers
         {
             await _profileService.ChangePasswordAsync(User.GetAccountId(), dto);
             return Ok(ApiResponse.Success("Password changed"));
+        }
+
+        [HttpPost("avatar")]
+        [Consumes("multipart/form-data")]
+        [RequestSizeLimit(6_291_456)]
+        [RequestFormLimits(MultipartBodyLengthLimit = 6_291_456)]
+        public async Task<IActionResult> UploadAvatar(IFormFile file, CancellationToken ct)
+        {
+            if (file == null || file.Length == 0)
+                throw new ApiExceptionResponse("No file provided.", 400);
+
+            await using var stream = file.OpenReadStream();
+            var result = await _profileService.SetMyAvatarAsync(
+                User.GetAccountId(), stream, file.FileName, file.Length, ct);
+
+            return Ok(ApiResponse.Success("Avatar updated", result));
         }
     }
 }

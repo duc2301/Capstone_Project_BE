@@ -7,6 +7,7 @@ using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 
 using Domain.Entities;
+using Domain.Enum.Audit;
 using Domain.Enum.Discussion;
 
 namespace Application.Services
@@ -17,17 +18,20 @@ namespace Application.Services
         private readonly IMapper _mapper;
         private readonly INotificationService _notification;
         private readonly IDiscussionBroadcaster _broadcaster;
+        private readonly IAuditLogService _auditLog;
 
         public DiscussionService(
             IUnitOfWork unitOfWork,
             IMapper mapper,
             INotificationService notification,
-            IDiscussionBroadcaster broadcaster)
+            IDiscussionBroadcaster broadcaster,
+            IAuditLogService auditLog)
         {
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _notification = notification;
             _broadcaster = broadcaster;
+            _auditLog = auditLog;
         }
 
         public async Task<IEnumerable<DiscussionResponseDTO>> GetAllAsync()
@@ -40,12 +44,15 @@ namespace Application.Services
             return entity == null ? null : _mapper.Map<DiscussionResponseDTO>(entity);
         }
 
-        public async Task<DiscussionResponseDTO> CreateAsync(CreateDiscussionDTO dto)
+        public async Task<DiscussionResponseDTO> CreateAsync(CreateDiscussionDTO dto, Guid actorId)
         {
             var entity = _mapper.Map<Discussion>(dto);
             entity.Id = Guid.NewGuid();
             entity.CreatedAt = entity.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.Repository<Discussion>().CreateAsync(entity);
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Create, nameof(Discussion), entity.Id.ToString(), actorId,
+                detail: $"Tạo thảo luận '{entity.Title}'", projectId: entity.ProjectId);
             await _unitOfWork.CommitAsync();
             return _mapper.Map<DiscussionResponseDTO>(entity);
         }
@@ -61,11 +68,14 @@ namespace Application.Services
             return _mapper.Map<DiscussionResponseDTO>(entity);
         }
 
-        public async Task DeleteAsync(Guid id)
+        public async Task DeleteAsync(Guid id, Guid actorId)
         {
             var entity = await _unitOfWork.Repository<Discussion>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Discussion with ID {id} not found.", 404);
             _unitOfWork.Repository<Discussion>().Delete(entity);
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Delete, nameof(Discussion), entity.Id.ToString(), actorId,
+                detail: $"Xoá thảo luận '{entity.Title}'", projectId: entity.ProjectId);
             await _unitOfWork.CommitAsync();
         }
 

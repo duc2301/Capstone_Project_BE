@@ -5,6 +5,7 @@ using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
 using Domain.Enum.Account;
+using Domain.Enum.Audit;
 using Domain.Enum.Group;
 using Domain.Enum.Permission;
 using Domain.Enum.Project;
@@ -24,10 +25,12 @@ namespace Application.Services
         };
 
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IAuditLogService _auditLog;
 
-        public NamingConventionService(IUnitOfWork unitOfWork)
+        public NamingConventionService(IUnitOfWork unitOfWork, IAuditLogService auditLog)
         {
             _unitOfWork = unitOfWork;
+            _auditLog = auditLog;
         }
 
         // =========================================================
@@ -62,6 +65,10 @@ namespace Application.Services
                 convention.Fields.Add(BuildField(convention.Id, fieldDto, actor));
 
             await _unitOfWork.NamingConventionRepository.CreateAsync(convention);
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Create, nameof(NamingConvention), convention.Id.ToString(), actor,
+                detail: $"Tạo quy tắc đặt tên '{convention.Name}'",
+                projectId: convention.ProjectId);
             await _unitOfWork.CommitAsync();
 
             return await GetByIdAsync(convention.Id);
@@ -89,7 +96,7 @@ namespace Application.Services
             return result;
         }
 
-        public async Task<NamingConventionResponseDTO> UpdateAsync(Guid id, UpdateNamingConventionDTO dto)
+        public async Task<NamingConventionResponseDTO> UpdateAsync(Guid id, UpdateNamingConventionDTO dto, Guid actor)
         {
             var convention = await _unitOfWork.NamingConventionRepository.GetWithDetailsAsync(id, track: true)
                 ?? throw new ApiExceptionResponse("Naming convention not found.", 404);
@@ -105,12 +112,16 @@ namespace Application.Services
                 convention.IsActive = dto.IsActive.Value;
 
             convention.UpdatedAt = DateTime.UtcNow;
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Update, nameof(NamingConvention), convention.Id.ToString(), actor,
+                detail: $"Cập nhật quy tắc đặt tên '{convention.Name}'",
+                projectId: convention.ProjectId);
             await _unitOfWork.CommitAsync();
 
             return await GetByIdAsync(id);
         }
 
-        public async Task DeleteAsync(Guid id)
+        public async Task DeleteAsync(Guid id, Guid actor)
         {
             var convention = await _unitOfWork.NamingConventionRepository.GetWithDetailsAsync(id, track: true)
                 ?? throw new ApiExceptionResponse("Naming convention not found.", 404);
@@ -120,6 +131,10 @@ namespace Application.Services
                 _unitOfWork.Repository<NamingConventionLockedValue>().Delete(field.LockedValue!);
 
             _unitOfWork.NamingConventionRepository.Delete(convention);
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Delete, nameof(NamingConvention), convention.Id.ToString(), actor,
+                detail: $"Xoá quy tắc đặt tên '{convention.Name}'",
+                projectId: convention.ProjectId);
             await _unitOfWork.CommitAsync();
         }
 

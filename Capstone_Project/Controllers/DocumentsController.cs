@@ -9,6 +9,7 @@ namespace Capstone_Project.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class DocumentsController : ControllerBase
     {
         private readonly IDocumentIngestService _ingest;
@@ -23,6 +24,7 @@ namespace Capstone_Project.Controllers
         }
 
         [HttpPost("ingest/{fileItemId:guid}")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Ingest(Guid fileItemId, CancellationToken ct)
         {
             var documentId = await _ingest.IngestFileAsync(fileItemId, ct);

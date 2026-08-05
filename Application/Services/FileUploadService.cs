@@ -216,8 +216,31 @@ namespace Application.Services
             var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
 
+            return await OpenVersionContentAsync(fileItem, version, actor, ct);
+        }
+
+        public async Task<DownloadFileResult> OpenVersionDownloadAsync(
+            Guid fileItemId, Guid versionStateId, Guid actor, CancellationToken ct = default)
+        {
+            var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+                ?? throw new ApiExceptionResponse("File not found.", 404);
+
+            await _permission.CanViewFileAsync(fileItem.Id, actor);
+
+            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(versionStateId)
+                ?? throw new ApiExceptionResponse("Version not found.", 404);
+
+            if (version.FileItemId != fileItem.Id)
+                throw new ApiExceptionResponse("Version does not belong to this file.", 400);
+
+            return await OpenVersionContentAsync(fileItem, version, actor, ct);
+        }
+
+        private async Task<DownloadFileResult> OpenVersionContentAsync(
+            FileItem fileItem, FileVersionState version, Guid actor, CancellationToken ct)
+        {
             if (string.IsNullOrEmpty(version.StoragePath) || string.IsNullOrEmpty(version.Format))
-                throw new ApiExceptionResponse("Current version has no stored content.", 404);
+                throw new ApiExceptionResponse("Version has no stored content.", 404);
 
             var stream = await _storage.OpenReadAsync(version.StoragePath, ct);
             var downloadName = $"{fileItem.Name}.{version.Format}";
@@ -226,7 +249,7 @@ namespace Application.Services
             var downloadFolder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
             await _auditLog.LogAndSaveAsync(
                 LogScope.Group, AuditAction.Download, nameof(FileItem), fileItem.Id.ToString(), actor,
-                detail: $"Tải về '{downloadName}'",
+                detail: $"Tải về '{downloadName}' ({version.DisplayVersion})",
                 projectId: downloadFolder?.ProjectId, folderId: fileItem.FolderId);
 
             return new DownloadFileResult(stream, downloadName, _storage.GetContentType(version.Format));
