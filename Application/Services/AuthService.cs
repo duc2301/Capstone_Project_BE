@@ -6,7 +6,6 @@ using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
 using Domain.Enum.Account;
-using Domain.Enum.Audit;
 using Google.Apis.Auth;
 using Microsoft.Extensions.Configuration;
 
@@ -19,20 +18,17 @@ namespace Application.Services
         private readonly IJwtService _jwtService;
         private readonly IConfiguration _configuration;
         private readonly IEmailService _emailService;
-        private readonly IAuditLogService _auditLog;
 
         public AuthService(
             IUnitOfWork unitOfWork,
             IJwtService jwtService,
             IConfiguration configuration,
-            IEmailService emailService,
-            IAuditLogService auditLog)
+            IEmailService emailService)
         {
             _unitOfWork = unitOfWork;
             _jwtService = jwtService;
             _configuration = configuration;
             _emailService = emailService;
-            _auditLog = auditLog;
         }
 
         public async Task<AuthResponseDTO> Register(RegisterDTO request)
@@ -94,38 +90,15 @@ namespace Application.Services
         {
             var account = await _unitOfWork.AccountRepository.GetByEmailAsync(request.Email);
             if (account == null || !BCrypt.Net.BCrypt.Verify(request.Password, account.PasswordHash))
-            {
-                await LogSignInFailedAsync(request.Email, account?.Id, "Sai email hoặc mật khẩu");
                 throw new ApiExceptionResponse("Invalid email or password.", 401);
-            }
 
-            try
-            {
-                EnsureAccountCanSignIn(account);
-            }
-            catch (ApiExceptionResponse ex)
-            {
-                await LogSignInFailedAsync(request.Email, account.Id, ex.Message);
-                throw;
-            }
+            EnsureAccountCanSignIn(account);
 
             var memberships = await LoadGroupMembershipsAsync(account.Id);
             var response = await IssueTokensAsync(account, memberships);
-            await LogSignInAsync(account, "mật khẩu");
             await _unitOfWork.CommitAsync();
             return response;
         }
-
-        private Task LogSignInAsync(Account account, string method) =>
-            _auditLog.LogAsync(
-                LogScope.System, AuditAction.Login, nameof(Account), account.Id.ToString(), account.Id,
-                detail: $"Đăng nhập ({method}): {account.Email}");
-
-        private Task LogSignInFailedAsync(string email, Guid? accountId, string reason) =>
-            _auditLog.LogAndSaveAsync(
-                LogScope.System, AuditAction.LoginFailed, nameof(Account),
-                accountId?.ToString() ?? email, accountId,
-                detail: $"Đăng nhập thất bại: {email} — {reason}");
 
         private static void EnsureAccountCanSignIn(Account account)
         {
@@ -180,15 +153,11 @@ namespace Application.Services
             else
             {
                 if (account.Status == AccountStatus.Suspended || account.Status == AccountStatus.Inactive)
-                {
-                    await LogSignInFailedAsync(email, account.Id, "Tài khoản không còn hoạt động");
                     throw new ApiExceptionResponse("Tài khoản không còn hoạt động.", 403);
-                }
             }
 
             var memberships = await LoadGroupMembershipsAsync(account.Id);
             var response = await IssueTokensAsync(account, memberships);
-            await LogSignInAsync(account, "Google");
             await _unitOfWork.CommitAsync();
             return response;
         }
@@ -271,10 +240,6 @@ namespace Application.Services
             if (stored.RevokedAt == null)
             {
                 stored.RevokedAt = DateTime.UtcNow;
-                await _auditLog.LogAsync(
-                    LogScope.System, AuditAction.Logout, nameof(Account),
-                    stored.AccountId.ToString(), stored.AccountId,
-                    detail: "Đăng xuất");
                 await _unitOfWork.CommitAsync();
             }
         }
