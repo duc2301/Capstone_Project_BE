@@ -21,12 +21,6 @@ namespace Domain.Entities
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
 
-        public bool? Warnning { get; set; } = false;
-        public string? WarnningMessage { get; set; } = string.Empty;
-
-        // Tóm tắt nội dung do AI sinh sau upload (worker ghi; null = chưa tóm tắt / không trích được chữ).
-        public string? Description { get; set; }
-
         public Folder Folder { get; set; } = null!;
         public ICollection<FilePermission> Permissions { get; set; } = new List<FilePermission>();
         public ICollection<FileNamingMetadata> NamingMetadata { get; set; } = new List<FileNamingMetadata>();

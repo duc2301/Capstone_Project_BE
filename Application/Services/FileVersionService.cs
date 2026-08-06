@@ -279,6 +279,10 @@ namespace Application.Services
             target.SignedAt = source.SignedAt;
             target.SignedBy = source.SignedBy;
             target.CertificateSerial = source.CertificateSerial;
+            // AI phân tích per-version: mô tả + cảnh báo đi theo nội dung sang dòng state mới.
+            target.Description = source.Description;
+            target.Warnning = source.Warnning;
+            target.WarnningMessage = source.WarnningMessage;
         }
 
         private static FileVersionState NewSnapshot(

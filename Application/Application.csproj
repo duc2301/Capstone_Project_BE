@@ -34,11 +34,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<EmbeddedResource Include="Resources\Fonts\NotoSans-Regular.ttf" />
-		<EmbeddedResource Include="Resources\Fonts\NotoSans-Bold.ttf" />
-	</ItemGroup>
-
-	<ItemGroup>
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 	</ItemGroup>
 

@@ -100,6 +100,7 @@ namespace Application.Services
             // 7) Append 1 dòng version copy nội dung + số hiệu từ bản Published gốc.
             var result = await _fileVersionService.AppendArchivedVersionAsync(mirror.Id, currentPub);
             mirror.CurrentVersionId = result.VersionStateId;
+            // Mô tả/cảnh báo của bản lưu do AppendArchivedVersionAsync copy sẵn từ version Published gốc (per-version).
             mirror.UpdatedAt = DateTime.UtcNow;
 
             // folderId = folder Archived đích -> log hiện đúng ở view của người xem vùng lưu trữ.
