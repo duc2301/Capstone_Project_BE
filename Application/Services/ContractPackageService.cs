@@ -156,6 +156,8 @@ namespace Application.Services
             if (entity.EndDate.HasValue && entity.EndDate.Value.Kind == DateTimeKind.Unspecified)
                 entity.EndDate = DateTime.SpecifyKind(entity.EndDate.Value, DateTimeKind.Utc);
 
+            entity.Status = ContractPackage.DeriveStatus(entity.StartDate, entity.EndDate);
+
             // Assign contractor if provided
             if (dto.ContractorOrganizationId.HasValue)
             {
@@ -246,6 +248,8 @@ namespace Application.Services
                 entity.EndDate = DateTime.SpecifyKind(entity.EndDate.Value, DateTimeKind.Utc);
             if (entity.CreatedAt.HasValue && entity.CreatedAt.Value.Kind == DateTimeKind.Unspecified)
                 entity.CreatedAt = DateTime.SpecifyKind(entity.CreatedAt.Value, DateTimeKind.Utc);
+
+            entity.Status = ContractPackage.DeriveStatus(entity.StartDate, entity.EndDate);
             _unitOfWork.Repository<ContractPackage>().Update(entity);
 
             // Update assignment if ContractorOrganizationId is provided

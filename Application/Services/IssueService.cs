@@ -276,6 +276,8 @@ namespace Application.Services
             entity.Id = Guid.NewGuid();
             entity.RaisedByAccountId = actorId;
             entity.Status = IssueStatus.Open;
+            if (entity.DueDate.HasValue)
+                entity.DueDate = DateTime.SpecifyKind(entity.DueDate.Value, DateTimeKind.Utc);
             var now = DateTime.UtcNow;
             entity.CreatedAt = now;
             entity.UpdatedAt = now;
@@ -316,6 +318,8 @@ namespace Application.Services
             var entity = await _unitOfWork.Repository<Issue>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Issue with ID {id} not found.", 404);
             _mapper.Map(dto, entity);
+            if (entity.DueDate.HasValue)
+                entity.DueDate = DateTime.SpecifyKind(entity.DueDate.Value, DateTimeKind.Utc);
             entity.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<Issue>().Update(entity);
             await _unitOfWork.CommitAsync();

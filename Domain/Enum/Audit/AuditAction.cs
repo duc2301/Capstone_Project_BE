@@ -25,10 +25,6 @@ namespace Domain.Enum.Audit
         RejectInvite,
         Assign,
         StatusChange,
-        Archive,        // Niêm phong lưu trữ: chốt bản Published chính thức vào vùng Archived
-
-        Login,
-        Logout,
-        LoginFailed
+        Archive         // Niêm phong lưu trữ: chốt bản Published chính thức vào vùng Archived
     }
 }

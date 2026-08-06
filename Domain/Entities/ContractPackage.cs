@@ -29,5 +29,18 @@ namespace Domain.Entities
 
         public Project Project { get; set; } = null!;
         public ICollection<PackageAssignment> Assignments { get; set; } = new List<PackageAssignment>();
+
+        public static PackageStatus DeriveStatus(DateTime? startDate, DateTime? endDate)
+        {
+            var today = DateTime.UtcNow.Date;
+
+            if (endDate.HasValue && today > endDate.Value.Date)
+                return PackageStatus.Completed;
+
+            if (!startDate.HasValue || today < startDate.Value.Date)
+                return PackageStatus.Pending;
+
+            return PackageStatus.Active;
+        }
     }
 }
