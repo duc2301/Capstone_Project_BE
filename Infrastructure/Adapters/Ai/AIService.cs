@@ -2,7 +2,9 @@ using Application.DTOs.ResponseDTOs.Ai;
 using Application.DTOs.ResponseDTOs.Project;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
+using Application.Interfaces.IUnitOfWork;
 using Application.Options;
+using Domain.Entities;
 using Microsoft.Extensions.Options;
 using System.Net.Http.Json;
 using System.Text;
@@ -16,13 +18,15 @@ namespace Infrastructure.Adapters.Ai
         private readonly IFileContentReader _fileReader;
         private readonly IFileTextExtractor _extractor;
         private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly IOptions<OllamaOptions> _options;
 
-        public AIService(IFileContentReader fileReader, IFileTextExtractor extractor, IHttpClientFactory httpClientFactory, IOptions<OllamaOptions> options)
+        public AIService(IFileContentReader fileReader, IFileTextExtractor extractor, IHttpClientFactory httpClientFactory, IUnitOfWork unitOfWork, IOptions<OllamaOptions> options)
         {
             _fileReader = fileReader;
             _extractor = extractor;
             _httpClientFactory = httpClientFactory;
+            _unitOfWork = unitOfWork;
             _options = options;
         }
 
@@ -30,6 +34,8 @@ namespace Infrastructure.Adapters.Ai
         public async Task<ContentAnalysisResult?> AnalyzeContentAsync(Guid fileItemId, CancellationToken ct = default)
         {
             var extractedFile = await _fileReader.LoadTextAsync(fileItemId, ct);
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(extractedFile?.Item.FolderId);
+            var project = await _unitOfWork.Repository<Project>().GetByIdAsync(folder?.ProjectId);
             if (extractedFile == null)
                 throw new ApiExceptionResponse("File not found or could not be read");
 
@@ -48,7 +54,7 @@ namespace Infrastructure.Adapters.Ai
 
                 var payload = new GenerateRequest(
                     _options.Value.ChatModel,
-                    AnalyzeContentPrompt(extractedFile.Item.Name, content),
+                    AnalyzeContentPrompt(project.ProjectName, project.ProjectDescription, folder?.Name, content),
                     Stream: false,
                     Think: false,
                     Format: new
@@ -240,15 +246,17 @@ namespace Infrastructure.Adapters.Ai
             required = new[] { "projectName" }
         };
 
-        private static string AnalyzeContentPrompt(string fileName, string content) =>
-            "Bạn phân tích tài liệu xây dựng: VỪA tóm tắt VỪA kiểm tra nội dung có đúng loại/chủ đề mà tên tệp gợi ý không.\n" +
-            $"Tên tệp: {fileName}\n" +
+        private static string AnalyzeContentPrompt(string projectName, string projectDescription, string? folderName, string content) =>
+            "Bạn phân tích tài liệu xây dựng: Tóm tắt nội dung VÀ kiểm tra nội dung có đúng loại/chủ đề liên quan không.\n" +
+            $"Tên dự án: {projectName}\n" +
+            $"Mô tả dự án: {projectDescription}\n" +
+            $"Tên thư mục chứa nội dung: {folderName}\n" +
             "Trích nội dung (có thể lỗi khoảng cách/định dạng do trích xuất PDF — BỎ QUA các lỗi đó, KHÔNG vì lỗi trích xuất mà coi là nghi ngờ):\n" +
             $"{content}\n\n" +
             "Trả 3 trường:\n" +
             "1) summary (TIẾNG VIỆT, 1-3 câu, ~40 từ): loại tài liệu + chủ đề chính; bỏ mở đầu rườm rà ('Đây là', 'File này là'). KHÔNG bịa, KHÔNG nhận xét chất lượng.\n" +
-            "2) suspicious (boolean): true CHỈ KHI nội dung RÕ RÀNG không liên quan tới tên tệp / không phải tài liệu xây dựng - dự án (vd tên nói 'bản vẽ kết cấu' nhưng nội dung là truyện, hoá đơn cá nhân, nội dung rác). KHOAN DUNG: chỉ báo khi lệch trắng trợn; nghi ngờ nhẹ hoặc chỉ khác định dạng -> false. Xét LOẠI + CHỦ ĐỀ, cùng công ty/dự án chưa đủ để coi là khớp.\n" +
-            "3) reason (TIẾNG VIỆT, 1 câu ngắn): CHỈ khi suspicious=true, nêu vì sao lệch; suspicious=false thì để trống.\n" +
+            "2) suspicious (boolean): true CHỈ KHI nội dung RÕ RÀNG không liên quan tới tên tệp / không phải tài liệu xây dựng - dự án (vd tên nói 'bản vẽ kết cấu' nhưng nội dung là truyện, hoá đơn cá nhân, nội dung rác, thông tin từ các lĩnh vực không liên quan như tuyển dụng, học tập). KHOAN DUNG: chỉ báo khi lệch trắng trợn; nghi ngờ nhẹ hoặc chỉ khác định dạng -> false. Xét LOẠI + CHỦ ĐỀ, cùng công ty/dự án chưa đủ để coi là khớp.\n" +
+            "3) reason (TIẾNG VIỆT, 1 câu): CHỈ khi suspicious=true, nêu vì sao lệch; suspicious=false thì để trống.\n" +
             "Chỉ trả JSON đúng schema, không kèm chữ nào khác.";
 
         private static readonly JsonSerializerOptions JsonOpts = new()
@@ -256,6 +264,7 @@ namespace Infrastructure.Adapters.Ai
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             NumberHandling = JsonNumberHandling.AllowReadingFromString
         };
+
 
         private record AnalysisJson(
             [property: JsonPropertyName("summary")] string? Summary,
