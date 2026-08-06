@@ -84,7 +84,8 @@ namespace Application.Mapping
             PartialUpdateMap<UpdateProjectDTO, Project>();
             CreateMap<ProjectLocation, ProjectLocationResponseDTO>();
             CreateMap<ContractPackage, ContractPackageResponseDTO>()
-                .ForMember(d => d.Assignments, o => o.Ignore());
+                .ForMember(d => d.Assignments, o => o.Ignore())
+                .ForMember(d => d.Status, o => o.MapFrom(s => ContractPackage.DeriveStatus(s.StartDate, s.EndDate)));
             CreateMap<CreateContractPackageDTO, ContractPackage>();
             PartialUpdateMap<UpdateContractPackageDTO, ContractPackage>();
             CreateMap<PackageAssignment, PackageAssignmentResponseDTO>();
