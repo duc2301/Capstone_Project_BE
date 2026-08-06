@@ -16,6 +16,12 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<!-- Font Unicode cho iText nhúng chữ ký PDF tiếng Việt (adapter ký số nằm ở Infrastructure). -->
+		<EmbeddedResource Include="Resources\Fonts\NotoSans-Regular.ttf" />
+		<EmbeddedResource Include="Resources\Fonts\NotoSans-Bold.ttf" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<PackageReference Include="AWSSDK.S3" Version="4.0.24.5" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.9" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">

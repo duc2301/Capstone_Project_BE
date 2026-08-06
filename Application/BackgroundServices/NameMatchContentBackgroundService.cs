@@ -30,19 +30,26 @@ namespace Application.BackgroundServices
                 try
                 {
                     using var scope = _serviceScopeFactory.CreateScope();
-                    var ai = scope.ServiceProvider.GetRequiredService<IAIService>();
-                    var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+                    var _AIService = scope.ServiceProvider.GetRequiredService<IAIService>();
+                    var _unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
-                    // Tóm tắt nội dung file -> lưu vào FileItem.Description cho người dùng đọc nhanh.
-                    // Không notification: tóm tắt là thông tin hỗ trợ, không phải cảnh báo.
-                    var summary = await ai.SummarizeContentAsync(fileItemId, stoppingToken);
-                    if (summary is null) continue; // không trích được chữ / AI lỗi -> giữ nguyên
+                    // 1 lần gọi AI: tóm tắt + cờ nghi ngờ nội dung không liên quan (cho người kiểm tra).
+                    // Ghi vào VERSION HIỆN HÀNH (per-version) -> khôi phục version cũ ra đúng mô tả/cảnh báo của nó.
+                    var analysis = await _AIService.AnalyzeContentAsync(fileItemId, stoppingToken);
+                    if (analysis is null) continue; // không trích được chữ / AI lỗi -> giữ nguyên
 
-                    var file = await uow.Repository<FileItem>().GetByIdAsync(fileItemId);
-                    if (file is null) continue;
+                    var version = await _unitOfWork.FileVersionRepository.GetCurrentStateAsync(fileItemId);
+                    if (version is null) continue;
 
-                    file.Description = summary;
-                    await uow.CommitAsync();
+                    version.Description = analysis.Summary;
+                    // Re-phân tích (bản mới) tự cập nhật cờ: khớp lại -> tắt cảnh báo cũ.
+                    version.Warnning = analysis.Suspicious;
+                    version.WarnningMessage = analysis.Suspicious
+                        ? (string.IsNullOrWhiteSpace(analysis.Reason)
+                            ? "Nội dung có thể không liên quan, cần người kiểm tra lại."
+                            : analysis.Reason)
+                        : null;
+                    await _unitOfWork.CommitAsync();
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {

@@ -5,6 +5,7 @@ namespace Domain.Enum.File
     public enum VersionStage
     {
         Working = 0,    // "P" — hiển thị dạng P{Revision}.{Version}, vd: P01.02
-        Published = 1   // "C" — hiển thị dạng C{PublishedRevision}, vd: C01
+        Published = 1,  // "C" — hiển thị dạng C{PublishedRevision}, vd: C01
+        Archived = 2    // bản niêm phong lưu trữ — copy nội dung + số hiệu (C{PubRev}) của bản Published gốc
     }
 }

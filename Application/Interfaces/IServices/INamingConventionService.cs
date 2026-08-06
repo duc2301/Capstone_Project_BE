@@ -43,7 +43,7 @@ namespace Application.Interfaces.IServices
         Task StageFileNamingMetadataAsync(Guid fileItemId, FileNameGenerationResultDTO generation);
 
         NamingConventionImportPreviewDTO ParseImportFile(Stream stream);
-        byte[] GenerateImportTemplate();
+        Task<byte[]> GenerateImportTemplate(Guid projectId);
         Task<NamingConventionResponseDTO> CloneForFolderAsync(Guid conventionId, Guid folderId, Guid actor, string? actorRole);
     }
 }

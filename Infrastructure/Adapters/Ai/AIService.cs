@@ -1,7 +1,10 @@
+using Application.DTOs.ResponseDTOs.Ai;
 using Application.DTOs.ResponseDTOs.Project;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
+using Application.Interfaces.IUnitOfWork;
 using Application.Options;
+using Domain.Entities;
 using Microsoft.Extensions.Options;
 using System.Net.Http.Json;
 using System.Text;
@@ -15,29 +18,34 @@ namespace Infrastructure.Adapters.Ai
         private readonly IFileContentReader _fileReader;
         private readonly IFileTextExtractor _extractor;
         private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly IOptions<OllamaOptions> _options;
 
-        public AIService(IFileContentReader fileReader, IFileTextExtractor extractor, IHttpClientFactory httpClientFactory, IOptions<OllamaOptions> options)
+        public AIService(IFileContentReader fileReader, IFileTextExtractor extractor, IHttpClientFactory httpClientFactory, IUnitOfWork unitOfWork, IOptions<OllamaOptions> options)
         {
             _fileReader = fileReader;
             _extractor = extractor;
             _httpClientFactory = httpClientFactory;
+            _unitOfWork = unitOfWork;
             _options = options;
         }
 
-        public async Task<string?> SummarizeContentAsync(Guid fileItemId, CancellationToken ct = default)
+        // 1 lần gọi LLM trả CẢ tóm tắt + cờ nghi ngờ nội dung không liên quan (tránh gọi 2 lần vì Ollama CPU chậm).
+        public async Task<ContentAnalysisResult?> AnalyzeContentAsync(Guid fileItemId, CancellationToken ct = default)
         {
             var extractedFile = await _fileReader.LoadTextAsync(fileItemId, ct);
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(extractedFile?.Item.FolderId);
+            var project = await _unitOfWork.Repository<Project>().GetByIdAsync(folder?.ProjectId);
             if (extractedFile == null)
                 throw new ApiExceptionResponse("File not found or could not be read");
 
             var content = extractedFile.Text;
             if (string.IsNullOrWhiteSpace(content))
-                return null; // PDF scan / không trích được chữ -> không có gì để tóm tắt
+                return null; // PDF scan / không trích được chữ -> không phân tích được
 
             // Cắt bớt: đủ nắm ý chính, tránh treo Ollama CPU (generate ~10s/call).
-            const int MaxContentChars = 6000;
-            var sample = content.Length > MaxContentChars ? content[..MaxContentChars] : content;
+            //const int MaxContentChars = 6000;
+            //var sample = content.Length > MaxContentChars ? content[..MaxContentChars] : content;
 
             try
             {
@@ -46,14 +54,19 @@ namespace Infrastructure.Adapters.Ai
 
                 var payload = new GenerateRequest(
                     _options.Value.ChatModel,
-                    SummarizeContentPrompt(extractedFile.Item.Name, sample),
+                    AnalyzeContentPrompt(project.ProjectName, project.ProjectDescription, folder?.Name, content),
                     Stream: false,
                     Think: false,
                     Format: new
                     {
                         type = "object",
-                        properties = new { summary = new { type = "string" } },
-                        required = new[] { "summary" }
+                        properties = new
+                        {
+                            summary = new { type = "string" },
+                            suspicious = new { type = "boolean" },
+                            reason = new { type = "string" }
+                        },
+                        required = new[] { "summary", "suspicious" }
                     },
                     Options: new GenerateOptions(0.3, 500));
 
@@ -65,9 +78,17 @@ namespace Infrastructure.Adapters.Ai
                     return null; // advisory: AI lỗi thì bỏ qua, không chặn flow
 
                 var envelope = await response.Content.ReadFromJsonAsync<GenerateResponse>(JsonOpts, ct);
-                var parsed = JsonSerializer.Deserialize<SummaryJson>(envelope?.Response ?? "", JsonOpts);
-                var summary = parsed?.Summary?.Trim();
-                return string.IsNullOrWhiteSpace(summary) ? null : summary;
+                var parsed = JsonSerializer.Deserialize<AnalysisJson>(envelope?.Response ?? "", JsonOpts);
+                if (parsed is null)
+                    return null;
+
+                var summary = parsed.Summary?.Trim();
+                return new ContentAnalysisResult
+                {
+                    Summary = string.IsNullOrWhiteSpace(summary) ? null : summary,
+                    Suspicious = parsed.Suspicious,
+                    Reason = parsed.Reason?.Trim()
+                };
             }
             catch (Exception)
             {
@@ -225,15 +246,18 @@ namespace Infrastructure.Adapters.Ai
             required = new[] { "projectName" }
         };
 
-        private static string SummarizeContentPrompt(string fileName, string content) =>
-            "Bạn tóm tắt tài liệu xây dựng cho người dùng đọc nhanh.\n" +
-            $"Tên file: {fileName}\n" +
-            "Trích nội dung (có thể lỗi khoảng cách/định dạng do trích xuất PDF — bỏ qua các lỗi đó):\n" +
+        private static string AnalyzeContentPrompt(string projectName, string projectDescription, string? folderName, string content) =>
+            "Bạn phân tích tài liệu xây dựng: Tóm tắt nội dung VÀ kiểm tra nội dung có đúng loại/chủ đề liên quan không.\n" +
+            $"Tên dự án: {projectName}\n" +
+            $"Mô tả dự án: {projectDescription}\n" +
+            $"Tên thư mục chứa nội dung: {folderName}\n" +
+            "Trích nội dung (có thể lỗi khoảng cách/định dạng do trích xuất PDF — BỎ QUA các lỗi đó, KHÔNG vì lỗi trích xuất mà coi là nghi ngờ):\n" +
             $"{content}\n\n" +
-            "Yêu cầu summary (TIẾNG VIỆT, 1-3 câu, tối đa ~40 từ):\n" +
-            "1) Câu đầu: Bỏ mấy câu rườm rà, mở đầu (Đây là, file này là,.... Kiểu 'File thiết kế', File quy định, File hợp đồng ). (hợp đồng, bản vẽ/thuyết minh, thông tư/quy định, báo cáo, biên bản...) về CHỦ ĐỀ gì.\n" +
-            "2) Các câu sau: Câu miêu tả ngắn để người dùng đọc nhanh và vẫn nắm gọn nội dung chính.\n" +
-            "KHÔNG bịa thông tin không có trong trích đoạn. KHÔNG nhận xét chất lượng tài liệu.";
+            "Trả 3 trường:\n" +
+            "1) summary (TIẾNG VIỆT, 1-3 câu, ~40 từ): loại tài liệu + chủ đề chính; bỏ mở đầu rườm rà ('Đây là', 'File này là'). KHÔNG bịa, KHÔNG nhận xét chất lượng.\n" +
+            "2) suspicious (boolean): true CHỈ KHI nội dung RÕ RÀNG không liên quan tới tên tệp / không phải tài liệu xây dựng - dự án (vd tên nói 'bản vẽ kết cấu' nhưng nội dung là truyện, hoá đơn cá nhân, nội dung rác, thông tin từ các lĩnh vực không liên quan như tuyển dụng, học tập). KHOAN DUNG: chỉ báo khi lệch trắng trợn; nghi ngờ nhẹ hoặc chỉ khác định dạng -> false. Xét LOẠI + CHỦ ĐỀ, cùng công ty/dự án chưa đủ để coi là khớp.\n" +
+            "3) reason (TIẾNG VIỆT, 1 câu): CHỈ khi suspicious=true, nêu vì sao lệch; suspicious=false thì để trống.\n" +
+            "Chỉ trả JSON đúng schema, không kèm chữ nào khác.";
 
         private static readonly JsonSerializerOptions JsonOpts = new()
         {
@@ -241,7 +265,11 @@ namespace Infrastructure.Adapters.Ai
             NumberHandling = JsonNumberHandling.AllowReadingFromString
         };
 
-        private record SummaryJson([property: JsonPropertyName("summary")] string? Summary);
+
+        private record AnalysisJson(
+            [property: JsonPropertyName("summary")] string? Summary,
+            [property: JsonPropertyName("suspicious")] bool Suspicious,
+            [property: JsonPropertyName("reason")] string? Reason);
 
         private record GenerateRequest(string Model, string Prompt, bool Stream, bool Think, object Format, GenerateOptions Options);
         private record GenerateOptions(

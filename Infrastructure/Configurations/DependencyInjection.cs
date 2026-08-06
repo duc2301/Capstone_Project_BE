@@ -59,6 +59,8 @@ namespace Infrastructure.Configurations
             services.AddScoped<IPdfSignatureService, PdfSignatureService>();
             services.AddScoped<IVnptSmartCaService, VnptSmartCaService>();
             services.AddScoped<IZoneReturnRequestService, ZoneReturnRequestService>();
+            // Niêm phong lưu trữ (Published -> Archived, ngoài luồng phê duyệt): chỉ PM/Admin.
+            services.AddScoped<IFileArchiveService, FileArchiveService>();
             // Kho file: chọn provider qua "FileStorage:Provider" (Local mặc định | ViettelS3).
             var storageProvider = configuration["FileStorage:Provider"] ?? "Local";
             if (storageProvider.Equals("ViettelS3", StringComparison.OrdinalIgnoreCase)

@@ -50,6 +50,14 @@ namespace Application.Services
 
             var dto = _mapper.Map<FileItemResponseDTO>(entity);
             dto.HasOpenIssue = (await _issueService.GetOpenIssueFileIdsAsync(new[] { id })).Any();
+
+            // Description/Warnning giờ ở version hiện hành (per-version) -> lấy từ đó, không từ FileItem.
+            var current = entity.CurrentVersionId.HasValue
+                ? await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(entity.CurrentVersionId.Value)
+                : null;
+            dto.Description = current?.Description;
+            dto.Warnning = current?.Warnning;
+            dto.WarnningMessage = current?.WarnningMessage;
             return dto;
         }
 
@@ -189,9 +197,9 @@ namespace Application.Services
                     AuthorName = f.CreatedByAccountId.HasValue && accounts.TryGetValue(f.CreatedByAccountId.Value, out var a) ? a.UserName : null,
                     CreatedAt = f.CreatedAt,
                     UpdatedAt = f.UpdatedAt,
-                    Warnning = f.Warnning,
-                    WarnningMessage = f.WarnningMessage,
-                    Description = f.Description,
+                    Warnning = cur?.Warnning,
+                    WarnningMessage = cur?.WarnningMessage,
+                    Description = cur?.Description,
                     HasOpenIssue = openIssueFileIds.Contains(f.Id),
                 };
             }).ToList();
