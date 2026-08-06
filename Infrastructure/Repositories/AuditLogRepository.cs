@@ -1,6 +1,7 @@
 using Application.DTOs.RequestDTOs.Audit;
 using Application.DTOs.ResponseDTOs.Audit;
 using Application.Interfaces.IRepositories;
+using Domain.Entities;
 using Domain.Enum.Group;
 using Domain.Enum.Project;
 using Infrastructure.DbContexts;
@@ -10,6 +11,9 @@ namespace Infrastructure.Repositories
 {
     public class AuditLogRepository : IAuditLogRepository
     {
+        private const int DefaultPageSize = 20;
+        private const int MaxPageSize = 200;
+
         private readonly CDESystemDbContext _context;
 
         public AuditLogRepository(CDESystemDbContext context)
@@ -18,6 +22,46 @@ namespace Infrastructure.Repositories
         }
 
         public async Task<AuditLogPageDTO> QueryAsync(
+            AuditLogFilterDTO filter,
+            Guid? projectId,
+            HashSet<Guid>? folderIds,
+            HashSet<Guid>? groupIds)
+        {
+            var query = BuildQuery(filter, projectId, folderIds, groupIds);
+
+            var total = await query.CountAsync();
+
+            var page = filter.Page < 1 ? 1 : filter.Page;
+            var pageSize = filter.PageSize < 1 || filter.PageSize > MaxPageSize
+                ? DefaultPageSize
+                : filter.PageSize;
+
+            var items = await ToResponse(query)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new AuditLogPageDTO
+            {
+                Items = items,
+                Total = total,
+                Page = page,
+                PageSize = pageSize
+            };
+        }
+
+        public async Task<List<AuditLogResponseDTO>> QueryAllAsync(
+            AuditLogFilterDTO filter,
+            Guid? projectId,
+            HashSet<Guid>? folderIds,
+            HashSet<Guid>? groupIds,
+            int maxRows)
+        {
+            var query = BuildQuery(filter, projectId, folderIds, groupIds);
+            return await ToResponse(query).Take(maxRows).ToListAsync();
+        }
+
+        private IQueryable<AuditLog> BuildQuery(
             AuditLogFilterDTO filter,
             Guid? projectId,
             HashSet<Guid>? folderIds,
@@ -49,6 +93,22 @@ namespace Infrastructure.Repositories
             if (filter.ActorId.HasValue)
                 query = query.Where(l => l.ActorAccountId == filter.ActorId.Value);
 
+            if (!string.IsNullOrWhiteSpace(filter.EntityType))
+                query = query.Where(l => l.EntityType == filter.EntityType);
+
+            if (!string.IsNullOrWhiteSpace(filter.EntityId))
+                query = query.Where(l => l.EntityId == filter.EntityId);
+
+            if (!string.IsNullOrWhiteSpace(filter.Search))
+            {
+                var term = filter.Search.Trim().ToLower();
+                query = query.Where(l =>
+                    (l.Detail != null && l.Detail.ToLower().Contains(term))
+                    || _context.Accounts.Any(a =>
+                        a.Id == l.ActorAccountId
+                        && (a.UserName.ToLower().Contains(term) || a.Email.ToLower().Contains(term))));
+            }
+
             if (filter.From.HasValue)
             {
                 var from = DateTime.SpecifyKind(filter.From.Value, DateTimeKind.Utc);
@@ -61,16 +121,12 @@ namespace Infrastructure.Repositories
                 query = query.Where(l => l.CreatedAt < toExclusive);
             }
 
-            var total = await query.CountAsync();
+            return query;
+        }
 
-            var page = filter.Page < 1 ? 1 : filter.Page;
-            var pageSize = filter.PageSize < 1 || filter.PageSize > 200 ? 20 : filter.PageSize;
-
-            // Join Accounts lấy tên người thao tác (entity lean không snapshot ActorName).
-            var items = await query
+        private IQueryable<AuditLogResponseDTO> ToResponse(IQueryable<AuditLog> query) =>
+            query
                 .OrderByDescending(l => l.CreatedAt)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
                 .Select(l => new AuditLogResponseDTO
                 {
                     Id = l.Id,
@@ -88,17 +144,7 @@ namespace Infrastructure.Repositories
                     EntityId = l.EntityId,
                     Detail = l.Detail,
                     CreatedAt = l.CreatedAt
-                })
-                .ToListAsync();
-
-            return new AuditLogPageDTO
-            {
-                Items = items,
-                Total = total,
-                Page = page,
-                PageSize = pageSize
-            };
-        }
+                });
 
         public async Task<HashSet<Guid>> GetMyActiveGroupIdsAsync(Guid projectId, Guid accountId)
         {

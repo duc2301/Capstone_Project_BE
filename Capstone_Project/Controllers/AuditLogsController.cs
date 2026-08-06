@@ -46,5 +46,33 @@ namespace Capstone_Project.Controllers
                 projectId, filter, User.GetAccountId());
             return Ok(ApiResponse.Success("Audit logs retrieved", result));
         }
+
+        [HttpGet("me")]
+        public async Task<IActionResult> GetMyActivity([FromQuery] AuditLogFilterDTO filter)
+        {
+            var result = await _auditLogService.GetMyActivityAsync(filter, User.GetAccountId());
+            return Ok(ApiResponse.Success("My activity retrieved", result));
+        }
+
+        [HttpGet("files/{fileItemId:guid}")]
+        public async Task<IActionResult> GetByFileItem(Guid fileItemId, [FromQuery] AuditLogFilterDTO filter)
+        {
+            var result = await _auditLogService.GetByFileItemAsync(fileItemId, filter, User.GetAccountId());
+            return Ok(ApiResponse.Success("File audit logs retrieved", result));
+        }
+
+        [HttpGet("system/export")]
+        public async Task<IActionResult> ExportSystem([FromQuery] AuditLogFilterDTO filter)
+        {
+            var file = await _auditLogService.ExportCsvAsync(null, filter, User.GetAccountId());
+            return File(file.Content, file.ContentType, file.FileName);
+        }
+
+        [HttpGet("projects/{projectId:guid}/export")]
+        public async Task<IActionResult> ExportByProject(Guid projectId, [FromQuery] AuditLogFilterDTO filter)
+        {
+            var file = await _auditLogService.ExportCsvAsync(projectId, filter, User.GetAccountId());
+            return File(file.Content, file.ContentType, file.FileName);
+        }
     }
 }

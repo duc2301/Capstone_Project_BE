@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
+    [ApiController]
     [Route("api/accounts")]
     public class AccountController : ControllerBase
     {
@@ -29,6 +30,7 @@ namespace Capstone_Project.Controllers
         }
 
         [HttpGet]
+        [Authorize]
         public async Task<IActionResult> GetAll()
         {
             var result = await _accountService.GetAllAsync();

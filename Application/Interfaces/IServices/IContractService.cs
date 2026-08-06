@@ -5,10 +5,9 @@ namespace Application.Interfaces.IServices
 {
     public interface IContractService
     {
-        Task<IEnumerable<ContractResponseDTO>> GetAllAsync();
         Task<ContractResponseDTO?> GetByIdAsync(Guid id);
-        Task<ContractResponseDTO> CreateAsync(CreateContractDTO dto);
-        Task<ContractResponseDTO> UpdateAsync(Guid id, UpdateContractDTO dto);
-        Task DeleteAsync(Guid id);
+        Task<ContractResponseDTO> CreateAsync(CreateContractDTO dto, Guid actorId);
+        Task<ContractResponseDTO> UpdateAsync(Guid id, UpdateContractDTO dto, Guid actorId);
+        Task DeleteAsync(Guid id, Guid actorId);
     }
 }

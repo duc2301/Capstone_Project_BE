@@ -11,8 +11,8 @@ namespace Application.Interfaces.IServices
         Task<NamingConventionResponseDTO> CreateAsync(CreateNamingConventionDTO dto, Guid actor);
         Task<NamingConventionResponseDTO> GetByIdAsync(Guid id);
         Task<IEnumerable<NamingConventionResponseDTO>> GetByProjectAsync(Guid projectId);
-        Task<NamingConventionResponseDTO> UpdateAsync(Guid id, UpdateNamingConventionDTO dto);
-        Task DeleteAsync(Guid id);
+        Task<NamingConventionResponseDTO> UpdateAsync(Guid id, UpdateNamingConventionDTO dto, Guid actor);
+        Task DeleteAsync(Guid id, Guid actor);
 
         Task<NamingConventionResponseDTO> AddFieldAsync(Guid conventionId, CreateNamingFieldDTO dto, Guid actor);
         Task<NamingConventionResponseDTO> UpdateFieldAsync(Guid fieldId, UpdateNamingFieldDTO dto);

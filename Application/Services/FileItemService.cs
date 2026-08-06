@@ -43,10 +43,6 @@ namespace Application.Services
             _auditLog = auditLog;
         }
 
-        public async Task<IEnumerable<FileItemResponseDTO>> GetAllAsync()
-            => _mapper.Map<IEnumerable<FileItemResponseDTO>>(
-                await _unitOfWork.Repository<FileItem>().GetAllAsync());
-
         public async Task<FileItemResponseDTO?> GetByIdAsync(Guid id)
         {
             var entity = await _unitOfWork.Repository<FileItem>().GetByIdAsync(id);

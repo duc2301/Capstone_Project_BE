@@ -9,6 +9,7 @@ namespace Capstone_Project.Controllers
 {
     // Cấu hình naming convention (admin) + payload cho dialog upload.
     // Lưu ý: chưa kiểm tra quyền (iteration sau) — mọi request đã đăng nhập đều được phép.
+    [ApiController]
     [Route("api/naming-conventions")]
     [Authorize]
     public class NamingConventionsController : ControllerBase
@@ -47,13 +48,13 @@ namespace Capstone_Project.Controllers
         [HttpPut("{id:guid}")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateNamingConventionDTO dto)
         {
-            return Ok(ApiResponse.Success("Updated successfully", await _service.UpdateAsync(id, dto)));
+            return Ok(ApiResponse.Success("Updated successfully", await _service.UpdateAsync(id, dto, User.GetAccountId())));
         }
 
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> Delete(Guid id)
         {
-            await _service.DeleteAsync(id);
+            await _service.DeleteAsync(id, User.GetAccountId());
             return Ok(ApiResponse.Success("Deleted successfully"));
         }
 

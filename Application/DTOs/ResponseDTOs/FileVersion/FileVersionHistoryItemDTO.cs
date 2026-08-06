@@ -22,6 +22,10 @@ namespace Application.DTOs.ResponseDTOs.FileVersion
         public string? Format { get; set; }
         public string? Checksum { get; set; }
 
+        public Guid? UploadedByAccountId { get; set; }
+        public string? UploadedByName { get; set; }
+        public DateTime? UploadedAt { get; set; }
+
         public DateTime? CreatedAt { get; set; }
     }
 }

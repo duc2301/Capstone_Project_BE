@@ -3,6 +3,7 @@ using Application.DTOs.ResponseDTOs.FileVersion;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
+using Domain.Enum.Audit;
 using Domain.Enum.File;
 
 namespace Application.Services
@@ -21,10 +22,12 @@ namespace Application.Services
     public class FileVersionService : IFileVersionService
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IAuditLogService _auditLog;
 
-        public FileVersionService(IUnitOfWork unitOfWork)
+        public FileVersionService(IUnitOfWork unitOfWork, IAuditLogService auditLog)
         {
             _unitOfWork = unitOfWork;
+            _auditLog = auditLog;
         }
 
         public async Task<FileVersionResult> GetNextUploadVersionAsync(Guid folderId, string fileName, FileVersionDataDTO? fileData = null)
@@ -125,7 +128,7 @@ namespace Application.Services
             return ToResult(snapshot);
         }
 
-        public async Task<FileVersionResult> RestoreVersionAsync(Guid fileItemId, Guid versionStateId)
+        public async Task<FileVersionResult> RestoreVersionAsync(Guid fileItemId, Guid versionStateId, Guid actorId)
         {
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new KeyNotFoundException($"FileItem {fileItemId} not found.");
@@ -156,6 +159,13 @@ namespace Application.Services
             // version hiện hành của FileItem để folder-contents/view... đọc đúng bản vừa khôi phục.
             fileItem.CurrentVersionId = snapshot.Id;
             fileItem.UpdatedAt = DateTime.UtcNow;
+
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
+            await _auditLog.LogAsync(
+                LogScope.Group, AuditAction.NewVersion, nameof(FileItem), fileItem.Id.ToString(), actorId,
+                detail: $"Khôi phục '{fileItem.Name}' từ phiên bản {source.DisplayVersion} thành {snapshot.DisplayVersion}",
+                projectId: folder?.ProjectId, folderId: fileItem.FolderId);
+
             await _unitOfWork.SaveChangesAsync();
 
             return ToResult(snapshot);
@@ -188,6 +198,7 @@ namespace Application.Services
         public async Task<List<FileVersionHistoryItemDTO>> GetVersionHistoryAsync(Guid fileItemId)
         {
             var history = await _unitOfWork.FileVersionRepository.GetHistoryAsync(fileItemId);
+            var uploaderNames = await GetUploaderNamesAsync(history);
 
             return history.Select(s => new FileVersionHistoryItemDTO
             {
@@ -204,11 +215,32 @@ namespace Application.Services
                 FileSizeBytes = s.FileSizeBytes,
                 Format = s.Format,
                 Checksum = s.Checksum,
+                UploadedByAccountId = s.UploadedByAccountId,
+                UploadedByName = s.UploadedByAccountId.HasValue
+                    && uploaderNames.TryGetValue(s.UploadedByAccountId.Value, out var uploaderName)
+                        ? uploaderName
+                        : null,
+                UploadedAt = s.UploadedAt,
                 CreatedAt = s.CreatedAt
             }).ToList();
         }
 
         // --- Helpers ---
+
+        private async Task<Dictionary<Guid, string>> GetUploaderNamesAsync(List<FileVersionState> history)
+        {
+            var uploaderIds = history
+                .Where(s => s.UploadedByAccountId.HasValue)
+                .Select(s => s.UploadedByAccountId!.Value)
+                .Distinct()
+                .ToList();
+
+            if (uploaderIds.Count == 0)
+                return new Dictionary<Guid, string>();
+
+            var accounts = await _unitOfWork.Repository<Account>().FindAsync(a => uploaderIds.Contains(a.Id));
+            return accounts.ToDictionary(a => a.Id, a => a.UserName);
+        }
 
         private async Task<FileVersionState> RequireCurrentStateAsync(Guid fileItemId)
         {

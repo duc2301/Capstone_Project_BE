@@ -34,10 +34,16 @@ namespace Application.Services
 
         public async Task<IEnumerable<GroupResponseDTO>> GetAllAsync()
         {
-            var groups = await _unitOfWork.Repository<Group>().GetAllAsync();
-            var members = await _unitOfWork.Repository<GroupMember>().GetAllAsync();
-            var accounts = (await _unitOfWork.Repository<Account>().GetAllAsync())
-                .ToDictionary(a => a.Id);
+            var groups = (await _unitOfWork.Repository<Group>().GetAllAsync()).ToList();
+            var groupIds = groups.Select(g => g.Id).ToHashSet();
+            var members = (await _unitOfWork.Repository<GroupMember>()
+                    .FindAsync(m => groupIds.Contains(m.GroupId)))
+                .ToList();
+            var accountIds = members.Select(m => m.AccountId).ToHashSet();
+            var accounts = accountIds.Count == 0
+                ? new Dictionary<Guid, Account>()
+                : (await _unitOfWork.Repository<Account>().FindAsync(a => accountIds.Contains(a.Id)))
+                    .ToDictionary(a => a.Id);
 
             return groups.Select(g => Build(g, members, accounts));
         }
@@ -47,9 +53,14 @@ namespace Application.Services
             var entity = await _unitOfWork.Repository<Group>().GetByIdAsync(id);
             if (entity == null) return null;
 
-            var members = await _unitOfWork.Repository<GroupMember>().GetAllAsync();
-            var accounts = (await _unitOfWork.Repository<Account>().GetAllAsync())
-                .ToDictionary(a => a.Id);
+            var members = (await _unitOfWork.Repository<GroupMember>()
+                    .FindAsync(m => m.GroupId == id))
+                .ToList();
+            var accountIds = members.Select(m => m.AccountId).ToHashSet();
+            var accounts = accountIds.Count == 0
+                ? new Dictionary<Guid, Account>()
+                : (await _unitOfWork.Repository<Account>().FindAsync(a => accountIds.Contains(a.Id)))
+                    .ToDictionary(a => a.Id);
 
             return Build(entity, members, accounts);
         }

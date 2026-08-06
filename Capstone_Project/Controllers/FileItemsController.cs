@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
+    [ApiController]
     [Route("api/file-items")]
     [Authorize]
     public class FileItemsController : ControllerBase
@@ -196,10 +197,6 @@ namespace Capstone_Project.Controllers
         [HttpGet("by-folder/{folderId:guid}")]
         public async Task<IActionResult> GetByFolder(Guid folderId)
             => Ok(ApiResponse.Success("Files retrieved", await _service.GetByFolderAsync(folderId, User.GetAccountId())));
-
-        [HttpGet]
-        public async Task<IActionResult> GetAll()
-            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAllAsync()));
 
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetById(Guid id)

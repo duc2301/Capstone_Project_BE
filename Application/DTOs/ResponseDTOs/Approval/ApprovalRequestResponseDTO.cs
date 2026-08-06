@@ -10,6 +10,9 @@ namespace Application.DTOs.ResponseDTOs.Approval
         public Guid Id { get; set; }
         public Guid FileItemId { get; set; }
         public string FileItemName { get; set; } = null!;
+        public Guid ProjectId { get; set; }
+        public Guid FolderId { get; set; }
+        public string? FolderName { get; set; }
         public string? CurrentZone { get; set; }
         public string? TargetZone { get; set; }
         public bool RequiresSignature { get; set; }

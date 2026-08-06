@@ -23,7 +23,8 @@ namespace Capstone_Project.Controllers
         [HttpPost]
         public async Task<IActionResult> Invite([FromBody] InviteRequestDTO dto)
         {
-            var result = await _invitationService.InviteAsync(dto, User.GetAccountId(), User.GetUserName());
+            var result = await _invitationService.InviteAsync(
+                dto, User.GetAccountId(), User.GetUserName(), User.IsAdmin());
             return CreatedAtAction(nameof(Invite), new { id = result.Id },
                 ApiResponse.Success("Invitation created", result));
         }

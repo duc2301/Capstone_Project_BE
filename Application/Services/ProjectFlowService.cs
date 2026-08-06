@@ -134,12 +134,22 @@ namespace Application.Services
                 }
             }
 
+            var groupIds = created.Select(c => c.GroupId).Distinct().ToList();
+            var groupNames = (await _unitOfWork.Repository<Group>().FindAsync(g => groupIds.Contains(g.Id)))
+                .ToDictionary(g => g.Id, g => g.Name);
+
             foreach (var participant in created)
+            {
+                var groupName = groupNames.TryGetValue(participant.GroupId, out var name)
+                    ? name
+                    : participant.GroupId.ToString();
+
                 await _auditLog.LogAsync(
                     LogScope.Project, AuditAction.Create, nameof(ProjectParticipant),
                     participant.Id.ToString(), actor,
-                    detail: $"Thêm nhóm {participant.Group.Name} tham gia vào dự án {participant.Project.ProjectName})",
+                    detail: $"Thêm nhóm {groupName} tham gia vào dự án {project.ProjectName}",
                     projectId: projectId, groupId: participant.GroupId);
+            }
 
             await _unitOfWork.CommitAsync();
 
