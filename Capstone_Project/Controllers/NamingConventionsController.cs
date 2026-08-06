@@ -163,11 +163,11 @@ namespace Capstone_Project.Controllers
         }
 
         [HttpGet("import-template")]
-        public IActionResult DownloadImportTemplate()
+        public async Task<IActionResult> DownloadImportTemplate(Guid projectId)
         {
-            return File(_service.GenerateImportTemplate(),
+            return File(await _service.GenerateImportTemplate(projectId),
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "naming-convention-template_ISO-19650.xlsx");
+                "naming-convention-19650.xlsx");
         }
 
         [HttpPost("import-preview")]
