@@ -24,6 +24,7 @@ namespace Domain.Enum.Audit
         AcceptInvite,
         RejectInvite,
         Assign,
-        StatusChange
+        StatusChange,
+        Archive         // Niêm phong lưu trữ: chốt bản Published chính thức vào vùng Archived
     }
 }

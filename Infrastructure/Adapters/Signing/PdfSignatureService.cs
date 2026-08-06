@@ -439,8 +439,9 @@ namespace Infrastructure.Adapters.Signing
 
         private static byte[] LoadEmbeddedFontBytes(string fileName)
         {
+            // Font nhúng giờ nằm cùng assembly Infrastructure (đã dời từ Application sang cùng adapter iText).
             var assembly = typeof(PdfSignatureService).Assembly;
-            var resourceName = $"Application.Resources.Fonts.{fileName}";
+            var resourceName = $"Infrastructure.Resources.Fonts.{fileName}";
             using var stream = assembly.GetManifestResourceStream(resourceName)
                 ?? throw new InvalidOperationException($"Embedded font resource not found: {resourceName}");
             using var buffer = new MemoryStream();
