@@ -10,6 +10,7 @@ namespace Capstone_Project.Controllers
     // Các endpoint mô phỏng dùng cho DEV/TEST (next-upload, initial, enter-shared, publish,
     // return-to-wip) đã được gỡ bỏ — những bước đó chạy trong luồng thật của
     // FileUploadService / ApprovalService / FileItemService, không gọi qua controller này.
+    [ApiController]
     [Route("api/file-versions")]
     [Authorize]
     public class FileVersionController : ControllerBase

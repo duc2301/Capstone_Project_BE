@@ -145,8 +145,7 @@ namespace Application.Services
             var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
                 ?? throw new ApiExceptionResponse("File folder not found.", 404);
 
-            var hasFullAccess = await _permission.HasProjectFullAccessAsync(folder.ProjectId, actorId);
-            if (!hasFullAccess && !await _permission.HasViewFileAsync(fileItemId, actorId))
+            if (!await _permission.HasViewFileAsync(fileItemId, actorId))
                 throw new ApiExceptionResponse("You do not have permission to view this file.", 403);
 
             filter.EntityType = nameof(FileItem);

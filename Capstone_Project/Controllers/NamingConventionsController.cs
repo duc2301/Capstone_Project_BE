@@ -9,6 +9,7 @@ namespace Capstone_Project.Controllers
 {
     // Cấu hình naming convention (admin) + payload cho dialog upload.
     // Lưu ý: chưa kiểm tra quyền (iteration sau) — mọi request đã đăng nhập đều được phép.
+    [ApiController]
     [Route("api/naming-conventions")]
     [Authorize]
     public class NamingConventionsController : ControllerBase

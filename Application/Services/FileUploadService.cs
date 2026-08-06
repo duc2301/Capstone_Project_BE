@@ -243,7 +243,7 @@ namespace Application.Services
                 throw new ApiExceptionResponse("Version has no stored content.", 404);
 
             var stream = await _storage.OpenReadAsync(version.StoragePath, ct);
-            var downloadName = $"{fileItem.Name}.{version.Format}";
+            var downloadName = FileDownloadNaming.BuildFileName(fileItem.Name, version.Format);
 
             // Luồng chỉ-đọc: không có transaction nghiệp vụ để bám vào -> ghi + commit riêng.
             var downloadFolder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);

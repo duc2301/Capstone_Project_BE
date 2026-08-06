@@ -23,10 +23,6 @@ namespace Application.Services
             _auditLog = auditLog;
         }
 
-        public async Task<IEnumerable<ContractResponseDTO>> GetAllAsync()
-            => _mapper.Map<IEnumerable<ContractResponseDTO>>(
-                await _unitOfWork.Repository<Contract>().GetAllAsync());
-
         public async Task<ContractResponseDTO?> GetByIdAsync(Guid id)
         {
             var entity = await _unitOfWork.Repository<Contract>().GetByIdAsync(id);

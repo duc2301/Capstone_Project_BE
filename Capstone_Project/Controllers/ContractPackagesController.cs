@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authorization;
 
 namespace Capstone_Project.Controllers
 {
+    [ApiController]
     [Route("api/contract-packages")]
     [Microsoft.AspNetCore.Authorization.Authorize]
     public class ContractPackagesController : ControllerBase

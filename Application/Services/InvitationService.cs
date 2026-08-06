@@ -40,10 +40,15 @@ namespace Application.Services
             _auditLog = auditLog;
         }
 
-        public async Task<InvitationResponseDTO> InviteAsync(InviteRequestDTO dto, Guid inviter, string? inviterName)
+        public async Task<InvitationResponseDTO> InviteAsync(
+            InviteRequestDTO dto, Guid inviter, string? inviterName, bool inviterIsAdmin)
         {
             var project = await _unitOfWork.Repository<Project>().GetByIdAsync(dto.ProjectId)
                 ?? throw new ApiExceptionResponse("Project not found.", 404);
+
+            if (!inviterIsAdmin && project.ManagerAccountId != inviter)
+                throw new ApiExceptionResponse(
+                    "Only a system administrator or the project manager can invite members.", 403);
 
             var group = await _unitOfWork.Repository<Group>().GetByIdAsync(dto.InvitedGroupId)
                 ?? throw new ApiExceptionResponse("Group not found.", 404);
@@ -246,12 +251,23 @@ namespace Application.Services
             if (invitations.Count == 0)
                 return Enumerable.Empty<MyInvitationDTO>();
 
-            var projects = (await _unitOfWork.Repository<Project>().GetAllAsync())
+            var projectIds = invitations.Select(i => i.ProjectId).ToHashSet();
+            var groupIds = invitations.Where(i => i.InvitedGroupId.HasValue)
+                .Select(i => i.InvitedGroupId!.Value).ToHashSet();
+            var inviterIds = invitations.Where(i => i.InvitedByAccountId.HasValue)
+                .Select(i => i.InvitedByAccountId!.Value).ToHashSet();
+
+            var projects = (await _unitOfWork.Repository<Project>()
+                    .FindAsync(p => projectIds.Contains(p.Id)))
                 .ToDictionary(p => p.Id);
-            var groups = (await _unitOfWork.Repository<Group>().GetAllAsync())
-                .ToDictionary(g => g.Id);
-            var accounts = (await _unitOfWork.Repository<Account>().GetAllAsync())
-                .ToDictionary(a => a.Id);
+            var groups = groupIds.Count == 0
+                ? new Dictionary<Guid, Group>()
+                : (await _unitOfWork.Repository<Group>().FindAsync(g => groupIds.Contains(g.Id)))
+                    .ToDictionary(g => g.Id);
+            var accounts = inviterIds.Count == 0
+                ? new Dictionary<Guid, Account>()
+                : (await _unitOfWork.Repository<Account>().FindAsync(a => inviterIds.Contains(a.Id)))
+                    .ToDictionary(a => a.Id);
 
             return invitations.Select(i => new MyInvitationDTO
             {

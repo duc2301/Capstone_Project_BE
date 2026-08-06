@@ -91,15 +91,15 @@ namespace Application.Services
             var fileItems = (await _unitOfWork.Repository<FileItem>().FindAsync(f => fileItemIds.Contains(f.Id)))
                 .ToDictionary(f => f.Id);
 
-            var canViewFolder = new Dictionary<Guid, bool>();
+            var canViewFile = new Dictionary<Guid, bool>();
             var visible = new List<MarkupSet>();
             foreach (var set in sets)
             {
                 if (!fileItems.TryGetValue(set.FileItemId, out var fi)) continue;
-                if (!canViewFolder.TryGetValue(fi.FolderId, out var allowed))
+                if (!canViewFile.TryGetValue(fi.Id, out var allowed))
                 {
-                    allowed = await _permission.HasViewFolderAsync(fi.FolderId, actorId);
-                    canViewFolder[fi.FolderId] = allowed;
+                    allowed = await _permission.HasViewFileAsync(fi.Id, actorId);
+                    canViewFile[fi.Id] = allowed;
                 }
                 if (allowed) visible.Add(set);
             }

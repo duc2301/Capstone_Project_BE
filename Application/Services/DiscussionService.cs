@@ -34,10 +34,6 @@ namespace Application.Services
             _auditLog = auditLog;
         }
 
-        public async Task<IEnumerable<DiscussionResponseDTO>> GetAllAsync()
-            => _mapper.Map<IEnumerable<DiscussionResponseDTO>>(
-                await _unitOfWork.Repository<Discussion>().GetAllAsync());
-
         public async Task<DiscussionResponseDTO?> GetByIdAsync(Guid id)
         {
             var entity = await _unitOfWork.Repository<Discussion>().GetByIdAsync(id);

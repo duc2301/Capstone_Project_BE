@@ -665,6 +665,10 @@ namespace Application.Services
             if (request.RequestedBy == actor)
                 return true;
 
+            var account = await _unitOfWork.Repository<Account>().GetByIdAsync(actor);
+            if (account?.Role == Domain.Enum.Account.AccountRole.Admin)
+                return true;
+
             if (request.RequiresSignature && await IsRequiredSignerAsync(actor, request.Id))
                 return true;
 
@@ -968,6 +972,9 @@ namespace Application.Services
                 Id = request.Id,
                 FileItemId = request.FileItemId,
                 FileItemName = fileItem.Name,
+                ProjectId = folder.ProjectId,
+                FolderId = folder.Id,
+                FolderName = folder.Name,
                 CurrentZone = _zoneResolver.FormatZone(request.FromZone),
                 TargetZone = _zoneResolver.FormatZone(request.TargetZone),
                 RequiresSignature = request.RequiresSignature,

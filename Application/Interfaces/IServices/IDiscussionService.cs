@@ -6,7 +6,6 @@ namespace Application.Interfaces.IServices
 {
     public interface IDiscussionService
     {
-        Task<IEnumerable<DiscussionResponseDTO>> GetAllAsync();
         Task<DiscussionResponseDTO?> GetByIdAsync(Guid id);
         Task<DiscussionResponseDTO> CreateAsync(CreateDiscussionDTO dto, Guid actorId);
         Task<DiscussionResponseDTO> UpdateAsync(Guid id, UpdateDiscussionDTO dto);

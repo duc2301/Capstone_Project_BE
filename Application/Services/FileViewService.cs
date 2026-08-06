@@ -94,7 +94,7 @@ namespace Application.Services
         {
             var format = version.Format ?? string.Empty;
             var ext = format.StartsWith('.') ? format.ToLowerInvariant() : "." + format.ToLowerInvariant();
-            var fileName = $"{fileItem.Name}.{format}";
+            var fileName = FileDownloadNaming.BuildFileName(fileItem.Name, format);
             var hasStoredContent = !string.IsNullOrWhiteSpace(version.StoragePath);
 
             var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)

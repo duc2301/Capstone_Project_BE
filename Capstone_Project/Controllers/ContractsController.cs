@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
+    [ApiController]
     [Route("api/contracts")]
     [Authorize]
     public class ContractsController : ControllerBase
@@ -17,10 +18,6 @@ namespace Capstone_Project.Controllers
         {
             _service = service;
         }
-
-        [HttpGet]
-        public async Task<IActionResult> GetAll()
-            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAllAsync()));
 
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetById(Guid id)

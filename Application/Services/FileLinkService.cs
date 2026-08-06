@@ -3,6 +3,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
+using Domain.Enum.Cde;
 
 namespace Application.Services
 {
@@ -274,10 +275,19 @@ namespace Application.Services
         private async Task<HashSet<Guid>?> ResolveViewableFolderIdsAsync(
             Guid projectId, Guid actorId)
         {
-            if (await _permission.HasProjectFullAccessAsync(projectId, actorId))
+            if (await _permission.HasSystemAdminAsync(actorId))
                 return null;
 
-            return await _permission.GetViewableFolderIdsAsync(projectId, actorId);
+            var viewableFolderIds = await _permission.GetViewableFolderIdsAsync(projectId, actorId);
+            if (!await _permission.HasProjectFullAccessAsync(projectId, actorId))
+                return viewableFolderIds;
+
+            var nonWipFolderIds = (await _unitOfWork.Repository<Folder>()
+                    .FindAsync(f => f.ProjectId == projectId && f.Area != CdeArea.Wip))
+                .Select(f => f.Id);
+            viewableFolderIds.UnionWith(nonWipFolderIds);
+
+            return viewableFolderIds;
         }
 
         private static HashSet<Guid> CollectSubtreeFolderIds(Folder root, IReadOnlyCollection<Folder> projectFolders)

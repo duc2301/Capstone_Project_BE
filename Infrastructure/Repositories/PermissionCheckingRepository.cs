@@ -1,5 +1,6 @@
 using Application.Interfaces.IRepositories;
 using Domain.Entities;
+using Domain.Enum.Cde;
 using Domain.Enum.Group;
 using Domain.Enum.Permission;
 using Domain.Enum.Project;
@@ -66,7 +67,9 @@ namespace Infrastructure.Repositories
             return await _context.ProjectParticipants
                 .AnyAsync(pp => pp.Status == ProjectParticipantStatus.Active
                              && pp.Role == ProjectParticipantRole.ProjectAdmin
-                             && _context.Folders.Any(f => f.Id == folderId && f.ProjectId == pp.ProjectId)
+                             && _context.Folders.Any(f => f.Id == folderId
+                                    && f.ProjectId == pp.ProjectId
+                                    && f.Area != CdeArea.Wip)
                              && pp.Group.Members.Any(m =>
                                     m.AccountId == accountId && m.Status == GroupMemberStatus.Active));
         }
@@ -77,7 +80,8 @@ namespace Infrastructure.Repositories
                 .AnyAsync(pp => pp.Status == ProjectParticipantStatus.Active
                              && pp.Role == ProjectParticipantRole.ProjectAdmin
                              && _context.FileItems.Any(fi => fi.Id == fileItemId
-                                    && fi.Folder.ProjectId == pp.ProjectId)
+                                    && fi.Folder.ProjectId == pp.ProjectId
+                                    && fi.Folder.Area != CdeArea.Wip)
                              && pp.Group.Members.Any(m =>
                                     m.AccountId == accountId && m.Status == GroupMemberStatus.Active));
         }

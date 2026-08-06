@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
+    [ApiController]
     [Route("api/file-permissions")]
     [Authorize]
     public class FilePermissionController : ControllerBase

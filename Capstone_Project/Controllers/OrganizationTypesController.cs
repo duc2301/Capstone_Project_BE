@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
+    [ApiController]
     [Route("api/organization-types")]
     [Authorize]
     public class OrganizationTypesController : ControllerBase

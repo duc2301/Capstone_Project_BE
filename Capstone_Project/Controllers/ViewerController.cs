@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
+    [ApiController]
     [Route("api/viewer")]
     public class ViewerController : ControllerBase
     {
