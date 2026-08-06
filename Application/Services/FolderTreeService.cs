@@ -200,6 +200,9 @@ namespace Application.Services
                 file.DisplayVersion = version.DisplayVersion;
                 file.FileSizeBytes = version.FileSizeBytes;
                 file.Format = version.Format;
+                file.Description = version.Description;
+                file.Warnning = version.Warnning;
+                file.WarnningMessage = version.WarnningMessage;
                 file.UploaderEmail = version.UploadedByAccountId.HasValue
                     && emailsByAccountId.TryGetValue(version.UploadedByAccountId.Value, out var email)
                     ? email
