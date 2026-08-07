@@ -61,11 +61,42 @@ namespace Infrastructure.Repositories
             return await ToResponse(query).Take(maxRows).ToListAsync();
         }
 
+        public async Task<AuditLogPageDTO> QueryByEntitiesAsync(
+            AuditLogFilterDTO filter,
+            Guid? projectId,
+            HashSet<string> entityTypes,
+            HashSet<string> entityIds)
+        {
+            var query = BuildQuery(filter, projectId, null, null, entityTypes, entityIds);
+
+            var total = await query.CountAsync();
+
+            var page = filter.Page < 1 ? 1 : filter.Page;
+            var pageSize = filter.PageSize < 1 || filter.PageSize > MaxPageSize
+                ? DefaultPageSize
+                : filter.PageSize;
+
+            var items = await ToResponse(query)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new AuditLogPageDTO
+            {
+                Items = items,
+                Total = total,
+                Page = page,
+                PageSize = pageSize
+            };
+        }
+
         private IQueryable<AuditLog> BuildQuery(
             AuditLogFilterDTO filter,
             Guid? projectId,
             HashSet<Guid>? folderIds,
-            HashSet<Guid>? groupIds)
+            HashSet<Guid>? groupIds,
+            HashSet<string>? entityTypes = null,
+            HashSet<string>? entityIds = null)
         {
             var query = _context.AuditLogs.AsNoTracking().AsQueryable();
 
@@ -99,6 +130,10 @@ namespace Infrastructure.Repositories
             if (!string.IsNullOrWhiteSpace(filter.EntityId))
                 query = query.Where(l => l.EntityId == filter.EntityId);
 
+            if (entityTypes != null && entityIds != null)
+                query = query.Where(l =>
+                    entityTypes.Contains(l.EntityType) && entityIds.Contains(l.EntityId));
+
             if (!string.IsNullOrWhiteSpace(filter.Search))
             {
                 var term = filter.Search.Trim().ToLower();
@@ -117,7 +152,7 @@ namespace Infrastructure.Repositories
 
             if (filter.To.HasValue)
             {
-                var toExclusive = DateTime.SpecifyKind(filter.To.Value.Date.AddDays(1), DateTimeKind.Utc);
+                var toExclusive = DateTime.SpecifyKind(filter.To.Value, DateTimeKind.Utc);
                 query = query.Where(l => l.CreatedAt < toExclusive);
             }
 

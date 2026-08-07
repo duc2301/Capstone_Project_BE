@@ -15,6 +15,15 @@ namespace Application.Services
         private const int ExportMaxRows = 5000;
         private const int VietnamUtcOffsetHours = 7;
 
+        private static readonly HashSet<string> FileActivityEntityTypes = new()
+        {
+            nameof(FileItem),
+            nameof(ApprovalRequest),
+            nameof(ZoneReturnRequest),
+            nameof(MarkupSet),
+            nameof(Issue)
+        };
+
         private readonly IUnitOfWork _unitOfWork;
         private readonly IAuditLogRepository _auditLogRepository;
         private readonly IPermissionCheckingService _permission;
@@ -148,10 +157,33 @@ namespace Application.Services
             if (!await _permission.HasViewFileAsync(fileItemId, actorId))
                 throw new ApiExceptionResponse("You do not have permission to view this file.", 403);
 
-            filter.EntityType = nameof(FileItem);
-            filter.EntityId = fileItemId.ToString();
+            var entityIds = await CollectFileEntityIdsAsync(fileItemId);
 
-            return await _auditLogRepository.QueryAsync(filter, folder.ProjectId, null, null);
+            return await _auditLogRepository.QueryByEntitiesAsync(
+                filter, folder.ProjectId, FileActivityEntityTypes, entityIds);
+        }
+
+        private async Task<HashSet<string>> CollectFileEntityIdsAsync(Guid fileItemId)
+        {
+            var ids = new HashSet<string> { fileItemId.ToString() };
+
+            await AddIdsAsync<FileItem>(ids, f => f.SourceFileItemId == fileItemId, f => f.Id);
+            await AddIdsAsync<ApprovalRequest>(ids, a => a.FileItemId == fileItemId, a => a.Id);
+            await AddIdsAsync<ZoneReturnRequest>(ids, r => r.FileItemId == fileItemId, r => r.Id);
+            await AddIdsAsync<MarkupSet>(ids, m => m.FileItemId == fileItemId, m => m.Id);
+            await AddIdsAsync<Issue>(ids, i => i.LinkedFileItemId == fileItemId, i => i.Id);
+
+            return ids;
+        }
+
+        private async Task AddIdsAsync<TEntity>(
+            HashSet<string> ids,
+            System.Linq.Expressions.Expression<Func<TEntity, bool>> predicate,
+            Func<TEntity, Guid> idSelector) where TEntity : class
+        {
+            var found = await _unitOfWork.Repository<TEntity>().FindAsync(predicate);
+            foreach (var entity in found)
+                ids.Add(idSelector(entity).ToString());
         }
 
         public async Task<AuditLogExportDTO> ExportCsvAsync(
