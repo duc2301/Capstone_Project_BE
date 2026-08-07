@@ -16,6 +16,13 @@ namespace Application.Interfaces.IRepositories
             HashSet<Guid>? folderIds,
             HashSet<Guid>? groupIds);
 
+        Task<List<AuditLogResponseDTO>> QueryAllAsync(
+            AuditLogFilterDTO filter,
+            Guid? projectId,
+            HashSet<Guid>? folderIds,
+            HashSet<Guid>? groupIds,
+            int maxRows);
+
         // Các group đang Active mà account là thành viên Active trong 1 dự án.
         Task<HashSet<Guid>> GetMyActiveGroupIdsAsync(Guid projectId, Guid accountId);
     }

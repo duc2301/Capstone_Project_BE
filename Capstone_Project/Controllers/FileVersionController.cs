@@ -1,5 +1,6 @@
 using Application.DTOs.ApiResponseDTO;
 using Application.Interfaces.IServices;
+using Capstone_Project.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -9,15 +10,23 @@ namespace Capstone_Project.Controllers
     // Các endpoint mô phỏng dùng cho DEV/TEST (next-upload, initial, enter-shared, publish,
     // return-to-wip) đã được gỡ bỏ — những bước đó chạy trong luồng thật của
     // FileUploadService / ApprovalService / FileItemService, không gọi qua controller này.
+    [ApiController]
     [Route("api/file-versions")]
     [Authorize]
     public class FileVersionController : ControllerBase
     {
         private readonly IFileVersionService _fileVersionService;
+        private readonly IFileViewService _fileViewService;
+        private readonly IFileUploadService _fileUploadService;
 
-        public FileVersionController(IFileVersionService fileVersionService)
+        public FileVersionController(
+            IFileVersionService fileVersionService,
+            IFileViewService fileViewService,
+            IFileUploadService fileUploadService)
         {
             _fileVersionService = fileVersionService;
+            _fileViewService = fileViewService;
+            _fileUploadService = fileUploadService;
         }
 
         // Khôi phục 1 version cũ làm version hiện hành: tạo bản mới (P{rev}.{ver+1}) copy dữ liệu
@@ -27,7 +36,7 @@ namespace Capstone_Project.Controllers
         {
             try
             {
-                var result = await _fileVersionService.RestoreVersionAsync(fileItemId, versionStateId);
+                var result = await _fileVersionService.RestoreVersionAsync(fileItemId, versionStateId, User.GetAccountId());
                 return Ok(ApiResponse.Success("Version restored", result));
             }
             catch (KeyNotFoundException ex)
@@ -46,6 +55,19 @@ namespace Capstone_Project.Controllers
         {
             var result = await _fileVersionService.GetVersionHistoryAsync(fileItemId);
             return Ok(ApiResponse.Success("Version history retrieved", result));
+        }
+
+        [HttpGet("{fileItemId:guid}/{versionStateId:guid}/view")]
+        public async Task<IActionResult> GetVersionViewInfo(Guid fileItemId, Guid versionStateId, CancellationToken ct)
+            => Ok(ApiResponse.Success(
+                "File version view info",
+                await _fileViewService.GetVersionViewInfoAsync(fileItemId, versionStateId, User.GetAccountId(), ct)));
+
+        [HttpGet("{fileItemId:guid}/{versionStateId:guid}/download")]
+        public async Task<IActionResult> DownloadVersion(Guid fileItemId, Guid versionStateId, CancellationToken ct)
+        {
+            var dl = await _fileUploadService.OpenVersionDownloadAsync(fileItemId, versionStateId, User.GetAccountId(), ct);
+            return File(dl.Content, dl.ContentType, dl.FileName);
         }
 
         // Trạng thái version hiện hành + chuỗi hiển thị đã format.

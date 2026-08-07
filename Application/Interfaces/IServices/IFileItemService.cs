@@ -5,7 +5,6 @@ namespace Application.Interfaces.IServices
 {
     public interface IFileItemService
     {
-        Task<IEnumerable<FileItemResponseDTO>> GetAllAsync();
         Task<FileItemResponseDTO?> GetByIdAsync(Guid id);
         Task<FileItemResponseDTO> CreateAsync(CreateFileItemDTO dto);
         Task<FileItemResponseDTO> UpdateAsync(Guid id, UpdateFileItemDTO dto);

@@ -47,5 +47,11 @@ namespace Application.Interfaces.IServices
         // Thành viên: CHỈ nhật ký của folder mình được xem hoặc của nhóm mình.
         Task<AuditLogPageDTO> GetMyInProjectAsync(
             Guid projectId, AuditLogFilterDTO filter, Guid actorId);
+
+        Task<AuditLogPageDTO> GetMyActivityAsync(AuditLogFilterDTO filter, Guid actorId);
+
+        Task<AuditLogPageDTO> GetByFileItemAsync(Guid fileItemId, AuditLogFilterDTO filter, Guid actorId);
+
+        Task<AuditLogExportDTO> ExportCsvAsync(Guid? projectId, AuditLogFilterDTO filter, Guid actorId);
     }
 }

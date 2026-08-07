@@ -5,6 +5,7 @@ using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
 using Domain.Enum.Account;
+using Domain.Enum.Audit;
 using Domain.Enum.Group;
 using Domain.Enum.Permission;
 using Domain.Enum.Project;
@@ -24,10 +25,12 @@ namespace Application.Services
         };
 
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IAuditLogService _auditLog;
 
-        public NamingConventionService(IUnitOfWork unitOfWork)
+        public NamingConventionService(IUnitOfWork unitOfWork, IAuditLogService auditLog)
         {
             _unitOfWork = unitOfWork;
+            _auditLog = auditLog;
         }
 
         // =========================================================
@@ -62,6 +65,10 @@ namespace Application.Services
                 convention.Fields.Add(BuildField(convention.Id, fieldDto, actor));
 
             await _unitOfWork.NamingConventionRepository.CreateAsync(convention);
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Create, nameof(NamingConvention), convention.Id.ToString(), actor,
+                detail: $"Tạo quy tắc đặt tên '{convention.Name}'",
+                projectId: convention.ProjectId);
             await _unitOfWork.CommitAsync();
 
             return await GetByIdAsync(convention.Id);
@@ -89,7 +96,7 @@ namespace Application.Services
             return result;
         }
 
-        public async Task<NamingConventionResponseDTO> UpdateAsync(Guid id, UpdateNamingConventionDTO dto)
+        public async Task<NamingConventionResponseDTO> UpdateAsync(Guid id, UpdateNamingConventionDTO dto, Guid actor)
         {
             var convention = await _unitOfWork.NamingConventionRepository.GetWithDetailsAsync(id, track: true)
                 ?? throw new ApiExceptionResponse("Naming convention not found.", 404);
@@ -105,12 +112,16 @@ namespace Application.Services
                 convention.IsActive = dto.IsActive.Value;
 
             convention.UpdatedAt = DateTime.UtcNow;
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Update, nameof(NamingConvention), convention.Id.ToString(), actor,
+                detail: $"Cập nhật quy tắc đặt tên '{convention.Name}'",
+                projectId: convention.ProjectId);
             await _unitOfWork.CommitAsync();
 
             return await GetByIdAsync(id);
         }
 
-        public async Task DeleteAsync(Guid id)
+        public async Task DeleteAsync(Guid id, Guid actor)
         {
             var convention = await _unitOfWork.NamingConventionRepository.GetWithDetailsAsync(id, track: true)
                 ?? throw new ApiExceptionResponse("Naming convention not found.", 404);
@@ -120,6 +131,10 @@ namespace Application.Services
                 _unitOfWork.Repository<NamingConventionLockedValue>().Delete(field.LockedValue!);
 
             _unitOfWork.NamingConventionRepository.Delete(convention);
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Delete, nameof(NamingConvention), convention.Id.ToString(), actor,
+                detail: $"Xoá quy tắc đặt tên '{convention.Name}'",
+                projectId: convention.ProjectId);
             await _unitOfWork.CommitAsync();
         }
 
@@ -834,7 +849,7 @@ namespace Application.Services
             for (int collum = 1; collum <= TemplateHeaders.Length; collum++)
             {
                 var header = ws.Range[1, collum].DisplayText?.Trim();
-                if (!string.Equals(header, TemplateHeaders[collum -1 ], StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(header, TemplateHeaders[collum - 1], StringComparison.OrdinalIgnoreCase))
                     throw new ApiExceptionResponse(
                 $"File không đúng template (cột {collum} phải là '{TemplateHeaders[collum - 1]}'). Hãy tải template mẫu và điền theo.", 400);
             }
@@ -907,7 +922,7 @@ namespace Application.Services
             return result;
         }
 
-        public byte[] GenerateImportTemplate()
+        public async Task<byte[]> GenerateImportTemplate(Guid projectId)
         {
             using var engine = new ExcelEngine();
             engine.Excel.DefaultVersion = ExcelVersion.Excel2016;
@@ -915,77 +930,118 @@ namespace Application.Services
             var ws = wb.Worksheets[0];
             ws.Name = "NamingFields";
 
-            for (int collum = 1; collum <= TemplateHeaders.Length; collum++)
-                ws[1, collum].Text = TemplateHeaders[collum - 1];
-
+            // 1. Gán tiêu đề cột
+            for (int column = 1; column <= TemplateHeaders.Length; column++)
+            {
+                ws[1, column].Text = TemplateHeaders[column - 1];
+            }
             ws["A1:F1"].CellStyle.Font.Bold = true;
 
-            // Bộ trường chuẩn ISO 19650 (mã theo phụ lục quốc gia UK — BS EN ISO 19650-2).
-            // Thứ tự trường = thứ tự xuất hiện trong tên file: PROJ-ORIG-VOL-LEV-TYPE-ROLE.
-            // Admin sửa trực tiếp trên file hoặc ở bước preview: thay giá trị ví dụ (PROJ/ORIG),
-            // thêm bớt tầng/khối theo dự án. Required/Khóa giá trị cấu hình ở UI sau khi import.
-            string[,] sample =
+            // 2. Chuyển organization về List ngay từ đầu (giúp hết mờ code & tăng tốc 10x)
+            var project = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId);
+            var organizationList = await _unitOfWork.Repository<Organization>().GetAllAsync();
+
+            var rows = new List<string[]>();
+
+            // 1. Dòng PROJ
+            rows.Add(new[]
             {
-                { "PROJ", "Project",       "Mã dự án — thay bằng mã thật rồi khóa giá trị ở UI", "P01", "Dự án mẫu",                 "Ví dụ — sửa theo dự án" },
+                "PROJ", "Project", "Mã dự án",
+                project?.ProjectCode ?? "P01",
+                project?.ProjectName ?? "Dự án mẫu",
+                project?.ProjectDescription ?? "Mô tả dự án"
+            });
 
-                { "ORIG", "Originator",    "Đơn vị tạo tài liệu",                                "ABC", "Công ty ABC",               "Ví dụ — thay bằng đơn vị thật" },
-                { "ORIG", "",              "",                                                   "XYZ", "Nhà thầu XYZ",              "Ví dụ" },
-                { "ORIG", "",              "",                                                   "TVG", "Tư vấn giám sát",           "Ví dụ" },
+            // 2. Dòng ORIG - Động từ danh sách organization
+            if (organizationList.Count() > 0)
+            {
+                for (int idx = 0; idx < organizationList.Count(); idx++)
+                {
+                    var orga = organizationList.ElementAt(idx);
+                    bool isFirst = idx == 0;
 
-                { "VOL",  "Volume/System", "Khối tích / hệ thống",                               "ZZ",  "Toàn bộ khối tích",         "Áp dụng cho mọi khối/hệ" },
-                { "VOL",  "",              "",                                                   "XX",  "Không áp dụng",             "" },
-                { "VOL",  "",              "",                                                   "01",  "Khối/Hệ thống 01",          "Ví dụ — đặt theo dự án" },
-                { "VOL",  "",              "",                                                   "02",  "Khối/Hệ thống 02",          "Ví dụ — đặt theo dự án" },
+                    string code = !string.IsNullOrWhiteSpace(orga.DisplayName)
+                        ? GetAcronym(orga.DisplayName)
+                        : $"ORG{idx + 1:D2}";
 
-                { "LEV",  "Level/Location","Tầng / vị trí",                                      "ZZ",  "Nhiều tầng",                "" },
-                { "LEV",  "",              "",                                                   "XX",  "Không áp dụng",             "" },
-                { "LEV",  "",              "",                                                   "00",  "Tầng trệt / mặt bằng chung","" },
-                { "LEV",  "",              "",                                                   "01",  "Tầng 1",                    "" },
-                { "LEV",  "",              "",                                                   "02",  "Tầng 2",                    "" },
-                { "LEV",  "",              "",                                                   "B1",  "Tầng hầm 1",                "" },
-                { "LEV",  "",              "",                                                   "M1",  "Tầng lửng 1",               "" },
-                { "LEV",  "",              "",                                                   "RF",  "Mái",                       "" },
+                    rows.Add(new[]
+                    {
+                        "ORIG",
+                        isFirst ? "Originator" : "",
+                        isFirst ? "Đơn vị tạo tài liệu" : "",
+                        code,
+                        orga.LegalName ?? orga.DisplayName ?? "Tên đơn vị",
+                        "Đơn vị hợp tác tham gia"
+                    });
+                }
+            }
+            else
+            {
+                rows.Add(new[] { "ORIG", "Originator", "Đơn vị tạo tài liệu", "ABC", "Công ty ABC", "Ví dụ — thay bằng đơn vị thật" });
+                rows.Add(new[] { "ORIG", "", "", "XYZ", "Nhà thầu XYZ", "Ví dụ" });
+                rows.Add(new[] { "ORIG", "", "", "TVG", "Tư vấn giám sát", "Ví dụ" });
+            }
 
-                { "TYPE", "Document Type", "Loại tài liệu",                                      "DR",  "Bản vẽ 2D",                 "Drawing" },
-                { "TYPE", "",              "",                                                   "M2",  "Mô hình 2D",                "2D model" },
-                { "TYPE", "",              "",                                                   "M3",  "Mô hình 3D",                "3D model" },
-                { "TYPE", "",              "",                                                   "CM",  "Mô hình tổng hợp",          "Combined model" },
-                { "TYPE", "",              "",                                                   "CR",  "Báo cáo xung đột",          "Clash report" },
-                { "TYPE", "",              "",                                                   "VS",  "Diễn họa / phối cảnh",      "Visualization" },
-                { "TYPE", "",              "",                                                   "SP",  "Chỉ dẫn kỹ thuật",          "Specification" },
-                { "TYPE", "",              "",                                                   "RP",  "Báo cáo",                   "Report" },
-                { "TYPE", "",              "",                                                   "CA",  "Bản tính",                  "Calculations" },
-                { "TYPE", "",              "",                                                   "SH",  "Bảng thống kê",             "Schedule" },
-                { "TYPE", "",              "",                                                   "BQ",  "Bảng khối lượng",           "Bill of quantities" },
-                { "TYPE", "",              "",                                                   "CP",  "Kế hoạch chi phí",          "Cost plan" },
-                { "TYPE", "",              "",                                                   "CO",  "Văn bản trao đổi",          "Correspondence" },
-                { "TYPE", "",              "",                                                   "MI",  "Biên bản họp",              "Minutes" },
-                { "TYPE", "",              "",                                                   "MS",  "Biện pháp thi công",        "Method statement" },
-                { "TYPE", "",              "",                                                   "PR",  "Tiến độ",                   "Programme" },
-                { "TYPE", "",              "",                                                   "RI",  "Yêu cầu cung cấp thông tin","Request for information" },
-                { "TYPE", "",              "",                                                   "SU",  "Khảo sát",                  "Survey" },
-                { "TYPE", "",              "",                                                   "HS",  "An toàn & sức khỏe",        "Health and safety" },
+            // 3. Các dòng cố định (VOL, LEV, TYPE, ROLE)
+            rows.AddRange(new[]
+            {
+                new[] { "VOL",  "Volume/System", "Khối tích / hệ thống",                               "ZZ",  "Toàn bộ khối tích",         "Áp dụng cho mọi khối/hệ" },
+                new[] { "VOL",  "",              "",                                                   "XX",  "Không áp dụng",             "" },
+                new[] { "VOL",  "",              "",                                                   "01",  "Khối/Hệ thống 01",          "Ví dụ — đặt theo dự án" },
+                new[] { "VOL",  "",              "",                                                   "02",  "Khối/Hệ thống 02",          "Ví dụ — đặt theo dự án" },
+                new[] { "LEV",  "Level/Location","Tầng / vị trí",                                      "ZZ",  "Nhiều tầng",                "" },
+                new[] { "LEV",  "",              "",                                                   "XX",  "Không áp dụng",             "" },
+                new[] { "LEV",  "",              "",                                                   "00",  "Tầng trệt / mặt bằng chung","" },
+                new[] { "LEV",  "",              "",                                                   "01",  "Tầng 1",                    "" },
+                new[] { "LEV",  "",              "",                                                   "02",  "Tầng 2",                    "" },
+                new[] { "LEV",  "",              "",                                                   "B1",  "Tầng hầm 1",                "" },
+                new[] { "LEV",  "",              "",                                                   "M1",  "Tầng lửng 1",               "" },
+                new[] { "LEV",  "",              "",                                                   "RF",  "Mái",                       "" },
+                new[] { "TYPE", "Document Type", "Loại tài liệu",                                      "DR",  "Bản vẽ 2D",                 "Drawing" },
+                new[] { "TYPE", "",              "",                                                   "M2",  "Mô hình 2D",                "2D model" },
+                new[] { "TYPE", "",              "",                                                   "M3",  "Mô hình 3D",                "3D model" },
+                new[] { "TYPE", "",              "",                                                   "CM",  "Mô hình tổng hợp",          "Combined model" },
+                new[] { "TYPE", "",              "",                                                   "CR",  "Báo cáo xung đột",          "Clash report" },
+                new[] { "TYPE", "",              "",                                                   "VS",  "Diễn họa / phối cảnh",      "Visualization" },
+                new[] { "TYPE", "",              "",                                                   "SP",  "Chỉ dẫn kỹ thuật",          "Specification" },
+                new[] { "TYPE", "",              "",                                                   "RP",  "Báo cáo",                   "Report" },
+                new[] { "TYPE", "",              "",                                                   "CA",  "Bản tính",                  "Calculations" },
+                new[] { "TYPE", "",              "",                                                   "SH",  "Bảng thống kê",             "Schedule" },
+                new[] { "TYPE", "",              "",                                                   "BQ",  "Bảng khối lượng",           "Bill of quantities" },
+                new[] { "TYPE", "",              "",                                                   "CP",  "Kế hoạch chi phí",          "Cost plan" },
+                new[] { "TYPE", "",              "",                                                   "CO",  "Văn bản trao đổi",          "Correspondence" },
+                new[] { "TYPE", "",              "",                                                   "MI",  "Biên bản họp",              "Minutes" },
+                new[] { "TYPE", "",              "",                                                   "MS",  "Biện pháp thi công",        "Method statement" },
+                new[] { "TYPE", "",              "",                                                   "PR",  "Tiến độ",                   "Programme" },
+                new[] { "TYPE", "",              "",                                                   "RI",  "Yêu cầu cung cấp thông tin","Request for information" },
+                new[] { "TYPE", "",              "",                                                   "SU",  "Khảo sát",                  "Survey" },
+                new[] { "TYPE", "",              "",                                                   "HS",  "An toàn & sức khỏe",        "Health and safety" },
+                new[] { "ROLE", "Role",          "Vai trò / bộ môn",                                   "A",   "Kiến trúc",                 "Architect" },
+                new[] { "ROLE", "",              "",                                                   "C",   "Kỹ sư hạ tầng",             "Civil engineer" },
+                new[] { "ROLE", "",              "",                                                   "D",   "Thoát nước / giao thông",   "Drainage, highways engineer" },
+                new[] { "ROLE", "",              "",                                                   "E",   "Kỹ sư điện",                "Electrical engineer" },
+                new[] { "ROLE", "",              "",                                                   "G",   "Trắc đạc",                  "Land surveyor" },
+                new[] { "ROLE", "",              "",                                                   "I",   "Thiết kế nội thất",         "Interior designer" },
+                new[] { "ROLE", "",              "",                                                   "K",   "Chủ đầu tư",                "Client" },
+                new[] { "ROLE", "",              "",                                                   "L",   "Kiến trúc cảnh quan",       "Landscape architect" },
+                new[] { "ROLE", "",              "",                                                   "M",   "Kỹ sư cơ / HVAC",           "Mechanical engineer" },
+                new[] { "ROLE", "",              "",                                                   "P",   "Cấp thoát nước công trình", "Public health engineer" },
+                new[] { "ROLE", "",              "",                                                   "Q",   "Dự toán",                   "Quantity surveyor" },
+                new[] { "ROLE", "",              "",                                                   "S",   "Kỹ sư kết cấu",             "Structural engineer" },
+                new[] { "ROLE", "",              "",                                                   "W",   "Nhà thầu thi công",         "Contractor" },
+                new[] { "ROLE", "",              "",                                                   "X",   "Thầu phụ",                  "Subcontractor" },
+                new[] { "ROLE", "",              "",                                                   "Y",   "Thiết kế chuyên ngành",     "Specialist designer" },
+                new[] { "ROLE", "",              "",                                                   "Z",   "Nhiều bộ môn",              "General / multiple" }
+            });
 
-                { "ROLE", "Role",          "Vai trò / bộ môn",                                   "A",   "Kiến trúc",                 "Architect" },
-                { "ROLE", "",              "",                                                   "C",   "Kỹ sư hạ tầng",             "Civil engineer" },
-                { "ROLE", "",              "",                                                   "D",   "Thoát nước / giao thông",   "Drainage, highways engineer" },
-                { "ROLE", "",              "",                                                   "E",   "Kỹ sư điện",                "Electrical engineer" },
-                { "ROLE", "",              "",                                                   "G",   "Trắc đạc",                  "Land surveyor" },
-                { "ROLE", "",              "",                                                   "I",   "Thiết kế nội thất",         "Interior designer" },
-                { "ROLE", "",              "",                                                   "K",   "Chủ đầu tư",                "Client" },
-                { "ROLE", "",              "",                                                   "L",   "Kiến trúc cảnh quan",       "Landscape architect" },
-                { "ROLE", "",              "",                                                   "M",   "Kỹ sư cơ / HVAC",           "Mechanical engineer" },
-                { "ROLE", "",              "",                                                   "P",   "Cấp thoát nước công trình", "Public health engineer" },
-                { "ROLE", "",              "",                                                   "Q",   "Dự toán",                   "Quantity surveyor" },
-                { "ROLE", "",              "",                                                   "S",   "Kỹ sư kết cấu",             "Structural engineer" },
-                { "ROLE", "",              "",                                                   "W",   "Nhà thầu thi công",         "Contractor" },
-                { "ROLE", "",              "",                                                   "X",   "Thầu phụ",                  "Subcontractor" },
-                { "ROLE", "",              "",                                                   "Y",   "Thiết kế chuyên ngành",     "Specialist designer" },
-                { "ROLE", "",              "",                                                   "Z",   "Nhiều bộ môn",              "General / multiple" },
-            };
-            for (int i = 0; i < sample.GetLength(0); i++)
-                for (int j = 0; j < sample.GetLength(1); j++)
-                    ws[i + 2, j + 1].Text = sample[i, j];
+            // 4. Ghi dữ liệu vào sheet Excel
+            for (int i = 0; i < rows.Count; i++)
+            {
+                for (int j = 0; j < rows[i].Length; j++)
+                {
+                    ws[i + 2, j + 1].Text = rows[i][j];
+                }
+            }
 
             ws.UsedRange.AutofitColumns();
 
@@ -1131,6 +1187,14 @@ namespace Application.Services
             if (!isLeader)
                 throw new ApiExceptionResponse(
                     "Chỉ Leader của nhóm phụ trách thư mục mới được thay đổi quy tắc đặt tên cho thư mục này.", 403);
+        }
+
+        private static string GetAcronym(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+            // Tách các từ theo khoảng trắng và lấy chữ cái đầu tiên viết hoa
+            return string.Concat(text.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                                     .Select(word => char.ToUpper(word[0])));
         }
     }
 }

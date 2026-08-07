@@ -1,3 +1,4 @@
+using Application.DTOs.RequestDTOs.Notification;
 using Application.DTOs.ResponseDTOs.Notification;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
@@ -8,6 +9,9 @@ namespace Application.Services
 {
     public class NotificationService : INotificationService
     {
+        private const int DefaultPageSize = 20;
+        private const int MaxPageSize = 100;
+
         private readonly IUnitOfWork _unitOfWork;
         private readonly INotificationPusher _pusher;
 
@@ -70,14 +74,67 @@ namespace Application.Services
                 await _pusher.PushAsync(noti.AccountId, ToDto(noti));
         }
 
-        public async Task<IEnumerable<NotificationResponseDTO>> GetMyAsync(Guid accountId)
+        public async Task<NotificationPageDTO> GetMyAsync(Guid accountId, NotificationFilterDTO filter)
         {
-            var notis = (await _unitOfWork.Repository<Notification>()
+            var all = (await _unitOfWork.Repository<Notification>()
                     .FindAsync(n => n.AccountId == accountId))
                 .OrderByDescending(n => n.SendAt)
-                .Select(ToDto);
+                .ToList();
 
-            return notis;
+            var unreadCount = all.Count(n => !n.IsRead);
+            var matched = all.Where(n => Matches(n, filter)).ToList();
+
+            var safePage = filter.Page < 1 ? 1 : filter.Page;
+            var safeSize = filter.PageSize < 1 || filter.PageSize > MaxPageSize
+                ? DefaultPageSize
+                : filter.PageSize;
+
+            return new NotificationPageDTO
+            {
+                Items = matched.Skip((safePage - 1) * safeSize).Take(safeSize).Select(ToDto).ToList(),
+                Total = matched.Count,
+                UnreadCount = unreadCount,
+                Page = safePage,
+                PageSize = safeSize
+            };
+        }
+
+        private static bool Matches(Notification noti, NotificationFilterDTO filter)
+        {
+            if (filter.UnreadOnly == true && noti.IsRead) return false;
+
+            if (!string.IsNullOrWhiteSpace(filter.LinkType)
+                && !string.Equals(noti.LinkType, filter.LinkType, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            if (filter.From.HasValue
+                && noti.SendAt < DateTime.SpecifyKind(filter.From.Value, DateTimeKind.Utc))
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(filter.Search))
+            {
+                var term = filter.Search.Trim();
+                var inMessage = noti.Message?.Contains(term, StringComparison.OrdinalIgnoreCase) == true;
+                var inSender = noti.SenderName?.Contains(term, StringComparison.OrdinalIgnoreCase) == true;
+                if (!inMessage && !inSender) return false;
+            }
+
+            return true;
+        }
+
+        public async Task<int> MarkAllReadAsync(Guid accountId)
+        {
+            var unread = (await _unitOfWork.Repository<Notification>()
+                    .FindAsync(n => n.AccountId == accountId && !n.IsRead))
+                .ToList();
+
+            if (unread.Count == 0) return 0;
+
+            foreach (var noti in unread)
+                noti.IsRead = true;
+
+            await _unitOfWork.CommitAsync();
+            return unread.Count;
         }
 
         public async Task MarkReadAsync(Guid notificationId, Guid accountId)

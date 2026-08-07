@@ -54,6 +54,13 @@ namespace Domain.Entities
         public Guid? SignedBy { get; set; }
         public string? CertificateSerial { get; set; }
 
+        // --- AI phân tích nội dung (PER-VERSION: mỗi phiên bản giữ kết quả của chính nó) ---
+        // Tóm tắt AI; cờ nghi ngờ nội dung không liên quan + lý do. Copy theo nội dung khi đổi version
+        // (shared/publish/về WIP/khôi phục/niêm phong) -> khôi phục version nào ra đúng của version đó.
+        public string? Description { get; set; }
+        public bool? Warnning { get; set; }
+        public string? WarnningMessage { get; set; }
+
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
 

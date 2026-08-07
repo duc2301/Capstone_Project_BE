@@ -460,6 +460,12 @@ namespace Application.Services
             if (currentZone == CdeArea.Archived)
                 throw new ApiExceptionResponse("Archived file cannot be submitted for approval.", 400);
 
+            // Published là bước cuối của luồng duyệt — không còn "gửi duyệt / chuyển trạng thái" ở đây.
+            // Lưu trữ đi qua "Niêm phong lưu trữ" (PM/Admin), không phải approval flow.
+            if (currentZone == CdeArea.Published)
+                throw new ApiExceptionResponse(
+                    "File đã ở Published. Dùng 'Niêm phong lưu trữ' (PM/Admin) để đưa vào lưu trữ.", 400);
+
             if (fileItem.Status == FileItemStatus.PendingApproval)
                 throw new ApiExceptionResponse("File is already pending approval.", 409);
 
@@ -665,6 +671,10 @@ namespace Application.Services
             if (request.RequestedBy == actor)
                 return true;
 
+            var account = await _unitOfWork.Repository<Account>().GetByIdAsync(actor);
+            if (account?.Role == Domain.Enum.Account.AccountRole.Admin)
+                return true;
+
             if (request.RequiresSignature && await IsRequiredSignerAsync(actor, request.Id))
                 return true;
 
@@ -777,8 +787,10 @@ namespace Application.Services
             {
                 CdeArea.Wip => CdeArea.Shared,
                 CdeArea.Shared => CdeArea.Published,
-                CdeArea.Published => CdeArea.Archived,
-                _ => throw new ApiExceptionResponse("File is already archived and cannot move to next approval zone.", 400)
+                // Published là bước CUỐI của luồng phê duyệt. Đưa vào lưu trữ dùng "Niêm phong lưu trữ"
+                // (PM/Admin, ngoài approval flow) — xem FileArchiveService.SealToArchiveAsync.
+                _ => throw new ApiExceptionResponse(
+                    "Published là bước cuối của luồng phê duyệt. Dùng 'Niêm phong lưu trữ' để đưa vào lưu trữ.", 400)
             };
 
         #endregion
@@ -968,6 +980,9 @@ namespace Application.Services
                 Id = request.Id,
                 FileItemId = request.FileItemId,
                 FileItemName = fileItem.Name,
+                ProjectId = folder.ProjectId,
+                FolderId = folder.Id,
+                FolderName = folder.Name,
                 CurrentZone = _zoneResolver.FormatZone(request.FromZone),
                 TargetZone = _zoneResolver.FormatZone(request.TargetZone),
                 RequiresSignature = request.RequiresSignature,

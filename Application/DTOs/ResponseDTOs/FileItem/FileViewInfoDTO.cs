@@ -33,5 +33,21 @@ namespace Application.DTOs.ResponseDTOs.FileItem
         public string FileName { get; set; } = null!;
 
         public string? Format { get; set; }
+
+        public Guid FolderId { get; set; }
+
+        public Guid ProjectId { get; set; }
+
+        public Guid VersionStateId { get; set; }
+
+        public string? DisplayVersion { get; set; }
+
+        public bool IsCurrentVersion { get; set; }
+
+        // AI phân tích của ĐÚNG phiên bản đang xem (per-version): tóm tắt + cờ nghi ngờ + lý do.
+        // Lấy từ FileVersionState của bản đang xem -> xem bản cũ thì hiện tóm tắt/cảnh báo của bản cũ.
+        public string? Description { get; set; }
+        public bool? Warnning { get; set; }
+        public string? WarnningMessage { get; set; }
     }
 }

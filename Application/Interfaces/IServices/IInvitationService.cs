@@ -6,7 +6,8 @@ namespace Application.Interfaces.IServices
     public interface IInvitationService
     {
         // inviterId/inviterName của người mời do controller lấy từ JWT truyền vào.
-        Task<InvitationResponseDTO> InviteAsync(InviteRequestDTO dto, Guid inviterId, string? inviterName);
+        Task<InvitationResponseDTO> InviteAsync(
+            InviteRequestDTO dto, Guid inviterId, string? inviterName, bool inviterIsAdmin);
 
         // Người được mời tự accept/reject — accountId/actorName lấy từ JWT.
         Task<InvitationResponseDTO> AcceptAsync(Guid invitationId, Guid accountId, string? actorName);

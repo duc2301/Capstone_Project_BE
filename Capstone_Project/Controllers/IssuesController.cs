@@ -21,13 +21,15 @@ namespace Capstone_Project.Controllers
             _service = service;
         }
 
-        [HttpGet]
-        public async Task<IActionResult> GetAll()
-            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAllAsync()));
-
         [HttpGet("by-file/{fileItemId:guid}")]
         public async Task<IActionResult> GetByFileItem(Guid fileItemId)
-            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByFileItemAsync(fileItemId)));
+            => Ok(ApiResponse.Success("Retrieved successfully",
+                await _service.GetByFileItemAsync(fileItemId, User.GetAccountId())));
+
+        [HttpGet("assigned-to-me")]
+        public async Task<IActionResult> GetAssignedToMe()
+            => Ok(ApiResponse.Success("Retrieved successfully",
+                await _service.GetAssignedToMeAsync(User.GetAccountId())));
 
         [HttpGet("by-project/{projectId:guid}")]
         public async Task<IActionResult> GetByProject(Guid projectId)
@@ -37,7 +39,8 @@ namespace Capstone_Project.Controllers
 
         [HttpPost("open-file-ids")]
         public async Task<IActionResult> GetOpenIssueFileIds([FromBody] GetOpenIssueFileIdsDTO dto)
-            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetOpenIssueFileIdsAsync(dto.FileItemIds)));
+            => Ok(ApiResponse.Success("Retrieved successfully",
+                await _service.GetOpenIssueFileIdsForAccountAsync(dto.FileItemIds, User.GetAccountId())));
 
         //Danh sach nhom o vung WIP
         [HttpGet("assignable-organizations/{fileItemId:guid}")]
@@ -50,7 +53,8 @@ namespace Capstone_Project.Controllers
 
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetById(Guid id)
-            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByIdAsync(id)));
+            => Ok(ApiResponse.Success("Retrieved successfully",
+                await _service.GetByIdAsync(id, User.GetAccountId())));
 
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateIssueDTO dto)

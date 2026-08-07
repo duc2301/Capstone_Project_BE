@@ -6,6 +6,7 @@ using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 
 using Domain.Entities;
+using Domain.Enum.Audit;
 using Domain.Enum.ContractPackage;
 using Application.DTOs.ResponseDTOs.Folder;
 
@@ -15,11 +16,13 @@ namespace Application.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
+        private readonly IAuditLogService _auditLog;
 
-        public ContractPackageService(IUnitOfWork unitOfWork, IMapper mapper)
+        public ContractPackageService(IUnitOfWork unitOfWork, IMapper mapper, IAuditLogService auditLog)
         {
             _unitOfWork = unitOfWork;
             _mapper = mapper;
+            _auditLog = auditLog;
         }
 
         public async Task<IEnumerable<ContractPackageResponseDTO>> GetAllAsync()
@@ -116,7 +119,7 @@ namespace Application.Services
             return result;
         }
 
-        public async Task<ContractPackageResponseDTO> CreateAsync(CreateContractPackageDTO dto)
+        public async Task<ContractPackageResponseDTO> CreateAsync(CreateContractPackageDTO dto, Guid actorId)
         {
             var entity = _mapper.Map<ContractPackage>(dto);
             entity.Id = Guid.NewGuid();
@@ -152,6 +155,8 @@ namespace Application.Services
                 entity.StartDate = DateTime.SpecifyKind(entity.StartDate.Value, DateTimeKind.Utc);
             if (entity.EndDate.HasValue && entity.EndDate.Value.Kind == DateTimeKind.Unspecified)
                 entity.EndDate = DateTime.SpecifyKind(entity.EndDate.Value, DateTimeKind.Utc);
+
+            entity.Status = ContractPackage.DeriveStatus(entity.StartDate, entity.EndDate);
 
             // Assign contractor if provided
             if (dto.ContractorOrganizationId.HasValue)
@@ -215,6 +220,9 @@ namespace Application.Services
             try
             {
                 await _unitOfWork.Repository<ContractPackage>().CreateAsync(entity);
+                await _auditLog.LogAsync(
+                    LogScope.Project, AuditAction.Create, nameof(ContractPackage), entity.Id.ToString(), actorId,
+                    detail: $"Tạo gói thầu '{entity.Code} - {entity.Name}'", projectId: entity.ProjectId);
                 await _unitOfWork.CommitAsync();
             }
             catch (Microsoft.EntityFrameworkCore.DbUpdateException ex)
@@ -226,7 +234,7 @@ namespace Application.Services
             return _mapper.Map<ContractPackageResponseDTO>(entity);
         }
 
-        public async Task<ContractPackageResponseDTO> UpdateAsync(Guid id, UpdateContractPackageDTO dto)
+        public async Task<ContractPackageResponseDTO> UpdateAsync(Guid id, UpdateContractPackageDTO dto, Guid actorId)
         {
             var entity = await _unitOfWork.Repository<ContractPackage>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"ContractPackage with ID {id} not found.", 404);
@@ -240,6 +248,8 @@ namespace Application.Services
                 entity.EndDate = DateTime.SpecifyKind(entity.EndDate.Value, DateTimeKind.Utc);
             if (entity.CreatedAt.HasValue && entity.CreatedAt.Value.Kind == DateTimeKind.Unspecified)
                 entity.CreatedAt = DateTime.SpecifyKind(entity.CreatedAt.Value, DateTimeKind.Utc);
+
+            entity.Status = ContractPackage.DeriveStatus(entity.StartDate, entity.EndDate);
             _unitOfWork.Repository<ContractPackage>().Update(entity);
 
             // Update assignment if ContractorOrganizationId is provided
@@ -284,6 +294,10 @@ namespace Application.Services
                 }
             }
 
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Update, nameof(ContractPackage), entity.Id.ToString(), actorId,
+                detail: $"Cập nhật gói thầu '{entity.Code} - {entity.Name}'", projectId: entity.ProjectId);
+
             try
             {
                 await _unitOfWork.CommitAsync();
@@ -297,11 +311,14 @@ namespace Application.Services
             return await GetByIdAsync(id) ?? _mapper.Map<ContractPackageResponseDTO>(entity);
         }
 
-        public async Task DeleteAsync(Guid id)
+        public async Task DeleteAsync(Guid id, Guid actorId)
         {
             var entity = await _unitOfWork.Repository<ContractPackage>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"ContractPackage with ID {id} not found.", 404);
             _unitOfWork.Repository<ContractPackage>().Delete(entity);
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Delete, nameof(ContractPackage), entity.Id.ToString(), actorId,
+                detail: $"Xoá gói thầu '{entity.Code} - {entity.Name}'", projectId: entity.ProjectId);
             await _unitOfWork.CommitAsync();
         }
 

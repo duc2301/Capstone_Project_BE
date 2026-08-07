@@ -34,12 +34,16 @@ namespace Application.Services
             var hasFullAccess = isSystemAdmin || await _folderTreeRepository.HasFullAccessAsync(projectId, accountId);
 
             var visible = folders;
-            if (!hasFullAccess)
+            if (!isSystemAdmin)
             {
                 var viewableIds = await _folderTreeRepository.GetViewableFolderIdsAsync(projectId, accountId);
                 // 4 khu vực gốc (WIP/Shared/Published/Archived) luôn hiển thị với mọi thành viên;
                 // các folder con vẫn lọc theo quyền View như cũ.
-                visible = folders.Where(f => f.ParentFolderId == null || viewableIds.Contains(f.Id)).ToList();
+                visible = folders
+                    .Where(f => f.ParentFolderId == null
+                                || viewableIds.Contains(f.Id)
+                                || (hasFullAccess && f.Area != CdeArea.Wip))
+                    .ToList();
             }
 
             var visibleIds = visible.Select(f => f.Id).ToHashSet();
@@ -100,7 +104,8 @@ namespace Application.Services
 
             // Quyền View kiểm tra tại thời điểm click vào folder, không kiểm tra sẵn trên cây.
             var canView = isSystemAdmin
-                || await _folderTreeRepository.HasFullAccessAsync(folder.ProjectId, accountId)
+                || (folder.Area != CdeArea.Wip
+                    && await _folderTreeRepository.HasFullAccessAsync(folder.ProjectId, accountId))
                 || await _folderTreeRepository.CanViewFolderAsync(folderId, accountId);
 
             if (!canView)
@@ -124,7 +129,8 @@ namespace Application.Services
 
             // Quyền View của chính folder được click — kiểm tra tại thời điểm click.
             var hasFullAccess = isSystemAdmin
-                || await _folderTreeRepository.HasFullAccessAsync(folder.ProjectId, accountId);
+                || (folder.Area != CdeArea.Wip
+                    && await _folderTreeRepository.HasFullAccessAsync(folder.ProjectId, accountId));
 
             var canViewFolder = hasFullAccess
                 || await _folderTreeRepository.CanViewFolderAsync(folderId, accountId);
@@ -200,6 +206,9 @@ namespace Application.Services
                 file.DisplayVersion = version.DisplayVersion;
                 file.FileSizeBytes = version.FileSizeBytes;
                 file.Format = version.Format;
+                file.Description = version.Description;
+                file.Warnning = version.Warnning;
+                file.WarnningMessage = version.WarnningMessage;
                 file.UploaderEmail = version.UploadedByAccountId.HasValue
                     && emailsByAccountId.TryGetValue(version.UploadedByAccountId.Value, out var email)
                     ? email

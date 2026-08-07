@@ -19,7 +19,11 @@ namespace Application.Services
         private readonly IConfiguration _configuration;
         private readonly IEmailService _emailService;
 
-        public AuthService(IUnitOfWork unitOfWork, IJwtService jwtService, IConfiguration configuration, IEmailService emailService)
+        public AuthService(
+            IUnitOfWork unitOfWork,
+            IJwtService jwtService,
+            IConfiguration configuration,
+            IEmailService emailService)
         {
             _unitOfWork = unitOfWork;
             _jwtService = jwtService;

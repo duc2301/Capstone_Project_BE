@@ -545,6 +545,17 @@ namespace Infrastructure.DbContexts
                 b.HasIndex(x => new { x.ProjectId, x.FieldNameNormalized, x.AliasNormalized }).IsUnique();
             });
 
+            // Bản lưu (mirror) trong Archived trỏ về file Published gốc đã niêm phong (self-ref).
+            // Restrict: xoá file gốc không kéo xoá bản lưu — hồ sơ lưu trữ phải sống sót.
+            modelBuilder.Entity<FileItem>()
+                .HasOne<FileItem>()
+                .WithMany()
+                .HasForeignKey(f => f.SourceFileItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<FileItem>()
+                .HasIndex(f => f.SourceFileItemId);
+
             // Lịch sử versioning: nhiều dòng / FileItem (append-only), mỗi dòng snapshot 1 version.
             // WithMany() rỗng để không phải thêm navigation vào FileItem (không đụng entity cũ).
             modelBuilder.Entity<FileVersionState>(b =>

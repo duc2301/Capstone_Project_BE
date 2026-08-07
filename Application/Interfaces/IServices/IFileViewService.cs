@@ -7,6 +7,9 @@ namespace Application.Interfaces.IServices
     {
         Task<FileViewInfoDTO> GetViewInfoAsync(Guid fileItemId, Guid actorId, CancellationToken ct = default);
 
+        Task<FileViewInfoDTO> GetVersionViewInfoAsync(
+            Guid fileItemId, Guid versionStateId, Guid actorId, CancellationToken ct = default);
+
         // Dịch lại model (IFC/CAD) lên APS: reset trạng thái về Pending rồi đẩy vào hàng đợi nền. Dùng khi Failed.
         Task RetranslateAsync(Guid fileItemId, Guid actorId, CancellationToken ct = default);
 

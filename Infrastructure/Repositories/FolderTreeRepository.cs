@@ -98,9 +98,10 @@ namespace Infrastructure.Repositories
 
         public async Task<HashSet<Guid>> GetWarningFolderIdsAsync(Guid projectId)
         {
-            var ids = await _context.FileItems
-                .Where(fi => fi.Warnning == true && fi.Folder.ProjectId == projectId)
-                .Select(fi => fi.FolderId)
+            // Cảnh báo giờ ở version hiện hành -> folder "có cảnh báo" = có file mà bản hiện hành bị Warnning.
+            var ids = await _context.Set<FileVersionState>()
+                .Where(v => v.IsCurrent && v.Warnning == true && v.FileItem.Folder.ProjectId == projectId)
+                .Select(v => v.FileItem.FolderId)
                 .Distinct()
                 .ToListAsync();
             return ids.ToHashSet();

@@ -2,11 +2,14 @@
 using Application.DTOs.RequestDTOs.Permission;
 using Application.Interfaces.IServices;
 using Capstone_Project.Extensions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
+    [ApiController]
     [Route("api/file-permissions")]
+    [Authorize]
     public class FilePermissionController : ControllerBase
     {
         private readonly IFilePermissionService _filePermissionService;

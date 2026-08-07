@@ -14,14 +14,12 @@ namespace Domain.Entities
         public Guid? CurrentVersionId { get; set; }
         public Guid? SignedVersionId { get; set; }
         public Guid? CreatedByAccountId { get; set; }
+
+        // Bản lưu (mirror) trong vùng Archived: trỏ về file Published gốc đã niêm phong.
+        // NULL với file thường. Dùng để cộng dồn các phiên bản chính thức qua từng lần niêm phong.
+        public Guid? SourceFileItemId { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
-
-        public bool? Warnning { get; set; } = false;
-        public string? WarnningMessage { get; set; } = string.Empty;
-
-        // Tóm tắt nội dung do AI sinh sau upload (worker ghi; null = chưa tóm tắt / không trích được chữ).
-        public string? Description { get; set; }
 
         public Folder Folder { get; set; } = null!;
         public ICollection<FilePermission> Permissions { get; set; } = new List<FilePermission>();

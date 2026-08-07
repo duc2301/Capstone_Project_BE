@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
+    [ApiController]
     [Route("api/file-items")]
     [Authorize]
     public class FileItemsController : ControllerBase
@@ -22,6 +23,7 @@ namespace Capstone_Project.Controllers
         private readonly IFileSignaturePositionService _signaturePosition;
         private readonly IPdfSignatureService _pdfSignature;
         private readonly IFileLinkService _fileLink;
+        private readonly IFileArchiveService _fileArchive;
 
         public FileItemsController(
             IFileItemService service,
@@ -31,7 +33,8 @@ namespace Capstone_Project.Controllers
             IFileViewService view,
             IFileSignaturePositionService signaturePosition,
             IPdfSignatureService pdfSignature,
-            IFileLinkService fileLink)
+            IFileLinkService fileLink,
+            IFileArchiveService fileArchive)
         {
             _service = service;
             _upload = upload;
@@ -41,6 +44,7 @@ namespace Capstone_Project.Controllers
             _signaturePosition = signaturePosition;
             _pdfSignature = pdfSignature;
             _fileLink = fileLink;
+            _fileArchive = fileArchive;
         }
 
         // Luồng tải file lên (multipart/form-data): file + FolderId + FileType + (Name tùy chọn).
@@ -118,6 +122,16 @@ namespace Capstone_Project.Controllers
             => Ok(await _zoneReturnRequestService.CreateAsync(fileId, dto, User.GetAccountId()));
 
         /// <summary>
+        /// Niêm phong lưu trữ: PM/Admin chốt bản Published chính thức của file vào vùng Archived.
+        /// Ngoài luồng phê duyệt — bấm được nhiều lần, mỗi lần cộng dồn 1 phiên bản chính thức.
+        /// </summary>
+        [HttpPost("{id:guid}/archive")]
+        public async Task<IActionResult> Archive(Guid id)
+            => Ok(ApiResponse.Success(
+                "File sealed to archive",
+                new { archivedFileItemId = await _fileArchive.SealToArchiveAsync(id, User.GetAccountId(), User.GetSystemRole() ?? string.Empty) }));
+
+        /// <summary>
         /// Luu vi tri dat chu ky truc quan tren PDF (chi PDF, chi khi file dang o WIP).
         /// </summary>
         [HttpPost("{fileId:guid}/signature-position")]
@@ -183,10 +197,6 @@ namespace Capstone_Project.Controllers
         [HttpGet("by-folder/{folderId:guid}")]
         public async Task<IActionResult> GetByFolder(Guid folderId)
             => Ok(ApiResponse.Success("Files retrieved", await _service.GetByFolderAsync(folderId, User.GetAccountId())));
-
-        [HttpGet]
-        public async Task<IActionResult> GetAll()
-            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAllAsync()));
 
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetById(Guid id)

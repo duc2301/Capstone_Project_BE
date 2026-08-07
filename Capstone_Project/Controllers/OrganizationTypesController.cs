@@ -1,11 +1,14 @@
 using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.OrganizationType;
 using Application.Interfaces.IServices;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Capstone_Project.Controllers
 {
+    [ApiController]
     [Route("api/organization-types")]
+    [Authorize]
     public class OrganizationTypesController : ControllerBase
     {
         private readonly IOrganizationTypeService _service;
@@ -24,14 +27,17 @@ namespace Capstone_Project.Controllers
             => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByIdAsync(id)));
 
         [HttpPost]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Create([FromBody] CreateOrganizationTypeDTO dto)
             => Ok(ApiResponse.Success("Created successfully", await _service.CreateAsync(dto)));
 
         [HttpPut("{id:guid}")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateOrganizationTypeDTO dto)
             => Ok(ApiResponse.Success("Updated successfully", await _service.UpdateAsync(id, dto)));
 
         [HttpDelete("{id:guid}")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Delete(Guid id)
         {
             await _service.DeleteAsync(id);

@@ -9,5 +9,8 @@ namespace Application.Interfaces.IServices
         Task<ProfileResponseDTO> GetMyProfileAsync(Guid accountId);
         Task<ProfileResponseDTO> UpdateMyProfileAsync(Guid accountId, UpdateProfileDTO dto);
         Task ChangePasswordAsync(Guid accountId, ChangePasswordDTO dto);
+
+        Task<ProfileResponseDTO> SetMyAvatarAsync(
+            Guid accountId, Stream content, string fileName, long sizeBytes, CancellationToken ct = default);
     }
 }
