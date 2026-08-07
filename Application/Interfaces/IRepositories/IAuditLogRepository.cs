@@ -23,6 +23,12 @@ namespace Application.Interfaces.IRepositories
             HashSet<Guid>? groupIds,
             int maxRows);
 
+        Task<AuditLogPageDTO> QueryByEntitiesAsync(
+            AuditLogFilterDTO filter,
+            Guid? projectId,
+            HashSet<string> entityTypes,
+            HashSet<string> entityIds);
+
         // Các group đang Active mà account là thành viên Active trong 1 dự án.
         Task<HashSet<Guid>> GetMyActiveGroupIdsAsync(Guid projectId, Guid accountId);
     }
