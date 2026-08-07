@@ -86,6 +86,27 @@ namespace Infrastructure.Repositories
                                     m.AccountId == accountId && m.Status == GroupMemberStatus.Active));
         }
 
+        // ===== Project manager (Project.ManagerAccountId) full access =====
+        // Scoped to the manager's own project; treated like a system admin (no WIP exclusion).
+
+        public async Task<bool> IsProjectManagerAsync(Guid projectId, Guid accountId)
+        {
+            return await _context.Projects
+                .AnyAsync(p => p.Id == projectId && p.ManagerAccountId == accountId);
+        }
+
+        public async Task<bool> IsProjectManagerByFolderAsync(Guid folderId, Guid accountId)
+        {
+            return await _context.Folders
+                .AnyAsync(f => f.Id == folderId && f.Project.ManagerAccountId == accountId);
+        }
+
+        public async Task<bool> IsProjectManagerByFileAsync(Guid fileItemId, Guid accountId)
+        {
+            return await _context.FileItems
+                .AnyAsync(fi => fi.Id == fileItemId && fi.Folder.Project.ManagerAccountId == accountId);
+        }
+
         public async Task<HashSet<Guid>> GetViewableFolderIdsAsync(Guid projectId, Guid accountId)
         {
             var folderIds = await _context.FolderPermissions

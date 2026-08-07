@@ -10,7 +10,8 @@ namespace Application.Services
     /// <summary>
     /// Centralized permission evaluation and the single source of ACL decisions for feature
     /// services (FolderTreeService keeps its own folder-tree queries). Flow:
-    /// system admin or ProjectAdmin (PM) bypasses everything; otherwise look up the user's
+    /// system admin, the project manager (Project.ManagerAccountId), or a ProjectAdmin (PM)
+    /// bypasses everything; otherwise look up the user's
     /// permission record and check the requested flag. A FilePermission record is an OVERRIDE —
     /// when a file has none (the normal case, since they are only created by explicit admin
     /// action), the check falls back to the owning folder's ACL. No caching yet.
@@ -88,6 +89,7 @@ namespace Application.Services
 
         public async Task<bool> HasProjectFullAccessAsync(Guid projectId, Guid accountId)
             => await IsSystemAdminAsync(accountId)
+               || await _permissionCheckingRepository.IsProjectManagerAsync(projectId, accountId)
                || await _permissionCheckingRepository.HasProjectAdminAccessAsync(projectId, accountId);
 
         public Task<HashSet<Guid>> GetViewableFolderIdsAsync(Guid projectId, Guid accountId)
@@ -241,13 +243,14 @@ namespace Application.Services
         // ===== Shared evaluation (returns bool; throwing gates wrap these) =====
 
         /// <summary>
-        /// Allowed when: system admin, or ProjectAdmin (PM) of the folder's project, or the user's
-        /// active FolderPermission grants the requested flag.
+        /// Allowed when: system admin, the project manager, or ProjectAdmin (PM) of the folder's
+        /// project, or the user's active FolderPermission grants the requested flag.
         /// </summary>
         private async Task<bool> EvaluateFolderAsync(
             Guid folderId, Guid accountId, Func<FolderPermission, bool> hasPermission)
         {
             if (await IsSystemAdminAsync(accountId)) return true;
+            if (await _permissionCheckingRepository.IsProjectManagerByFolderAsync(folderId, accountId)) return true;
             if (await _permissionCheckingRepository.HasProjectAdminAccessByFolderAsync(folderId, accountId)) return true;
 
             var permission = await _permissionCheckingRepository
@@ -259,9 +262,10 @@ namespace Application.Services
         private enum FileEval { Allowed, Denied, NotFound }
 
         /// <summary>
-        /// Full-access bypass first (system admin / PM of the file's project). Then a FilePermission
-        /// record acts as a per-file override: present -> it decides (present-but-denying wins);
-        /// absent -> defer to the owning folder's ACL, the one that IS bootstrapped.
+        /// Full-access bypass first (system admin / project manager / PM of the file's project).
+        /// Then a FilePermission record acts as a per-file override: present -> it decides
+        /// (present-but-denying wins); absent -> defer to the owning folder's ACL, the one that IS
+        /// bootstrapped.
         /// </summary>
         private async Task<FileEval> EvaluateFileAsync(
             Guid fileItemId,
@@ -270,6 +274,8 @@ namespace Application.Services
             Func<FolderPermission, bool> hasFolderPermission)
         {
             if (await IsSystemAdminAsync(accountId)) return FileEval.Allowed;
+            if (await _permissionCheckingRepository.IsProjectManagerByFileAsync(fileItemId, accountId))
+                return FileEval.Allowed;
             if (await _permissionCheckingRepository.HasProjectAdminAccessByFileAsync(fileItemId, accountId))
                 return FileEval.Allowed;
 

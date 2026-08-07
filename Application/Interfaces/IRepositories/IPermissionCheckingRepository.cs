@@ -33,6 +33,19 @@ namespace Application.Interfaces.IRepositories
         /// <summary>True if the account is an active ProjectAdmin of the project that owns the file.</summary>
         Task<bool> HasProjectAdminAccessByFileAsync(Guid fileItemId, Guid accountId);
 
+        // ===== Project manager (Project.ManagerAccountId) full access =====
+        // The single account assigned as project manager. Treated like a system admin (full bypass,
+        // including the WIP area) but scoped to the manager's own project.
+
+        /// <summary>True if the account is the manager (Project.ManagerAccountId) of the project.</summary>
+        Task<bool> IsProjectManagerAsync(Guid projectId, Guid accountId);
+
+        /// <summary>True if the account is the manager of the project that owns the folder.</summary>
+        Task<bool> IsProjectManagerByFolderAsync(Guid folderId, Guid accountId);
+
+        /// <summary>True if the account is the manager of the project that owns the file.</summary>
+        Task<bool> IsProjectManagerByFileAsync(Guid fileItemId, Guid accountId);
+
         /// <summary>
         /// FolderIds in the project the account can View
         /// (active GroupMember -> active ProjectParticipant -> active FolderPermission with CanView).
