@@ -43,5 +43,11 @@ namespace Application.DTOs.ResponseDTOs.FileItem
         public string? DisplayVersion { get; set; }
 
         public bool IsCurrentVersion { get; set; }
+
+        // AI phân tích của ĐÚNG phiên bản đang xem (per-version): tóm tắt + cờ nghi ngờ + lý do.
+        // Lấy từ FileVersionState của bản đang xem -> xem bản cũ thì hiện tóm tắt/cảnh báo của bản cũ.
+        public string? Description { get; set; }
+        public bool? Warnning { get; set; }
+        public string? WarnningMessage { get; set; }
     }
 }
