@@ -116,6 +116,9 @@ namespace Application.Services
             info.VersionStateId = version.Id;
             info.DisplayVersion = version.DisplayVersion;
             info.IsCurrentVersion = fileItem.CurrentVersionId == version.Id;
+            info.Description = version.Description;
+            info.Warnning = version.Warnning;
+            info.WarnningMessage = version.WarnningMessage;
             return info;
         }
 
