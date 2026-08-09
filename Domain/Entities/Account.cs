@@ -24,6 +24,10 @@ namespace Domain.Entities
         public string? EmailOtp { get; set; }
         public DateTime? EmailOtpExpiresAt { get; set; }
 
+        // Import Excel: đánh dấu tài khoản vừa import đang chờ gửi email onboarding.
+        // AccountEmailWorker gửi email rồi set lại false; dùng để requeue khi app khởi động lại (durability).
+        public bool IsOnboardingEmailPending { get; set; } = false;
+
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
 

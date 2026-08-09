@@ -30,11 +30,15 @@ namespace Application.Services
 
             var folders = await _folderTreeRepository.GetProjectFoldersAsync(projectId, area);
 
-            // Admin hệ thống / PM của dự án thấy toàn bộ cây; còn lại chỉ thấy folder có quyền View.
-            var hasFullAccess = isSystemAdmin || await _folderTreeRepository.HasFullAccessAsync(projectId, accountId);
+            // Manager dự án (Project.ManagerAccountId) xem toàn bộ cây như admin hệ thống (kể cả WIP).
+            var isUnrestricted = isSystemAdmin
+                || await _folderTreeRepository.IsProjectManagerAsync(projectId, accountId);
+
+            // Admin hệ thống / Manager / PM của dự án thấy toàn bộ cây; còn lại chỉ thấy folder có quyền View.
+            var hasFullAccess = isUnrestricted || await _folderTreeRepository.HasFullAccessAsync(projectId, accountId);
 
             var visible = folders;
-            if (!isSystemAdmin)
+            if (!isUnrestricted)
             {
                 var viewableIds = await _folderTreeRepository.GetViewableFolderIdsAsync(projectId, accountId);
                 // 4 khu vực gốc (WIP/Shared/Published/Archived) luôn hiển thị với mọi thành viên;
@@ -104,6 +108,7 @@ namespace Application.Services
 
             // Quyền View kiểm tra tại thời điểm click vào folder, không kiểm tra sẵn trên cây.
             var canView = isSystemAdmin
+                || await _folderTreeRepository.IsProjectManagerAsync(folder.ProjectId, accountId)
                 || (folder.Area != CdeArea.Wip
                     && await _folderTreeRepository.HasFullAccessAsync(folder.ProjectId, accountId))
                 || await _folderTreeRepository.CanViewFolderAsync(folderId, accountId);
@@ -129,6 +134,7 @@ namespace Application.Services
 
             // Quyền View của chính folder được click — kiểm tra tại thời điểm click.
             var hasFullAccess = isSystemAdmin
+                || await _folderTreeRepository.IsProjectManagerAsync(folder.ProjectId, accountId)
                 || (folder.Area != CdeArea.Wip
                     && await _folderTreeRepository.HasFullAccessAsync(folder.ProjectId, accountId));
 

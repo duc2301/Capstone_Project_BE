@@ -29,6 +29,34 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("Registration successful", result));
         }
 
+        [HttpGet("import-template")]
+        [Authorize(Roles = "Admin")]
+        public IActionResult DownloadImportTemplate()
+        {
+            return File(_accountService.GenerateImportTemplate(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "account-import-template.xlsx");
+        }
+
+        [HttpPost("import")]
+        [Authorize(Roles = "Admin")]
+        [Consumes("multipart/form-data")]
+        [RequestSizeLimit(2 * 1024 * 1024)]
+        [RequestFormLimits(MultipartBodyLengthLimit = 2 * 1024 * 1024)]
+        public async Task<IActionResult> Import(IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+                throw new ApiExceptionResponse("Chưa chọn file.", 400);
+            if (file.Length > 2 * 1024 * 1024)
+                throw new ApiExceptionResponse("File vượt quá 2MB.", 400);
+            if (!file.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                throw new ApiExceptionResponse("Chỉ chấp nhận file .xlsx.", 400);
+
+            await using var stream = file.OpenReadStream();
+            var result = await _accountService.ImportFromExcelAsync(stream, User.GetAccountId());
+            return Ok(ApiResponse.Success("Import completed", result));
+        }
+
         [HttpGet]
         [Authorize]
         public async Task<IActionResult> GetAll()

@@ -20,7 +20,7 @@ namespace Infrastructure.Adapters.Identity
             _configuration = configuration;
         }
 
-        public async Task SendEmailAsync(string to, string subject, string body)
+        public async Task SendEmailAsync(string to, string subject, string body, EmailAction? action = null)
         {
             var senderEmail = _configuration["Email:SenderEmail"]
                 ?? throw new InvalidOperationException("Email:SenderEmail chưa được cấu hình.");
@@ -33,11 +33,14 @@ namespace Infrastructure.Adapters.Identity
             message.To.Add(MailboxAddress.Parse(to));
             message.Subject = subject;
 
+            // Bản text thêm URL để client chỉ hỗ trợ plain-text vẫn dùng được nút.
+            var textBody = action == null ? body : $"{body}\n\n{action.Label}: {action.Url}";
+
             // Build HTML email body
             var bodyBuilder = new BodyBuilder
             {
-                HtmlBody = BuildHtmlEmail(subject, body),
-                TextBody = body
+                HtmlBody = BuildHtmlEmail(subject, body, action),
+                TextBody = textBody
             };
             message.Body = bodyBuilder.ToMessageBody();
 
@@ -50,7 +53,7 @@ namespace Infrastructure.Adapters.Identity
             await client.DisconnectAsync(true);
         }
 
-        private static string BuildHtmlEmail(string subject, string plainText)
+        private static string BuildHtmlEmail(string subject, string plainText, EmailAction? action = null)
         {
             // Chuyển newlines thành <br> cho HTML
             var htmlBody = plainText
@@ -58,6 +61,13 @@ namespace Infrastructure.Adapters.Identity
                 .Replace("<", "&lt;")
                 .Replace(">", "&gt;")
                 .Replace("\n", "<br>");
+
+            // Nút CTA (nếu có). Label/Url do hệ thống dựng nên, vẫn HTML-escape để an toàn.
+            var buttonHtml = action == null ? string.Empty : $"""
+                              <div style="margin-top:28px;text-align:center;">
+                                <a href="{HtmlEncode(action.Url)}" style="display:inline-block;background-color:#406623;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:14px 32px;border-radius:10px;">{HtmlEncode(action.Label)}</a>
+                              </div>
+                """;
 
             return $"""
                 <!DOCTYPE html>
@@ -87,6 +97,7 @@ namespace Infrastructure.Adapters.Identity
                             <td style="padding:40px 40px 32px;color:#1B1C17;font-size:15px;line-height:1.6;">
                               <h2 style="margin:0 0 20px;font-size:20px;font-weight:600;color:#1B1C17;">{subject}</h2>
                               <p style="margin:0;color:#43493C;">{htmlBody}</p>
+                              {buttonHtml}
                             </td>
                           </tr>
 
@@ -108,5 +119,11 @@ namespace Infrastructure.Adapters.Identity
                 </html>
                 """;
         }
+
+        private static string HtmlEncode(string value) => value
+            .Replace("&", "&amp;")
+            .Replace("<", "&lt;")
+            .Replace(">", "&gt;")
+            .Replace("\"", "&quot;");
     }
 }

@@ -26,6 +26,9 @@ builder.Services.AddHostedService<ModelTranslationWorker>();
 // Worker kiểm LOI nền (tiêu thụ ILoiCheckQueue).
 builder.Services.AddHostedService<LoiCheckWorker>();
 
+// Worker gửi email onboarding cho tài khoản import (tiêu thụ IAccountEmailQueue).
+builder.Services.AddHostedService<AccountEmailWorker>();
+
 // Validation
 builder.Services.AddGlobalValidation(builder.Configuration);
 

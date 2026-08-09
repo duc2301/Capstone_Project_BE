@@ -1,12 +1,15 @@
 ﻿using Application.DTOs.RequestDTOs.Account;
 using Application.DTOs.ResponseDTOs.Account;
 using Application.ExceptionMiddleware;
+using Application.Interfaces.IBackgroundServices;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
 using Domain.Entities;
 using Domain.Enum.Account;
 using Domain.Enum.Audit;
+using Syncfusion.XlsIO;
+using System.ComponentModel.DataAnnotations;
 
 namespace Application.Services
 {
@@ -14,18 +17,28 @@ namespace Application.Services
     {
         private const string AvatarPrefix = "avatars";
 
+        // Import Excel: mật khẩu mặc định cho mọi tài khoản tạo qua template.
+        private const string DefaultImportPassword = "123456";
+        private const int MaxImportRows = 500;
+        // Token trong email onboarding sống lâu hơn forgot-password (nhân viên có thể bấm sau vài ngày).
+        private const int OnboardingTokenValidityDays = 7;
+        private static readonly string[] ImportTemplateHeaders = { "UserName", "Email" };
+
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly IAuditLogService _auditLog;
         private readonly IImageUploadService _imageUpload;
+        private readonly IAccountEmailQueue _emailQueue;
 
         public AccountService(
-            IUnitOfWork unitOfWork, IMapper mapper, IAuditLogService auditLog, IImageUploadService imageUpload)
+            IUnitOfWork unitOfWork, IMapper mapper, IAuditLogService auditLog,
+            IImageUploadService imageUpload, IAccountEmailQueue emailQueue)
         {
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _auditLog = auditLog;
             _imageUpload = imageUpload;
+            _emailQueue = emailQueue;
         }
 
         public async Task<IEnumerable<AccountResponseDTO>> GetAllAsync()
@@ -117,6 +130,167 @@ namespace Application.Services
                 detail: $"Xoá tài khoản '{entity.UserName}' ({entity.Email})");
 
             await _unitOfWork.CommitAsync();
+        }
+
+        public byte[] GenerateImportTemplate()
+        {
+            using var engine = new ExcelEngine();
+            engine.Excel.DefaultVersion = ExcelVersion.Excel2016;
+            var wb = engine.Excel.Workbooks.Create(1);
+            var ws = wb.Worksheets[0];
+            ws.Name = "Accounts";
+
+            for (int column = 1; column <= ImportTemplateHeaders.Length; column++)
+                ws[1, column].Text = ImportTemplateHeaders[column - 1];
+            ws["A1:B1"].CellStyle.Font.Bold = true;
+
+            // Dòng ví dụ để admin biết định dạng (mật khẩu mặc định "123456", vai trò User — không cần nhập).
+            ws[2, 1].Text = "Nguyen Van A";
+            ws[2, 2].Text = "nguyenvana@example.com";
+
+            ws.UsedRange.AutofitColumns();
+
+            using var ms = new MemoryStream();
+            wb.SaveAs(ms);
+            return ms.ToArray();
+        }
+
+        public async Task<ImportAccountsResultDTO> ImportFromExcelAsync(Stream file, Guid actorId)
+        {
+            var result = new ImportAccountsResultDTO();
+
+            using var engine = new ExcelEngine();
+            IWorkbook workbook;
+            try
+            {
+                workbook = engine.Excel.Workbooks.Open(file, ExcelOpenType.Automatic);
+            }
+            catch (Exception)
+            {
+                throw new ApiExceptionResponse("Không đọc được file. Hãy dùng file .xlsx theo template mẫu.", 400);
+            }
+
+            var ws = workbook.Worksheets[0];
+
+            // Kiểm tra header đúng template.
+            for (int column = 1; column <= ImportTemplateHeaders.Length; column++)
+            {
+                var header = ws.Range[1, column].DisplayText?.Trim();
+                if (!string.Equals(header, ImportTemplateHeaders[column - 1], StringComparison.OrdinalIgnoreCase))
+                    throw new ApiExceptionResponse(
+                        $"File không đúng template (cột {column} phải là '{ImportTemplateHeaders[column - 1]}'). Hãy tải template mẫu và điền theo.", 400);
+            }
+
+            var emailValidator = new EmailAddressAttribute();
+            var seenEmails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // Pass 1: đọc & tiền-kiểm tra từng dòng, gom các dòng hợp lệ chờ kiểm tra trùng trong DB.
+            var candidates = new List<(int RowNumber, string UserName, string Email)>();
+
+            int lastRow = ws.UsedRange.LastRow;
+            for (int row = 2; row <= lastRow; row++)
+            {
+                var userName = ws.Range[row, 1].DisplayText?.Trim();
+                var email = ws.Range[row, 2].DisplayText?.Trim();
+
+                // Dòng trống hoàn toàn -> bỏ qua, không tính.
+                if (string.IsNullOrEmpty(userName) && string.IsNullOrEmpty(email))
+                    continue;
+
+                result.TotalRows++;
+
+                if (result.TotalRows > MaxImportRows)
+                    throw new ApiExceptionResponse($"File vượt quá {MaxImportRows} dòng dữ liệu.", 400);
+
+                if (string.IsNullOrEmpty(userName) || string.IsNullOrEmpty(email))
+                {
+                    AddError(result, row, email, "Thiếu UserName hoặc Email.");
+                    continue;
+                }
+
+                if (!emailValidator.IsValid(email))
+                {
+                    AddError(result, row, email, "Email không đúng định dạng.");
+                    continue;
+                }
+
+                if (!seenEmails.Add(email))
+                {
+                    AddError(result, row, email, "Email bị trùng trong file.");
+                    continue;
+                }
+
+                candidates.Add((row, userName, email));
+            }
+
+            // Pass 2: kiểm tra trùng với DB theo lô (1 truy vấn).
+            var existingEmails = await _unitOfWork.AccountRepository
+                .GetExistingEmailsAsync(candidates.Select(c => c.Email));
+
+            var toCreate = new List<Account>();
+            foreach (var (rowNumber, userName, email) in candidates)
+            {
+                if (existingEmails.Contains(email.ToLower()))
+                {
+                    AddError(result, rowNumber, email, "Email đã tồn tại trong hệ thống.");
+                    continue;
+                }
+
+                var now = DateTime.UtcNow;
+                toCreate.Add(new Account
+                {
+                    Id = Guid.NewGuid(),
+                    UserName = userName,
+                    Email = email,
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(DefaultImportPassword),
+                    Role = AccountRole.User,
+                    Status = AccountStatus.Active,
+                    IsEmailVerified = true, // Admin bảo lãnh — bỏ qua luồng OTP.
+                    // Token cho nút "Đặt mật khẩu" trong email onboarding (tái dùng luồng reset-password).
+                    ResetPasswordToken = Guid.NewGuid().ToString("N"),
+                    ResetPasswordTokenExpiresAt = now.AddDays(OnboardingTokenValidityDays),
+                    IsOnboardingEmailPending = true,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+
+                result.Created.Add(new ImportAccountCreatedDTO
+                {
+                    RowNumber = rowNumber,
+                    UserName = userName,
+                    Email = email
+                });
+            }
+
+            if (toCreate.Count > 0)
+            {
+                await _unitOfWork.AccountRepository.CreateRangeAsync(toCreate);
+
+                await _auditLog.LogAsync(
+                    LogScope.System, AuditAction.Create, nameof(Account), actorId.ToString(), actorId,
+                    detail: $"Import Excel: tạo {toCreate.Count} tài khoản (vai trò User), bỏ qua {result.SkippedCount} dòng.");
+
+                await _unitOfWork.CommitAsync();
+
+                // Gửi email onboarding out-of-band: enqueue sau khi commit thành công,
+                // AccountEmailWorker sẽ drain nền nên HTTP response trả về ngay.
+                foreach (var account in toCreate)
+                    _emailQueue.Enqueue(account.Id);
+            }
+
+            result.CreatedCount = toCreate.Count;
+            return result;
+        }
+
+        private static void AddError(ImportAccountsResultDTO result, int rowNumber, string? email, string reason)
+        {
+            result.Errors.Add(new ImportAccountRowErrorDTO
+            {
+                RowNumber = rowNumber,
+                Email = string.IsNullOrEmpty(email) ? null : email,
+                Reason = reason
+            });
+            result.SkippedCount++;
         }
 
         public async Task<AccountResponseDTO> SetAvatarAsync(

@@ -20,6 +20,9 @@ namespace Application.Interfaces.IRepositories
         // Account thuộc 1 group giữ vai trò ProjectAdmin (PM) đang Active trong dự án -> thấy toàn bộ cây.
         Task<bool> HasFullAccessAsync(Guid projectId, Guid accountId);
 
+        // Account là manager của dự án (Project.ManagerAccountId) -> full access như admin hệ thống (kể cả WIP).
+        Task<bool> IsProjectManagerAsync(Guid projectId, Guid accountId);
+
         // Account có quyền View trên 1 folder cụ thể (dùng khi click vào folder).
         Task<bool> CanViewFolderAsync(Guid folderId, Guid accountId);
 

@@ -75,6 +75,14 @@ namespace Infrastructure.Repositories
 
 
 
+        // Account là manager của dự án (Project.ManagerAccountId) -> full access như admin hệ thống (kể cả WIP).
+        public async Task<bool> IsProjectManagerAsync(Guid projectId, Guid accountId)
+        {
+            return await _context.Projects
+                .AnyAsync(p => p.Id == projectId && p.ManagerAccountId == accountId);
+        }
+
+
         public async Task<bool> CanViewFolderAsync(Guid folderId, Guid accountId)
         {
             return await _context.FolderPermissions

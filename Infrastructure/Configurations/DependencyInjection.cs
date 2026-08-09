@@ -115,6 +115,10 @@ namespace Infrastructure.Configurations
             // Repository cho Background Service digest
             services.AddScoped<INotificationDigestRepository, NotificationDigestRepository>();
 
+            // Hàng đợi gửi email onboarding cho tài khoản import (singleton: producer AccountService + consumer AccountEmailWorker).
+            // Worker (AccountEmailWorker) đăng ký ở Program.cs.
+            services.AddSingleton<IAccountEmailQueue, AccountEmailQueue>();
+
             // Background Service: Gửi email digest thông báo chưa đọc (business logic ở Application)
             services.AddHostedService<Application.BackgroundServices.NotificationEmailDigestBackgroundService>();
             services.AddHostedService(sp => sp.GetRequiredService<IngestBackgroundService>());
