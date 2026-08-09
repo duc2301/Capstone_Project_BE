@@ -1,6 +1,7 @@
 ﻿using Application.DTOs.RequestDTOs.Account;
 using Application.DTOs.ResponseDTOs.Account;
 using Application.ExceptionMiddleware;
+using Application.Interfaces.IBackgroundServices;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using AutoMapper;
@@ -19,20 +20,25 @@ namespace Application.Services
         // Import Excel: mật khẩu mặc định cho mọi tài khoản tạo qua template.
         private const string DefaultImportPassword = "123456";
         private const int MaxImportRows = 500;
+        // Token trong email onboarding sống lâu hơn forgot-password (nhân viên có thể bấm sau vài ngày).
+        private const int OnboardingTokenValidityDays = 7;
         private static readonly string[] ImportTemplateHeaders = { "UserName", "Email" };
 
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly IAuditLogService _auditLog;
         private readonly IImageUploadService _imageUpload;
+        private readonly IAccountEmailQueue _emailQueue;
 
         public AccountService(
-            IUnitOfWork unitOfWork, IMapper mapper, IAuditLogService auditLog, IImageUploadService imageUpload)
+            IUnitOfWork unitOfWork, IMapper mapper, IAuditLogService auditLog,
+            IImageUploadService imageUpload, IAccountEmailQueue emailQueue)
         {
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _auditLog = auditLog;
             _imageUpload = imageUpload;
+            _emailQueue = emailQueue;
         }
 
         public async Task<IEnumerable<AccountResponseDTO>> GetAllAsync()
@@ -240,6 +246,10 @@ namespace Application.Services
                     Role = AccountRole.User,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true, // Admin bảo lãnh — bỏ qua luồng OTP.
+                    // Token cho nút "Đặt mật khẩu" trong email onboarding (tái dùng luồng reset-password).
+                    ResetPasswordToken = Guid.NewGuid().ToString("N"),
+                    ResetPasswordTokenExpiresAt = now.AddDays(OnboardingTokenValidityDays),
+                    IsOnboardingEmailPending = true,
                     CreatedAt = now,
                     UpdatedAt = now
                 });
@@ -261,6 +271,11 @@ namespace Application.Services
                     detail: $"Import Excel: tạo {toCreate.Count} tài khoản (vai trò User), bỏ qua {result.SkippedCount} dòng.");
 
                 await _unitOfWork.CommitAsync();
+
+                // Gửi email onboarding out-of-band: enqueue sau khi commit thành công,
+                // AccountEmailWorker sẽ drain nền nên HTTP response trả về ngay.
+                foreach (var account in toCreate)
+                    _emailQueue.Enqueue(account.Id);
             }
 
             result.CreatedCount = toCreate.Count;
