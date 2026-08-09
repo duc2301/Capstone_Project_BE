@@ -111,6 +111,10 @@ namespace Application.Services
                 && noti.SendAt < DateTime.SpecifyKind(filter.From.Value, DateTimeKind.Utc))
                 return false;
 
+            if (filter.To.HasValue
+                && noti.SendAt >= DateTime.SpecifyKind(filter.To.Value, DateTimeKind.Utc))
+                return false;
+
             if (!string.IsNullOrWhiteSpace(filter.Search))
             {
                 var term = filter.Search.Trim();
