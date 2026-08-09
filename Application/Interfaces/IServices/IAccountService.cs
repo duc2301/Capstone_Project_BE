@@ -12,5 +12,12 @@ namespace Application.Interfaces.IServices
         Task<AccountResponseDTO> SetAvatarAsync(
             Guid id, Stream content, string fileName, long sizeBytes, Guid actorId, CancellationToken ct = default);
         Task DeleteAsync(Guid id, Guid actorId);
+
+        // Sinh file Excel template (UserName, Email) cho admin tải về điền thông tin nhân viên.
+        byte[] GenerateImportTemplate();
+
+        // Import hàng loạt tài khoản từ file Excel. Partial-success: tạo các dòng hợp lệ,
+        // bỏ qua & báo cáo các dòng lỗi. Mật khẩu mặc định "123456", vai trò User, trạng thái Active.
+        Task<ImportAccountsResultDTO> ImportFromExcelAsync(Stream file, Guid actorId);
     }
 }

@@ -25,5 +25,24 @@ namespace Infrastructure.Repositories
             return await _context.Accounts
                 .FirstOrDefaultAsync(a => a.Email.ToLower() == email.ToLower());
         }
+
+        public async Task<HashSet<string>> GetExistingEmailsAsync(IEnumerable<string> emails)
+        {
+            var normalized = emails
+                .Where(e => !string.IsNullOrWhiteSpace(e))
+                .Select(e => e.Trim().ToLower())
+                .Distinct()
+                .ToList();
+
+            if (normalized.Count == 0)
+                return new HashSet<string>();
+
+            var found = await _context.Accounts
+                .Select(a => a.Email.ToLower())
+                .Where(e => normalized.Contains(e))
+                .ToListAsync();
+
+            return found.ToHashSet();
+        }
     }
 }
