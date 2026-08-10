@@ -78,14 +78,58 @@ namespace Application.Services
 
             await _permission.CanEditFolderAsync(id, actorId);
 
-            _unitOfWork.Repository<Folder>().Delete(entity);
+            var subtree = await GetSubtreeTopDownAsync(entity);
+            var subtreeIds = subtree.Select(f => f.Id).ToList();
 
+            var documents = await _unitOfWork.Repository<FileItem>()
+                .FindAsync(f => subtreeIds.Contains(f.FolderId));
+            var documentCount = documents.Count();
+            if (documentCount > 0)
+            {
+                throw new ApiExceptionResponse(
+                    $"Folder still contains {documentCount} document(s).",
+                    409);
+            }
+
+            for (var i = subtree.Count - 1; i >= 0; i--)
+            {
+                _unitOfWork.Repository<Folder>().Delete(subtree[i]);
+            }
+
+            var subFolderCount = subtree.Count - 1;
+            var subFolderNote = subFolderCount > 0 ? $" cùng {subFolderCount} thư mục con" : string.Empty;
             await _auditLog.LogAsync(
                 LogScope.Group, AuditAction.Delete, nameof(Folder), entity.Id.ToString(), actorId,
-                detail: $"Xoá thư mục '{entity.Name}' (vùng {entity.Area})",
+                detail: $"Xoá thư mục '{entity.Name}' (vùng {entity.Area}){subFolderNote}",
                 projectId: entity.ProjectId, folderId: entity.Id);
 
             await _unitOfWork.CommitAsync();
+        }
+
+        private async Task<List<Folder>> GetSubtreeTopDownAsync(Folder root)
+        {
+            var projectFolders = await _unitOfWork.Repository<Folder>()
+                .FindAsync(f => f.ProjectId == root.ProjectId);
+
+            var childrenByParent = projectFolders
+                .Where(f => f.ParentFolderId.HasValue)
+                .GroupBy(f => f.ParentFolderId!.Value)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            var ordered = new List<Folder>();
+            var pending = new Queue<Folder>();
+            pending.Enqueue(root);
+
+            while (pending.Count > 0)
+            {
+                var current = pending.Dequeue();
+                ordered.Add(current);
+
+                if (!childrenByParent.TryGetValue(current.Id, out var children)) continue;
+                foreach (var child in children) pending.Enqueue(child);
+            }
+
+            return ordered;
         }
     }
 }
