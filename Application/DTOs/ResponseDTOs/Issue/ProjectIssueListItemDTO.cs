@@ -7,6 +7,7 @@ namespace Application.DTOs.ResponseDTOs.Issue
     {
         public Guid Id { get; set; }
         public Guid ProjectId { get; set; }
+        public string? ProjectName { get; set; }
         public IssueType Type { get; set; }
         public string Title { get; set; } = null!;
         public string? Description { get; set; }
