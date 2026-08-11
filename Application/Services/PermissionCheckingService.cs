@@ -53,8 +53,14 @@ namespace Application.Services
         // Mỗi method truyền 2 selector cùng nghĩa: một đọc cờ trên FilePermission (override riêng
         // của file), một đọc cờ tương ứng trên FolderPermission (dùng khi file chưa có override).
 
-        public Task CanViewFileAsync(Guid fileItemId, Guid accountId)
-            => CheckFileAsync(fileItemId, accountId, fp => fp.CanView, fp => fp.CanView, "View");
+        public async Task CanViewFileAsync(Guid fileItemId, Guid accountId)
+        {
+            // Grant xem theo tài khoản (người được assign ký) là đường Allow cộng thêm — thắng cả
+            // FilePermission override đang từ chối, nên kiểm tra trước khi rơi vào ACL nhóm.
+            if (await _permissionCheckingRepository.HasActiveFileViewGrantAsync(fileItemId, accountId))
+                return;
+            await CheckFileAsync(fileItemId, accountId, fp => fp.CanView, fp => fp.CanView, "View");
+        }
 
         public Task CanEditFileAsync(Guid fileItemId, Guid accountId)
             => CheckFileAsync(fileItemId, accountId, fp => fp.CanEdit, fp => fp.CanEdit, "Edit");
@@ -80,7 +86,8 @@ namespace Application.Services
             => EvaluateFolderAsync(folderId, accountId, fp => fp.CanEdit);
 
         public async Task<bool> HasViewFileAsync(Guid fileItemId, Guid accountId)
-            => await EvaluateFileAsync(fileItemId, accountId, fp => fp.CanView, fp => fp.CanView) == FileEval.Allowed;
+            => await _permissionCheckingRepository.HasActiveFileViewGrantAsync(fileItemId, accountId)
+               || await EvaluateFileAsync(fileItemId, accountId, fp => fp.CanView, fp => fp.CanView) == FileEval.Allowed;
 
         // ===== Project-scoped =====
 

@@ -10,6 +10,7 @@ using Domain.Enum.Audit;
 using Domain.Enum.Cde;
 using Domain.Enum.File;
 using Domain.Enum.Group;
+using Domain.Enum.Permission;
 using Domain.Enum.Project;
 using Microsoft.Extensions.Logging;
 
@@ -122,6 +123,10 @@ namespace Application.Services
             await _unitOfWork.Repository<ApprovalRequest>().CreateAsync(request);
             foreach (var signer in signers)
                 await _unitOfWork.Repository<ApprovalRequestSigner>().CreateAsync(signer);
+
+            // Người được assign ký đích danh (Shared->Published) được cấp quyền xem file mãi mãi để
+            // ký được, kể cả khi nhóm họ không có CanView. Grant bị thu hồi khi file trả về WIP.
+            await GrantFileViewToSignerAccountsAsync(fileItem.Id, request.Id, signers);
 
             // folderId = folder NGUỒN lúc thao tác -> cả vòng đời (submit/approve/reject) cùng một tập người xem.
             await _auditLog.LogAsync(
@@ -573,6 +578,53 @@ namespace Application.Services
                     Status = ApprovalRequestSignerStatus.Pending
                 }))
                 .ToList();
+        }
+
+        /// <summary>
+        /// Cấp quyền xem file (FileViewGrant) cho từng account được assign ký. Họ cần xem được file để
+        /// ký kể cả khi nhóm của họ không có CanView trên folder. Grant giữ mãi tới khi file được trả
+        /// về WIP thì bị thu hồi (ZoneReturnRequestService). Signer theo NHÓM không cần grant — nhóm
+        /// phụ trách vốn đã có quyền xem. Upsert theo (FileItemId, AccountId) để không vi phạm unique
+        /// index nếu người này còn grant cũ từ vòng duyệt trước.
+        /// </summary>
+        private async Task GrantFileViewToSignerAccountsAsync(
+            Guid fileItemId,
+            Guid approvalRequestId,
+            IReadOnlyCollection<ApprovalRequestSigner> signers)
+        {
+            var signerAccountIds = signers
+                .Where(s => s.SignerAccountId.HasValue)
+                .Select(s => s.SignerAccountId!.Value)
+                .Distinct()
+                .ToList();
+            if (signerAccountIds.Count == 0)
+                return;
+
+            var existingGrants = (await _unitOfWork.Repository<FileViewGrant>().FindAsync(
+                    g => g.FileItemId == fileItemId && signerAccountIds.Contains(g.AccountId)))
+                .ToDictionary(g => g.AccountId);
+
+            var now = DateTime.UtcNow;
+            foreach (var accountId in signerAccountIds)
+            {
+                if (existingGrants.TryGetValue(accountId, out var existing))
+                {
+                    existing.Status = PermissionStatus.Active;
+                    existing.SourceApprovalRequestId = approvalRequestId;
+                    _unitOfWork.Repository<FileViewGrant>().Update(existing);
+                    continue;
+                }
+
+                await _unitOfWork.Repository<FileViewGrant>().CreateAsync(new FileViewGrant
+                {
+                    Id = Guid.NewGuid(),
+                    FileItemId = fileItemId,
+                    AccountId = accountId,
+                    SourceApprovalRequestId = approvalRequestId,
+                    Status = PermissionStatus.Active,
+                    CreatedAt = now
+                });
+            }
         }
 
         private async Task EnsureSignerAccountsExistAsync(IReadOnlyCollection<Guid> accountIds)

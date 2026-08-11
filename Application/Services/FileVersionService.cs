@@ -4,6 +4,7 @@ using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
 using Domain.Enum.Audit;
+using Domain.Enum.Cde;
 using Domain.Enum.File;
 
 namespace Application.Services
@@ -39,8 +40,13 @@ namespace Application.Services
 
             // Chưa có FileItem trùng tên -> tài liệu mới hoàn toàn: trả P01.01 nhưng CHƯA lưu state
             // (chưa có FileItemId để gắn). Caller tạo FileItem xong gọi CreateInitialVersionAsync.
+            // Nhưng trước đó: tên file phải DUY NHẤT trong dự án theo (Name + đuôi) — chặn trường hợp
+            // upload trùng tên vào WIP trong khi file đã nằm ở Shared/Published/Archived (hoặc WIP khác).
             if (existing == null)
+            {
+                await RequireUniqueInProjectAsync(folderId, fileName, fileData?.Format);
                 return ToResult(null, null, isNew: true, VersionStage.Working, workingRevision: 1, workingVersion: 1, publishedRevision: 0);
+            }
 
             var current = await _unitOfWork.FileVersionRepository.GetCurrentStateAsync(existing.Id);
 
@@ -133,12 +139,17 @@ namespace Application.Services
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new KeyNotFoundException($"FileItem {fileItemId} not found.");
 
-            var current = await RequireCurrentStateAsync(fileItemId);
+            // Khôi phục version chỉ được phép khi tài liệu đang ở khu vực WIP.
+            // File ở SHARED/PUBLISHED/ARCHIVED là bản đã chia sẻ/phát hành/lưu trữ — bất biến,
+            // muốn khôi phục phải đưa tài liệu về WIP trước.
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
+                ?? throw new KeyNotFoundException($"Folder {fileItem.FolderId} not found.");
 
-            // Cùng luật "upload thay thế": tài liệu đang Published không nhận version mới, phải về WIP trước.
-            if (current.Stage == VersionStage.Published)
+            if (folder.Area != CdeArea.Wip)
                 throw new InvalidOperationException(
-                    "Published documents cannot restore a past version. Return the document to WIP first.");
+                    $"Documents in the {FormatZone(folder.Area)} area cannot restore a past version. Return the document to WIP first.");
+
+            var current = await RequireCurrentStateAsync(fileItemId);
 
             var source = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(versionStateId)
                 ?? throw new KeyNotFoundException($"Version {versionStateId} not found.");
@@ -160,7 +171,6 @@ namespace Application.Services
             fileItem.CurrentVersionId = snapshot.Id;
             fileItem.UpdatedAt = DateTime.UtcNow;
 
-            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
             await _auditLog.LogAsync(
                 LogScope.Group, AuditAction.NewVersion, nameof(FileItem), fileItem.Id.ToString(), actorId,
                 detail: $"Khôi phục '{fileItem.Name}' từ phiên bản {source.DisplayVersion} thành {snapshot.DisplayVersion}",
@@ -240,6 +250,29 @@ namespace Application.Services
 
             var accounts = await _unitOfWork.Repository<Account>().FindAsync(a => uploaderIds.Contains(a.Id));
             return accounts.ToDictionary(a => a.Id, a => a.UserName);
+        }
+
+        private static string FormatZone(CdeArea zone)
+            => zone == CdeArea.Wip ? "WIP" : zone.ToString();
+
+        // Tên tài liệu MỚI phải duy nhất trong dự án theo (Name + đuôi file). Trùng tên khác đuôi
+        // (Plan.pdf vs Plan.docx) được phép. Chỉ chạy khi tạo tài liệu mới — upload thay thế cùng
+        // folder (kể cả đổi đuôi khi ký số docx -> pdf) đi nhánh khác, không qua kiểm tra này.
+        private async Task RequireUniqueInProjectAsync(Guid folderId, string fileName, string? format)
+        {
+            if (string.IsNullOrWhiteSpace(format))
+                return;
+
+            var duplicate = await _unitOfWork.FileVersionRepository
+                .FindProjectDuplicateByNameAndFormatAsync(folderId, fileName, format);
+            if (duplicate == null)
+                return;
+
+            var duplicateFolder = await _unitOfWork.Repository<Folder>().GetByIdAsync(duplicate.FolderId);
+            var zone = duplicateFolder != null ? FormatZone(duplicateFolder.Area) : "khu vực khác";
+            throw new InvalidOperationException(
+                $"Đã tồn tại file '{fileName}.{format}' trong dự án (khu vực {zone}). "
+                + "Tên file phải duy nhất trong dự án; chỉ được trùng tên nếu khác loại file (khác đuôi).");
         }
 
         private async Task<FileVersionState> RequireCurrentStateAsync(Guid fileItemId)

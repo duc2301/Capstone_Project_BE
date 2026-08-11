@@ -52,6 +52,12 @@ namespace Application.Interfaces.IRepositories
         /// </summary>
         Task<HashSet<Guid>> GetViewableFolderIdsAsync(Guid projectId, Guid accountId);
 
+        /// <summary>
+        /// True if the account holds an active per-account view grant on the file (FileViewGrant),
+        /// issued because they were assigned to sign it. Independent of the group-based ACL.
+        /// </summary>
+        Task<bool> HasActiveFileViewGrantAsync(Guid fileItemId, Guid accountId);
+
         // ===== Current-user permission retrieval (viewing only) =====
 
         Task<Account?> GetAccountAsync(Guid accountId);
