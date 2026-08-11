@@ -1,7 +1,6 @@
 using Application.DTOs.RequestDTOs.Organization;
 using Application.DTOs.ResponseDTOs.Organization;
 using Application.DTOs.ResponseDTOs.Project;
-using Application.DTOs.ResponseDTOs.Organization;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
