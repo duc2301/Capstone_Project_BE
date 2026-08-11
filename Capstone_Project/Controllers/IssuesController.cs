@@ -31,6 +31,11 @@ namespace Capstone_Project.Controllers
             => Ok(ApiResponse.Success("Retrieved successfully",
                 await _service.GetAssignedToMeAsync(User.GetAccountId())));
 
+        [HttpGet("my-projects")]
+        public async Task<IActionResult> GetForMyProjects()
+            => Ok(ApiResponse.Success("Issues retrieved",
+                await _service.GetForMyProjectsAsync(User.GetAccountId())));
+
         [HttpGet("by-project/{projectId:guid}")]
         public async Task<IActionResult> GetByProject(Guid projectId)
             => Ok(ApiResponse.Success("Retrieved successfully",

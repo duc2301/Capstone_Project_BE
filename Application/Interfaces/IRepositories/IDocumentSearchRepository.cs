@@ -1,4 +1,5 @@
 ﻿using Domain.Entities;
+using Domain.Enum.Cde;
 using Pgvector;
 using System;
 using System.Collections.Generic;
@@ -16,7 +17,9 @@ namespace Application.Interfaces.IRepositories
         string FileName,
         string Snippet,          // nội dung child khớp
         string? ParentContext,
-        double Distance);
+        double Distance,
+        CdeArea Area, 
+        bool IsUnderRevision);
     }
     
 }

@@ -8,6 +8,7 @@ namespace Application.Interfaces.IServices
         Task<IEnumerable<IssueResponseDTO>> GetByFileItemAsync(Guid fileItemId, Guid accountId);
 
         Task<IEnumerable<ProjectIssueListItemDTO>> GetByProjectAsync(Guid projectId, Guid accountId);
+        Task<IEnumerable<ProjectIssueListItemDTO>> GetForMyProjectsAsync(Guid accountId);
         Task<IEnumerable<ProjectIssueListItemDTO>> GetAssignedToMeAsync(Guid accountId);
         Task<IssueResponseDTO?> GetByIdAsync(Guid id, Guid accountId);
         Task<IssueResponseDTO> CreateAsync(CreateIssueDTO dto, Guid actorId);

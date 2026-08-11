@@ -33,6 +33,7 @@ namespace Application.Services
         private readonly IFolderTreeRepository _folderTreeRepository;
         private readonly IPermissionCheckingService _permission;
         private readonly IAuditLogService _auditLog;
+        private readonly IProjectFlowService _projectFlow;
 
         public IssueService(
             IUnitOfWork unitOfWork,
@@ -44,7 +45,8 @@ namespace Application.Services
             IFileStorageService storage,
             IFolderTreeRepository folderTreeRepository,
             IPermissionCheckingService permission,
-            IAuditLogService auditLog)
+            IAuditLogService auditLog,
+            IProjectFlowService projectFlow)
         {
             _auditLog = auditLog;
             _unitOfWork = unitOfWork;
@@ -56,6 +58,7 @@ namespace Application.Services
             _storage = storage;
             _folderTreeRepository = folderTreeRepository;
             _permission = permission;
+            _projectFlow = projectFlow;
         }
 
         private async Task<bool> CanViewIssueTargetAsync(Issue issue, Guid accountId)
@@ -116,8 +119,26 @@ namespace Application.Services
             if (!await _folderTreeRepository.ProjectExistsAsync(projectId))
                 throw new ApiExceptionResponse("Project not found.", 404);
 
+            return await BuildProjectIssuesAsync(projectId, null, accountId);
+        }
+
+        public async Task<IEnumerable<ProjectIssueListItemDTO>> GetForMyProjectsAsync(Guid accountId)
+        {
+            var myProjects = await _projectFlow.GetMyProjectsAsync(accountId);
+            if (myProjects.Count == 0) return Array.Empty<ProjectIssueListItemDTO>();
+
+            var all = new List<ProjectIssueListItemDTO>();
+            foreach (var project in myProjects)
+                all.AddRange(await BuildProjectIssuesAsync(project.Id, project.ProjectName, accountId));
+
+            return all.OrderByDescending(i => i.CreatedAt).ToList();
+        }
+
+        private async Task<List<ProjectIssueListItemDTO>> BuildProjectIssuesAsync(
+            Guid projectId, string? projectName, Guid accountId)
+        {
             var issues = (await _unitOfWork.Repository<Issue>().FindAsync(i => i.ProjectId == projectId)).ToList();
-            if (issues.Count == 0) return Array.Empty<ProjectIssueListItemDTO>();
+            if (issues.Count == 0) return new List<ProjectIssueListItemDTO>();
 
             var fileIds = issues.Where(i => i.LinkedFileItemId.HasValue)
                 .Select(i => i.LinkedFileItemId!.Value).ToHashSet();
@@ -154,7 +175,7 @@ namespace Application.Services
             }
 
             var visible = issues.Where(CanSee).ToList();
-            if (visible.Count == 0) return Array.Empty<ProjectIssueListItemDTO>();
+            if (visible.Count == 0) return new List<ProjectIssueListItemDTO>();
 
             var accountIds = visible
                 .SelectMany(i => new[] { i.RaisedByAccountId, i.AssignedToAccountId })
@@ -176,6 +197,7 @@ namespace Application.Services
                     {
                         Id = i.Id,
                         ProjectId = i.ProjectId,
+                        ProjectName = projectName,
                         Type = i.Type,
                         Title = i.Title,
                         Description = i.Description,
