@@ -17,6 +17,8 @@ using iText.Layout;
 using iText.Layout.Element;
 using iText.Layout.Properties;
 using Microsoft.Extensions.Logging;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 
 namespace Infrastructure.Adapters.Signing
 {
@@ -90,8 +92,11 @@ namespace Infrastructure.Adapters.Signing
             // hien thi truoc, nhung chi 1 nguoi (nguoi hoan tat cuoi cung) moi thuc su tao chu ky mat ma.
             var stampSigners = (await BuildStampSignersAsync(approval.Id)).ToList();
             var pendingAccount = await _unitOfWork.Repository<Account>().GetByIdAsync(pendingSignerId);
+            var pendingSignerName = ResolveSignerDisplayName(
+                pendingSignerCertificateDer,
+                pendingAccount?.UserName ?? pendingSignerId.ToString());
             stampSigners.Add(new SignerStampInfo(
-                pendingAccount?.UserName ?? pendingSignerId.ToString(),
+                pendingSignerName,
                 DateTime.UtcNow,
                 pendingCertificateSerial,
                 pendingTransactionId));
@@ -313,12 +318,46 @@ namespace Infrastructure.Adapters.Signing
                 .ToDictionary(a => a.Id);
 
             return latestPerAccount
-                .Select(t => new SignerStampInfo(
-                    accounts.TryGetValue(t.SignedBy!.Value, out var account) ? account.UserName : t.SignedBy.Value.ToString(),
-                    t.SignedAt ?? t.CreatedAt,
-                    t.CertificateSerial,
-                    t.TransactionId))
+                .Select(t =>
+                {
+                    var fallbackName = accounts.TryGetValue(t.SignedBy!.Value, out var account)
+                        ? account.UserName
+                        : t.SignedBy.Value.ToString();
+                    var name = ResolveSignerDisplayName(t.SignerCertificateBase64, fallbackName);
+                    return new SignerStampInfo(name, t.SignedAt ?? t.CreatedAt, t.CertificateSerial, t.TransactionId);
+                })
                 .ToList();
+        }
+
+        // Ten hien thi tren chu ky uu tien lay theo CCCD (Common Name trong chung thu so VNPT SmartCA -
+        // ten that da duoc VNPT xac thuc khi cap chung thu), chi fallback ve UserName he thong neu khong
+        // doc duoc chung thu (chua ky / chung thu loi).
+        private static string ResolveSignerDisplayName(byte[]? certificateDer, string fallbackName)
+            => TryGetCertificateCommonName(certificateDer) ?? fallbackName;
+
+        private static string ResolveSignerDisplayName(string? certificateBase64, string fallbackName)
+            => ResolveSignerDisplayName(TryDecodeBase64(certificateBase64), fallbackName);
+
+        private static byte[]? TryDecodeBase64(string? base64)
+        {
+            if (string.IsNullOrWhiteSpace(base64)) return null;
+            try { return Convert.FromBase64String(base64); }
+            catch (FormatException) { return null; }
+        }
+
+        private static string? TryGetCertificateCommonName(byte[]? certificateDer)
+        {
+            if (certificateDer == null || certificateDer.Length == 0) return null;
+            try
+            {
+                using var certificate = X509CertificateLoader.LoadCertificate(certificateDer);
+                var commonName = certificate.GetNameInfo(X509NameType.SimpleName, forIssuer: false);
+                return string.IsNullOrWhiteSpace(commonName) ? null : commonName.Trim();
+            }
+            catch (CryptographicException)
+            {
+                return null;
+            }
         }
 
         private async Task<SignedFileInfoResponseDTO> BuildSignedFileInfoAsync(
@@ -330,6 +369,9 @@ namespace Infrastructure.Adapters.Signing
                 ? await _unitOfWork.Repository<Account>().GetByIdAsync(signedVersion.SignedBy.Value)
                 : null;
             var url = await _storage.GetPresignedUrlAsync(signedVersion.StoragePath!, 60);
+            var signedByName = signerAccount != null
+                ? ResolveSignerDisplayName(transaction?.SignerCertificateBase64, signerAccount.UserName)
+                : null;
 
             return new SignedFileInfoResponseDTO
             {
@@ -341,7 +383,7 @@ namespace Infrastructure.Adapters.Signing
                 StoragePath = signedVersion.StoragePath,
                 Url = url,
                 SignedAt = signedVersion.SignedAt,
-                SignedBy = signerAccount?.UserName,
+                SignedBy = signedByName,
                 CertificateSerial = signedVersion.CertificateSerial,
                 TransactionId = transaction?.TransactionId
             };

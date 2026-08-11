@@ -22,6 +22,29 @@ namespace Infrastructure.Repositories
                 .FirstOrDefaultAsync(f => f.FolderId == folderId && f.Name == fileName);
         }
 
+        // Tên file phải là DUY NHẤT trong phạm vi DỰ ÁN, xét theo (Name + đuôi file hiện hành).
+        // Trùng tên nhưng KHÁC đuôi (vd Plan.pdf vs Plan.docx) được phép cùng tồn tại.
+        // Bỏ qua chính folder đang upload (trùng tên cùng folder = upload thay thế, do
+        // FindExistingDocumentAsync xử lý). Đuôi lấy từ Format của version hiện hành (CurrentVersionId).
+        public async Task<FileItem?> FindProjectDuplicateByNameAndFormatAsync(Guid folderId, string fileName, string format)
+        {
+            var projectId = await _context.Folders
+                .Where(f => f.Id == folderId)
+                .Select(f => (Guid?)f.ProjectId)
+                .FirstOrDefaultAsync();
+            if (projectId == null)
+                return null;
+
+            return await _context.FileItems
+                .AsNoTracking()
+                .Where(file =>
+                    file.FolderId != folderId
+                    && file.Name == fileName
+                    && file.Folder.ProjectId == projectId.Value
+                    && _context.FileVersionStates.Any(v => v.Id == file.CurrentVersionId && v.Format == format))
+                .FirstOrDefaultAsync();
+        }
+
         // Không AsNoTracking: service cần entity tracked để set IsCurrent = false rồi SaveChangesAsync.
         public async Task<FileVersionState?> GetCurrentStateAsync(Guid fileItemId)
         {

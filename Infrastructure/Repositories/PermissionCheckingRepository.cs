@@ -124,6 +124,14 @@ namespace Infrastructure.Repositories
             return folderIds.ToHashSet();
         }
 
+        public async Task<bool> HasActiveFileViewGrantAsync(Guid fileItemId, Guid accountId)
+        {
+            return await _context.FileViewGrants
+                .AnyAsync(g => g.FileItemId == fileItemId
+                            && g.AccountId == accountId
+                            && g.Status == PermissionStatus.Active);
+        }
+
         // ===== Current-user permission retrieval (viewing only) =====
 
         public async Task<Account?> GetAccountAsync(Guid accountId)

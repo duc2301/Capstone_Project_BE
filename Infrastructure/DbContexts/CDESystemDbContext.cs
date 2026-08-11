@@ -50,6 +50,7 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<ApprovalSignatureTransaction> ApprovalSignatureTransactions { get; set; }
         public virtual DbSet<ZoneReturnRequest> ZoneReturnRequests { get; set; }
         public virtual DbSet<FileSignaturePosition> FileSignaturePositions { get; set; }
+        public virtual DbSet<FileViewGrant> FileViewGrants { get; set; }
 
 
         // --- Module E: Thảo luận ---
@@ -262,6 +263,33 @@ namespace Infrastructure.DbContexts
                 .WithMany()
                 .HasForeignKey(s => s.SignerGroupId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // Grant xem file theo tài khoản (người được assign ký). Xóa file -> xóa grant (Cascade).
+            // Account/ApprovalRequest tham chiếu Restrict để tránh nhiều đường cascade.
+            // Unique (FileItemId, AccountId): mỗi người chỉ có 1 grant / file (upsert khi assign,
+            // hard-delete khi trả về WIP).
+            modelBuilder.Entity<FileViewGrant>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+
+                entity.HasIndex(x => new { x.FileItemId, x.AccountId })
+                    .IsUnique();
+
+                entity.HasOne(x => x.FileItem)
+                    .WithMany()
+                    .HasForeignKey(x => x.FileItemId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(x => x.Account)
+                    .WithMany()
+                    .HasForeignKey(x => x.AccountId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(x => x.SourceApprovalRequest)
+                    .WithMany()
+                    .HasForeignKey(x => x.SourceApprovalRequestId)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
 
             // Joint Venture Member relationships
             modelBuilder.Entity<JointVentureMember>(entity =>

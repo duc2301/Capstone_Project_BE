@@ -160,6 +160,15 @@ namespace Application.Services
             request.ApprovedBy = actorId;
             request.DecidedAt = now;
 
+            // File trả về WIP -> thu hồi toàn bộ grant xem theo tài khoản (người được assign ký ở
+            // vòng Shared->Published trước đó). Vô điều kiện: nếu nhóm họ vẫn có CanView thì vẫn xem
+            // được qua ACL nhóm; nếu không thì mất quyền xem đúng như mong muốn.
+            var viewGrants = (await _unitOfWork.Repository<FileViewGrant>().FindAsync(
+                    g => g.FileItemId == fileItem.Id))
+                .ToList();
+            foreach (var grant in viewGrants)
+                _unitOfWork.Repository<FileViewGrant>().Delete(grant);
+
             // Versioning: quay về WIP từ tài liệu đã publish (C{rev}) -> P{WorkingRevision}.01,
             // PublishedRevision bảo toàn. Quay về từ Shared: version giữ nguyên.
             if (fileItem.CurrentVersionId.HasValue)
