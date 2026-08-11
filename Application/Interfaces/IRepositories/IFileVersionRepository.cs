@@ -10,6 +10,11 @@ namespace Application.Interfaces.IRepositories
         // Tương lai đổi sang FileNamingMetadata thì chỉ cần thay implementation của method này.
         Task<FileItem?> FindExistingDocumentAsync(Guid folderId, string fileName);
 
+        // Trùng tên trong PHẠM VI DỰ ÁN theo (Name + đuôi file) — dùng để chặn tạo tài liệu mới
+        // trùng tên với file đã có ở vùng khác (Shared/Published/Archived hay WIP khác). Trả về
+        // FileItem đang xung đột (nếu có) để báo lỗi kèm vị trí; bỏ qua chính folder đang upload.
+        Task<FileItem?> FindProjectDuplicateByNameAndFormatAsync(Guid folderId, string fileName, string format);
+
         // Dòng trạng thái hiện hành (IsCurrent = true) — tracked để service retire (IsCurrent = false)
         // rồi SaveChangesAsync khi insert dòng snapshot mới.
         Task<FileVersionState?> GetCurrentStateAsync(Guid fileItemId);

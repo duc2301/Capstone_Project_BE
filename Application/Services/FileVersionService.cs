@@ -40,8 +40,13 @@ namespace Application.Services
 
             // Chưa có FileItem trùng tên -> tài liệu mới hoàn toàn: trả P01.01 nhưng CHƯA lưu state
             // (chưa có FileItemId để gắn). Caller tạo FileItem xong gọi CreateInitialVersionAsync.
+            // Nhưng trước đó: tên file phải DUY NHẤT trong dự án theo (Name + đuôi) — chặn trường hợp
+            // upload trùng tên vào WIP trong khi file đã nằm ở Shared/Published/Archived (hoặc WIP khác).
             if (existing == null)
+            {
+                await RequireUniqueInProjectAsync(folderId, fileName, fileData?.Format);
                 return ToResult(null, null, isNew: true, VersionStage.Working, workingRevision: 1, workingVersion: 1, publishedRevision: 0);
+            }
 
             var current = await _unitOfWork.FileVersionRepository.GetCurrentStateAsync(existing.Id);
 
@@ -249,6 +254,26 @@ namespace Application.Services
 
         private static string FormatZone(CdeArea zone)
             => zone == CdeArea.Wip ? "WIP" : zone.ToString();
+
+        // Tên tài liệu MỚI phải duy nhất trong dự án theo (Name + đuôi file). Trùng tên khác đuôi
+        // (Plan.pdf vs Plan.docx) được phép. Chỉ chạy khi tạo tài liệu mới — upload thay thế cùng
+        // folder (kể cả đổi đuôi khi ký số docx -> pdf) đi nhánh khác, không qua kiểm tra này.
+        private async Task RequireUniqueInProjectAsync(Guid folderId, string fileName, string? format)
+        {
+            if (string.IsNullOrWhiteSpace(format))
+                return;
+
+            var duplicate = await _unitOfWork.FileVersionRepository
+                .FindProjectDuplicateByNameAndFormatAsync(folderId, fileName, format);
+            if (duplicate == null)
+                return;
+
+            var duplicateFolder = await _unitOfWork.Repository<Folder>().GetByIdAsync(duplicate.FolderId);
+            var zone = duplicateFolder != null ? FormatZone(duplicateFolder.Area) : "khu vực khác";
+            throw new InvalidOperationException(
+                $"Đã tồn tại file '{fileName}.{format}' trong dự án (khu vực {zone}). "
+                + "Tên file phải duy nhất trong dự án; chỉ được trùng tên nếu khác loại file (khác đuôi).");
+        }
 
         private async Task<FileVersionState> RequireCurrentStateAsync(Guid fileItemId)
         {
