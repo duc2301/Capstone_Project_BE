@@ -47,7 +47,13 @@ namespace Infrastructure.Adapters.Ai
 
             var content = extractedFile.Text;
             if (string.IsNullOrWhiteSpace(content))
+            {
+                // Không log thì hỏng ở đây là vô hình: worker nền thấy null sẽ bỏ qua,
+                // người dùng chỉ thấy file không có cảnh báo mà không có lỗi nào.
+                _logger.LogWarning("Không trích được chữ từ file {FileItemId} ({Format}) — bỏ qua phân tích nội dung",
+                    fileItemId, extractedFile.Version.Format);
                 return null;
+            }
 
             //const int MaxContentChars = 6000;
             //var sample = content.Length > MaxContentChars ? content[..MaxContentChars] : content;
@@ -57,8 +63,11 @@ namespace Infrastructure.Adapters.Ai
                 var client = _httpClientFactory.CreateClient();
                 var url = $"{_options.Value.BaseUrl.TrimEnd('/')}/api/generate";
 
+                // Kiểm tra nội dung có liên quan hay không là bài toán phán đoán, khác hẳn việc
+                // trích xuất theo schema của BEP — nên dùng model riêng. ChatModel đã hạ xuống 4b
+                // để parse BEP cho nhanh, dùng chung sẽ làm cờ "nghi ngờ" kém hẳn đi.
                 var payload = new GenerateRequest(
-                    _options.Value.ChatModel,
+                    _options.Value.CheckModel ?? _options.Value.ChatModel,
                     AnalyzeContentPrompt(project.ProjectName, project.ProjectDescription, folder?.Name, content),
                     Stream: false,
                     Think: false,
