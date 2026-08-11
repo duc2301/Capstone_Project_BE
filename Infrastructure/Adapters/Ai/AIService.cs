@@ -7,10 +7,12 @@ using Application.Options;
 using Domain.Entities;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Globalization;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace Infrastructure.Adapters.Ai
 {
@@ -22,8 +24,9 @@ namespace Infrastructure.Adapters.Ai
         private readonly IUnitOfWork _unitOfWork;
         private readonly IOptions<OllamaOptions> _options;
         private readonly ILogger<AIService> _logger;
+        private readonly ITextChunker _chunker;
 
-        public AIService(IFileContentReader fileReader, IFileTextExtractor extractor, IHttpClientFactory httpClientFactory, IUnitOfWork unitOfWork, IOptions<OllamaOptions> options, ILogger<AIService> logger)
+        public AIService(IFileContentReader fileReader, IFileTextExtractor extractor, IHttpClientFactory httpClientFactory, IUnitOfWork unitOfWork, IOptions<OllamaOptions> options, ILogger<AIService> logger, ITextChunker chunker)
         {
             _fileReader = fileReader;
             _extractor = extractor;
@@ -31,6 +34,7 @@ namespace Infrastructure.Adapters.Ai
             _unitOfWork = unitOfWork;
             _options = options;
             _logger = logger;
+            _chunker = chunker;
         }
 
         public async Task<ContentAnalysisResult?> AnalyzeContentAsync(Guid fileItemId, CancellationToken ct = default)
@@ -69,7 +73,7 @@ namespace Infrastructure.Adapters.Ai
                         },
                         required = new[] { "summary", "suspicious" }
                     },
-                    Options: new GenerateOptions(0.3, 500));
+                    Options: new GenerateOptions(0.3, 500, _options.Value.NumCtx, _options.Value.NumGpu));
 
                 var response = await client.PostAsync(url,
                     new StringContent(JsonSerializer.Serialize(payload, JsonOpts), Encoding.UTF8, "application/json"),
@@ -113,39 +117,64 @@ namespace Infrastructure.Adapters.Ai
             
             text = StripRepeatedLines(text);
 
+            // BEP thật cỡ 70-80 trang vượt xa num_ctx. Nhét một lượt thì prompt bị cắt âm thầm,
+            // model chỉ đọc được phần đầu mà vẫn trả JSON hợp lệ -> mất dữ liệu không phát hiện được.
+            var slices = _chunker.ChunkForExtraction(text);
+            if (slices.Count == 0)
+                return new BepParseResultDTO { ExtractionEmpty = true };
+
             try
             {
-                var client = _httpClientFactory.CreateClient();
-                client.Timeout = TimeSpan.FromMinutes(10);
-                var url = $"{_options.Value.BaseUrl!.TrimEnd('/')}/api/generate";
-
-                var payload = new GenerateRequest(
-                    _options.Value.ChatModel,
-                    BepParsePrompt(text),
-                    Stream: false,
-                    Think: false,
-                    Format: BepFormatSchema,
-                    Options: new GenerateOptions(0.2, -1));
-
-                var response = await client.PostAsync(url,
-                    new StringContent(JsonSerializer.Serialize(payload, JsonOpts), Encoding.UTF8, "application/json"),
-                    ct);
-
-                if (!response.IsSuccessStatusCode)
+                // Pha 1 — 6 trường thông tin dự án chỉ xuất hiện ở phần đầu tài liệu
+                // (trang bìa + mục thông tin chung), nên chỉ lát đầu mới hỏi đủ schema.
+                var result = await CallBepAsync(BepParsePrompt(slices[0]), BepFormatSchema, ct);
+                if (result is null)
                 {
-                    var body = await response.Content.ReadAsStringAsync(ct);
-                    _logger.LogError("Ollama parse BEP trả về {StatusCode}: {Body}", response.StatusCode, body);
-                    throw new ApiExceptionResponse("Dịch vụ AI đang không phản hồi, vui lòng thử lại.", 502);
-                }
-
-                var envelope = await response.Content.ReadFromJsonAsync<GenerateResponse>(JsonOpts, ct);
-                var parsed = JsonSerializer.Deserialize<BepParseResultDTO>(envelope?.Response ?? "", JsonOpts);
-                if (parsed is null)
-                {
-                    _logger.LogError("Ollama parse BEP trả về nội dung rỗng/không đúng schema: {Response}", envelope?.Response);
+                    _logger.LogError("Ollama parse BEP trả về nội dung rỗng/không đúng schema ở lát đầu");
                     throw new ApiExceptionResponse("Không xử lý được kết quả AI, vui lòng thử lại.", 502);
                 }
-                return parsed;
+
+                // Trường đơn chỉ được điền từ lát 1. Ranh giới lát đổi theo độ dài từng tài liệu,
+                // nên mục thông tin chung có thể rơi sang lát 2 và mất vĩnh viễn (pha 2 không lấy
+                // trường đơn). Chạy bù ĐÚNG MỘT lượt full schema trên lát 2, chỉ điền chỗ còn trống.
+                int nextSlice = 1;
+                if (slices.Count > 1 && HasMissingScalars(result))
+                {
+                    var fallback = await CallBepAsync(BepParsePrompt(slices[1]), BepFormatSchema, ct);
+                    if (fallback is not null)
+                    {
+                        FillMissingScalars(result, fallback);
+                        MergeParts(result, fallback);
+                    }
+                    nextSlice = 2;
+                }
+
+                // Pha 2 — các lát sau chỉ quét nhóm/gói thầu. Schema hẹp lại vừa giảm token phải sinh
+                // (nút thắt nằm ở tốc độ sinh) vừa bớt chỗ cho model bịa các trường không có mặt.
+                for (int i = nextSlice; i < slices.Count; i++)
+                {
+                    if (!MayContainParties(slices[i]) || IsNamingConventionSlice(slices[i])) continue;
+
+                    var part = await CallBepAsync(BepPartsPrompt(slices[i]), BepPartsSchema, ct);
+                    if (part is not null) MergeParts(result, part);
+                }
+
+                NormalizeBlanks(result);
+                DedupeSelf(result);
+                DropUnsupportedPackages(result);
+                DropOwnerAsGroup(result);
+                DropLienDanhMembers(result);
+                DropPersonRoles(result);
+                DropJunkGroups(result);
+
+                if (result.Groups.Count > SuspiciousGroupCount)
+                    _logger.LogWarning(
+                        "Parse BEP: {Count} nhóm là bất thường — nhiều khả năng model đã quét nhầm một bảng tra cứu (mã vai trò đặt tên tệp, danh mục chức danh) thay vì bảng phân quyền CDE",
+                        result.Groups.Count);
+
+                _logger.LogInformation("Parse BEP xong: {Slices} lát, {Groups} nhóm, {Packages} gói thầu",
+                    slices.Count, result.Groups.Count, result.Packages.Count);
+                return result;
             }
             catch (ApiExceptionResponse)
             {
@@ -167,11 +196,399 @@ namespace Infrastructure.Adapters.Ai
             }
         }
 
+        // Một lượt gọi model cho một lát. Trả null khi lát không cho ra JSON dùng được;
+        // pha 2 bỏ qua lát đó thay vì làm hỏng cả lần đọc.
+        private async Task<BepParseResultDTO?> CallBepAsync(string prompt, object schema, CancellationToken ct)
+        {
+            var client = _httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromMinutes(10);
+            var url = $"{_options.Value.BaseUrl!.TrimEnd('/')}/api/generate";
+
+            var payload = new GenerateRequest(
+                _options.Value.ChatModel,
+                prompt,
+                Stream: false,
+                Think: false,
+                Format: schema,
+                // temperature 0 = giải mã tham lam. Trích xuất không cần sáng tạo, mà cần TÁI LẬP:
+                // đo trên BEP Viettel, temp 0.2 cho 3 danh sách khác nhau qua 3 lượt, temp 0 cho
+                // 3 lượt giống hệt và là danh sách đúng nhất (đủ Kiến trúc/Kết cấu/MEP).
+                Options: new GenerateOptions(0.0, -1, _options.Value.NumCtx, _options.Value.NumGpu));
+
+            var response = await client.PostAsync(url,
+                new StringContent(JsonSerializer.Serialize(payload, JsonOpts), Encoding.UTF8, "application/json"),
+                ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(ct);
+                _logger.LogError("Ollama parse BEP trả về {StatusCode}: {Body}", response.StatusCode, body);
+                throw new ApiExceptionResponse("Dịch vụ AI đang không phản hồi, vui lòng thử lại.", 502);
+            }
+
+            var envelope = await response.Content.ReadFromJsonAsync<GenerateResponse>(JsonOpts, ct);
+
+            // Hết ngân sách token giữa chừng -> JSON chắc chắn vỡ. Báo đúng nguyên nhân,
+            // đừng để rơi xuống Deserialize rồi ném JsonException không rõ vì sao.
+            if (envelope?.DoneReason == "length")
+            {
+                _logger.LogError("Ollama parse BEP bị cắt do hết token: prompt={Prompt}, sinh={Eval}",
+                    envelope.PromptEvalCount, envelope.EvalCount);
+                throw new ApiExceptionResponse(
+                    "Tài liệu BEP quá dài để xử lý trong một lượt. Cần chia nhỏ tài liệu.", 422);
+            }
+
+            return JsonSerializer.Deserialize<BepParseResultDTO>(envelope?.Response ?? "", JsonOpts);
+        }
+
+        // Sàng rẻ trước khi gọi model: phần lớn mục trong BEP là nội dung kỹ thuật thuần
+        // (LOD, quy ước đặt tên, hệ toạ độ, danh sách phần mềm), không chứa nhóm/gói thầu nào.
+        // Để danh sách rộng tay — bỏ sót một lát tốn kém hơn nhiều so với gọi thừa một lượt.
+        private static readonly string[] PartyHints =
+        {
+            "nhóm", "tổ ", "bên tham gia", "các bên", "đơn vị", "nhà thầu", "gói thầu",
+            "thầu phụ", "chủ đầu tư", "tư vấn", "tổ chức", "công ty", "phân công", "trách nhiệm"
+        };
+
+        private static bool MayContainParties(string slice)
+        {
+            foreach (var hint in PartyHints)
+                if (slice.Contains(hint, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        // Mục quy ước đặt tên là nguồn nhiễu lớn nhất còn lại: model kéo "Đơn vị khởi tạo",
+        // "Bên chủ trì", bảng mã vai trò từ đó ra làm bên tham gia. Prompt cấm hai lượt vẫn lọt,
+        // nên chặn ở tầng chọn lát: lát nào thiên hẳn về đặt tên thì không quét.
+        // Đo trên 5 BEP: luật này khớp đúng 1 lát (mục quy ước đặt tên của BEP 77 trang),
+        // không chạm lát nào khác — kể cả BEP có nói về đặt tên nhưng chủ yếu là phân công.
+        private static readonly string[] NamingConventionHints =
+        {
+            "quy tắc đặt tên", "quy ước đặt tên", "đặt tên tệp", "đặt tên tập tin",
+            "trường mã dự án", "đơn vị khởi tạo", "originator", "trạng thái hiệu chỉnh",
+            "naming convention"
+        };
+
+        // Dấu hiệu của bảng phân công/phân quyền — thứ ĐÁNG quét. Cố ý không dùng chung
+        // PartyHints: "đơn vị" xuất hiện dày trong cả mục đặt tên nên không phân biệt được.
+        private static readonly string[] AssignmentHints =
+        {
+            "phân công", "trách nhiệm", "phân quyền", "bên tham gia",
+            "sơ đồ tổ chức", "phối hợp", "bộ phận", "chủ trì"
+        };
+
+        private static bool IsNamingConventionSlice(string slice)
+        {
+            int naming = CountHits(slice, NamingConventionHints);
+            return naming >= 8 && naming > CountHits(slice, AssignmentHints);
+        }
+
+        private static int CountHits(string text, string[] hints)
+        {
+            int total = 0;
+            foreach (var h in hints)
+            {
+                int i = 0;
+                while ((i = text.IndexOf(h, i, StringComparison.OrdinalIgnoreCase)) >= 0)
+                {
+                    total++;
+                    i += h.Length;
+                }
+            }
+            return total;
+        }
+
+        // Gộp kết quả một lát vào kết quả chung.
+        // Trường đơn không đụng tới: lát đầu là nguồn đáng tin nhất cho thông tin dự án.
+        // Mảng: hợp nhất rồi khử trùng theo tên đã chuẩn hoá — bắt buộc, vì các lát có overlap
+        // và vì cùng một nhóm thường được nhắc lại ở nhiều mục.
+        private static void MergeParts(BepParseResultDTO target, BepParseResultDTO part)
+        {
+            foreach (var g in part.Groups ?? new())
+            {
+                if (string.IsNullOrWhiteSpace(g.Name)) continue;
+
+                var existing = target.Groups.FirstOrDefault(x => SameName(x.Name, g.Name));
+                if (existing is null) { target.Groups.Add(g); continue; }
+
+                if (Longer(g.Description, existing.Description)) existing.Description = g.Description;
+                existing.PartnerOrganizationName ??= g.PartnerOrganizationName;
+            }
+
+            foreach (var p in part.Packages ?? new())
+            {
+                if (string.IsNullOrWhiteSpace(p.Name)) continue;
+
+                var existing = target.Packages.FirstOrDefault(x => SameName(x.Name, p.Name));
+                if (existing is null) { target.Packages.Add(p); continue; }
+
+                if (Longer(p.Description, existing.Description)) existing.Description = p.Description;
+                existing.ContractValue ??= p.ContractValue;
+                existing.Currency ??= p.Currency;
+                existing.ContractorOrganizationName ??= p.ContractorOrganizationName;
+            }
+        }
+
+        // Pha 1 có schema bắt buộc nên model điền "" cho trường không tìm thấy, pha 2 thì để null.
+        // Trả về FE hai kiểu rỗng khác nhau trong cùng một trường là mời lỗi — quy hết về null.
+        private static void NormalizeBlanks(BepParseResultDTO r)
+        {
+            r.ProjectName = Blank(r.ProjectName);
+            r.ProjectCode = Blank(r.ProjectCode);
+            r.ProjectDescription = Blank(r.ProjectDescription);
+            r.OwnerOrganizationName = Blank(r.OwnerOrganizationName);
+            r.Address = Blank(r.Address);
+            r.ContactAddress = Blank(r.ContactAddress);
+
+            foreach (var g in r.Groups)
+            {
+                g.Name = g.Name?.Trim() ?? string.Empty;
+                g.Description = Blank(g.Description);
+                g.PartnerOrganizationName = Blank(g.PartnerOrganizationName);
+            }
+
+            foreach (var p in r.Packages)
+            {
+                p.Name = p.Name?.Trim() ?? string.Empty;
+                p.Description = Blank(p.Description);
+                p.Currency = Blank(p.Currency);
+                p.ContractorOrganizationName = Blank(p.ContractorOrganizationName);
+            }
+        }
+
+        private static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+        private const int SuspiciousGroupCount = 15;
+
+        // Trường đơn nào còn trống thì lấy từ lát chạy bù; đã có giá trị thì không đụng
+        // (lát 1 là nguồn đáng tin nhất cho thông tin dự án).
+        private static bool HasMissingScalars(BepParseResultDTO r) =>
+            string.IsNullOrWhiteSpace(r.ProjectName)
+            || string.IsNullOrWhiteSpace(r.ProjectDescription)
+            || string.IsNullOrWhiteSpace(r.OwnerOrganizationName)
+            || string.IsNullOrWhiteSpace(r.Address)
+            || string.IsNullOrWhiteSpace(r.ContactAddress);
+        // projectCode cố tình không tính: nó vắng mặt hợp lệ ở hầu hết BEP,
+        // đưa vào sẽ khiến lượt chạy bù kích hoạt mọi lần.
+
+        private static void FillMissingScalars(BepParseResultDTO target, BepParseResultDTO src)
+        {
+            target.ProjectName = Prefer(target.ProjectName, src.ProjectName);
+            target.ProjectCode = Prefer(target.ProjectCode, src.ProjectCode);
+            target.ProjectDescription = Prefer(target.ProjectDescription, src.ProjectDescription);
+            target.OwnerOrganizationName = Prefer(target.OwnerOrganizationName, src.OwnerOrganizationName);
+            target.Address = Prefer(target.Address, src.Address);
+            target.ContactAddress = Prefer(target.ContactAddress, src.ContactAddress);
+        }
+
+        private static string? Prefer(string? current, string? candidate)
+            => string.IsNullOrWhiteSpace(current) ? Blank(candidate) : current;
+
+        // Prompt đã hai lần không chặn nổi việc model tách thành viên liên danh Chủ đầu tư ra
+        // thành bên riêng. Lọc bằng code cho chắc: tên nhóm nằm gọn trong tên Chủ đầu tư
+        // thì nhóm đó chính là Chủ đầu tư, không phải một bên độc lập trong CDE.
+        private void DropOwnerAsGroup(BepParseResultDTO r)
+        {
+            var owner = NormalizeName(r.OwnerOrganizationName);
+
+            // Chỉ lọc khi Chủ đầu tư thực sự là TÊN TỔ CHỨC. Nếu model điền một cụm vai trò ngắn
+            // ("Project Owner", "KAITECH") thì phép chứa-trong ăn nhầm cả bên hợp lệ —
+            // đo trên BEP KT-School: "Lead Appointed Party / Project Owner" bị loại oan.
+            if (owner.Length < 15) return;
+
+            int removed = r.Groups.RemoveAll(g =>
+            {
+                var name = NormalizeName(g.Name);
+                // Ngưỡng độ dài để một tên chung chung ngắn không vô tình khớp.
+                return name.Length >= 6 && owner.Contains(name, StringComparison.Ordinal);
+            });
+
+            if (removed > 0)
+                _logger.LogInformation("Parse BEP: bỏ {Count} nhóm trùng với tên Chủ đầu tư", removed);
+        }
+
+        // Chức danh cá nhân, không phải tổ chức. Nhận diện theo TIỀN TỐ để "Bộ phận BIM",
+        // "Ban Quản lý dự án 7" (đơn vị) vẫn sống, còn "Quản lý BIM", "Kỹ sư điện" (chức danh) thì rụng.
+        private static readonly string[] PersonRolePrefixes =
+        {
+            "quan ly bim", "dieu phoi bim", "chu tri bim", "ky thuat vien", "chuyen vien",
+            "ky su", "kien truc su", "giam sat vien", "nhan vien", "truong nhom", "quan tri vien",
+            // BEP tiếng Anh dùng đúng các chức danh này (đo trên KT-School: "BIM Coordinators",
+            // "BIM Modelers (Arch)"). Không thêm "architect"/"engineer" trần vì ở BEP tiếng Anh
+            // chúng thường CHÍNH LÀ tên bên tham gia.
+            "bim coordinator", "bim modeller", "bim modeler", "bim manager", "bim technician"
+        };
+
+        // Dấu hiệu tài liệu có giao trách nhiệm/quyền trong CDE cho chức danh đó.
+        private static readonly string[] CdeResponsibilityHints =
+        {
+            "chịu trách nhiệm", "phụ trách", "được giao", "quyền", "cde",
+            "phân công", "tham gia", "quản lý dữ liệu", "phối hợp"
+        };
+
+        private void DropPersonRoles(BepParseResultDTO r)
+        {
+            int removed = r.Groups.RemoveAll(g =>
+            {
+                var name = NormalizeName(g.Name);
+                if (!PersonRolePrefixes.Any(p => name.StartsWith(p, StringComparison.Ordinal)))
+                    return false;
+
+                // Chức danh CHỈ bị loại khi tài liệu không mô tả trách nhiệm hay sự tham gia
+                // nào trong CDE — có mô tả trách nhiệm thì nó là một nhóm làm việc hợp lệ.
+                return string.IsNullOrWhiteSpace(g.Description)
+                    || !CdeResponsibilityHints.Any(h => g.Description.Contains(h, StringComparison.OrdinalIgnoreCase));
+            });
+
+            if (removed > 0)
+                _logger.LogInformation("Parse BEP: bỏ {Count} nhóm là chức danh cá nhân, không phải tổ chức", removed);
+        }
+
+        // Model có thể tự sinh trùng ngay trong MỘT response. MergeParts chỉ khử trùng lúc gộp lát,
+        // nên tài liệu một lát không được lọc gì cả — đo trên BEP Viettel: "Bộ phận thiết kế kết cấu"
+        // xuất hiện hai lần trong cùng một kết quả.
+        private static void DedupeSelf(BepParseResultDTO r)
+        {
+            var groups = new List<BepGroupDTO>();
+            foreach (var g in r.Groups)
+            {
+                var ex = groups.FirstOrDefault(x => SameName(x.Name, g.Name));
+                if (ex is null) { groups.Add(g); continue; }
+
+                if (Longer(g.Description, ex.Description)) ex.Description = g.Description;
+                ex.PartnerOrganizationName ??= g.PartnerOrganizationName;
+            }
+            r.Groups = groups;
+
+            var packages = new List<BepPackageDTO>();
+            foreach (var p in r.Packages)
+            {
+                var ex = packages.FirstOrDefault(x => SameName(x.Name, p.Name));
+                if (ex is null) { packages.Add(p); continue; }
+
+                if (Longer(p.Description, ex.Description)) ex.Description = p.Description;
+                ex.ContractValue ??= p.ContractValue;
+                ex.Currency ??= p.Currency;
+                ex.ContractorOrganizationName ??= p.ContractorOrganizationName;
+            }
+            r.Packages = packages;
+        }
+
+        // Prompt cấm rồi model vẫn tách thành viên liên danh (đo trên BEP 77 trang: liên danh tư vấn
+        // bị tách thành 3 công ty riêng). Chặn bằng code: tên một nhóm nằm gọn trong tên của một
+        // nhóm khác có chữ "liên danh" -> đó là thành viên, không phải một bên độc lập trong CDE.
+        private void DropLienDanhMembers(BepParseResultDTO r)
+        {
+            var consortiums = r.Groups
+                .Select(g => NormalizeName(g.Name))
+                .Where(n => n.Contains("lien danh", StringComparison.Ordinal))
+                .ToList();
+            if (consortiums.Count == 0) return;
+
+            int removed = r.Groups.RemoveAll(g =>
+            {
+                var name = NormalizeName(g.Name);
+                return name.Length >= 10
+                    && consortiums.Any(c => c != name && c.Contains(name, StringComparison.Ordinal));
+            });
+
+            if (removed > 0)
+                _logger.LogInformation("Parse BEP: bỏ {Count} nhóm là thành viên của một liên danh đã có", removed);
+        }
+
+        // Ô tiêu đề/nhãn của bảng bị trích xuất lẻ ra thành nhóm: tên trần, chung chung, không mô tả.
+        private static readonly string[] JunkGroupNames =
+        {
+            "bim", "thiet ke", "don vi", "to chuc", "ben", "nhom", "cde",
+            "ghi chu", "mo ta", "stt", "vai tro", "ma hieu"
+        };
+
+        // Danh xưng tập thể chung chung — không trỏ tới bên nào cụ thể nên không cấp quyền được.
+        // Loại BẤT KỂ có mô tả, vì model hay kèm mô tả kiểu "được nhắc đến chung chung".
+        private static readonly string[] CollectiveGroupNames =
+        {
+            "cac ben", "cac ben lien quan", "ben lien quan", "cac don vi", "cac to chuc",
+            "cac bo phan", "cac nhom", "cac ben tham gia", "cac doi tac"
+        };
+
+        // Mã viết tắt đơn vị trong quy ước đặt tên tệp (DP, HL, A2Z, HAD). Chúng rò rỉ vào groups
+        // qua các ví dụ tên tệp nằm RẢI RÁC khắp tài liệu, không gom vào một mục nên bộ lọc theo
+        // lát không bắt được. Dấu hiệu: một token viết hoa/số, rất ngắn, không có dấu cách.
+        // Đo trên BEP 77 trang, mô tả model gán cho chúng còn sai sự thật ("DP - đơn vị chủ đầu tư"
+        // trong khi DP là tư vấn thiết kế), nên giữ lại còn hại hơn bỏ sót.
+        private static bool IsAbbreviationCode(string? name)
+        {
+            var n = name?.Trim();
+            if (string.IsNullOrEmpty(n) || n.Length > 4 || n.Contains(' ')) return false;
+
+            foreach (var c in n)
+                if (!char.IsDigit(c) && !(char.IsLetter(c) && char.IsUpper(c))) return false;
+            return true;
+        }
+
+        private void DropJunkGroups(BepParseResultDTO r)
+        {
+            int removed = r.Groups.RemoveAll(g =>
+            {
+                var name = NormalizeName(g.Name);
+
+                if (IsAbbreviationCode(g.Name)) return true;
+                if (CollectiveGroupNames.Contains(name)) return true;
+
+                if (!string.IsNullOrWhiteSpace(g.Description)) return false;   // có mô tả -> giữ
+                return name.Length < 5 || JunkGroupNames.Contains(name);
+            });
+
+            if (removed > 0)
+                _logger.LogInformation("Parse BEP: bỏ {Count} nhóm rác (tên trần từ ô bảng)", removed);
+        }
+
+        private void DropUnsupportedPackages(BepParseResultDTO r)
+        {
+            int removed = r.Packages.RemoveAll(p =>
+                p.ContractValue is null && string.IsNullOrWhiteSpace(p.ContractorOrganizationName));
+
+            if (removed > 0)
+                _logger.LogInformation("Parse BEP: bỏ {Count} gói thầu không có giá trị hợp đồng lẫn nhà thầu", removed);
+        }
+
+        private static bool Longer(string? candidate, string? current)
+            => !string.IsNullOrWhiteSpace(candidate) && candidate.Length > (current?.Length ?? 0);
+
+        private static bool SameName(string? a, string? b) => NormalizeName(a) == NormalizeName(b);
+        private static string NormalizeName(string? s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return string.Empty;
+
+            // Cắt chú thích trong ngoặc: "Tư vấn thiết kế (TVTK)" == "Tư vấn thiết kế".
+            // Không phải khớp mờ — chỉ bỏ chú thích, nên không nuốt nhầm hai bên khác nhau.
+            s = Regex.Replace(s, @"\([^)]*\)", " ");
+
+            var decomposed = s.Trim().ToLowerInvariant().Replace('đ', 'd').Normalize(NormalizationForm.FormD);
+
+            var sb = new StringBuilder(decomposed.Length);
+            bool lastWasSpace = false;
+            foreach (var ch in decomposed)
+            {
+                if (CharUnicodeInfo.GetUnicodeCategory(ch) == UnicodeCategory.NonSpacingMark) continue;
+                if (char.IsWhiteSpace(ch))
+                {
+                    if (!lastWasSpace) { sb.Append(' '); lastWasSpace = true; }
+                    continue;
+                }
+                sb.Append(ch);
+                lastWasSpace = false;
+            }
+            return sb.ToString().Trim();
+        }
+
         // Bỏ các dòng ngắn lặp lại nhiều lần (header/footer trang, watermark) — giữ nội dung thật.
         // GENERIC: dựa trên tần suất lặp, không phụ thuộc nội dung/nhãn của bất kỳ file nào.
         private static string StripRepeatedLines(string text)
         {
             var lines = text.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+            int threshold = RepeatThreshold(text.Length);
+
             var freq = new Dictionary<string, int>();
             foreach (var l in lines)
             {
@@ -184,12 +601,17 @@ namespace Infrastructure.Adapters.Ai
             foreach (var l in lines)
             {
                 var key = l.Trim();
-                if (key.Length is > 3 and < 80 && freq.TryGetValue(key, out var c) && c >= 5)
+                if (key.Length is > 3 and < 80 && freq.TryGetValue(key, out var c) && c >= threshold)
                     continue;
                 sb.Append(l).Append('\n');
             }
             return sb.ToString();
         }
+
+
+        private const int CharsPerPage = 3000;
+
+        private static int RepeatThreshold(int totalChars) => Math.Max(5, totalChars / CharsPerPage / 2);
 
         private static string BepParsePrompt(string content) =>
             "Bạn là trợ lý trích xuất thông tin từ tài liệu BEP (BIM Execution Plan / Kế hoạch thực hiện BIM) để điền form khởi tạo dự án.\n" +
@@ -204,7 +626,7 @@ namespace Infrastructure.Adapters.Ai
             "- projectCode: mã / ký hiệu dự án nếu có; không có để trống.\n" +
             "- projectDescription: 1-2 câu mô tả loại công trình và mục tiêu áp dụng BIM, dựa trên nội dung; không bịa số liệu.\n" +
             "- ownerOrganizationName: tên tổ chức Chủ đầu tư / Chủ sở hữu dự án (bên đặt hàng/thuê thực hiện).\n" +
-            "- address: địa điểm / địa chỉ CÔNG TRÌNH (nơi thi công/xây dựng).\n" +
+            "- address: địa điểm / địa chỉ CÔNG TRÌNH (nơi thi công/xây dựng). Với công trình dạng TUYẾN (đường, cao tốc, cầu, hầm, kênh) thì địa điểm CHÍNH LÀ phạm vi tuyến: ghép 'Điểm đầu' và 'Điểm cuối' (kèm chiều dài tuyến nếu có) thành một chuỗi. Đừng bỏ trống chỉ vì tài liệu không ghi số nhà/đường.\n" +
             "- contactAddress: địa chỉ LIÊN HỆ / giao dịch (trụ sở, văn phòng chủ đầu tư, Ban QLDA, đầu mối liên hệ). Nếu tài liệu có một mục/ô mang nghĩa 'địa chỉ liên hệ' thì TRÍCH NGUYÊN VĂN giá trị đó, kể cả khi ghi ngắn gọn (chỉ quận/thành phố) hay không đầy đủ số nhà — vẫn tính là có. Chỉ để trống khi tài liệu KHÔNG hề nhắc tới địa chỉ liên hệ. Đây là trường KHÁC address: address = nơi xây dựng công trình, contactAddress = nơi liên hệ; không được điền trùng giá trị của address.\n" +
             "- groups: DANH SÁCH CÁC BÊN THAM GIA / NHÓM LÀM VIỆC của dự án. Trích ĐẦY ĐỦ mọi bên tài liệu nêu — dù xuất hiện ở bảng phân công trách nhiệm, bảng phân quyền môi trường dữ liệu chung (CDE), sơ đồ tổ chức, hay bảng phối hợp. Các loại bên thường gặp (chỉ là gợi ý, không bắt buộc phải có): chủ đầu tư, tư vấn thiết kế (kiến trúc/kết cấu/MEP), nhà thầu thi công, tư vấn giám sát/thẩm tra, quản lý/điều phối BIM. Gộp bên trùng tên. Mỗi phần tử: name (tên bên), description (vai trò ngắn nếu tài liệu nêu), partnerOrganizationName (tên công ty cụ thể đảm nhận bên đó CHỈ khi tài liệu ghi rõ, không chắc để trống). Thông tin của nhóm tham gia nó là các bên làm việc bên trong 1 CDE, chứ ko phải tổng hợp thông tin các mục khác rồi suy diễn (thông tin các nhóm làm việc thường nằm trong mục lớn ' MÔI TRƯỜNG LÀM VIỆC CHUNG CDE' có thể là bảng với các phân quyền R, W, N). Lưu ý không được gộp các nhóm. Liệt kê trong file bao nhiêu nhóm thì sẽ để nguyên bấy nhiêu nhóm, ko gộp chung vài nhóm tương đồng (ví dụ như có nhiều bên tư vấn khác nhau (tư vấn MEP, tư vấn thiết kế) thì cũng tách ra) quyền hoặc trùng quyền hạn\n" +
             "- packages: gói thầu / hợp đồng — CHỈ tạo khi tài liệu nêu rõ gói thầu có tên (kèm giá trị hợp đồng, đơn vị tiền, nhà thầu nếu có). Nếu tài liệu chỉ mô tả phạm vi công việc/sản phẩm mà không có gói thầu -> MẢNG RỖNG. Không bịa gói thầu.\n\n" +
@@ -212,6 +634,39 @@ namespace Infrastructure.Adapters.Ai
             "QUY TẮC:\n" +
             "- KHÔNG bịa. Trường không tìm thấy -> chuỗi rỗng; danh sách không có -> mảng rỗng.\n" +
             "- Bỏ qua các bảng kỹ thuật thuần tuý không chứa các trường trên (ví dụ bảng mức độ phát triển thông tin/LOD, hệ toạ độ, quy ước đặt tên, danh sách phần mềm).\n" +
+            "- KHÔNG tách thành viên của BẤT KỲ LIÊN DANH nào thành các bên riêng — kể cả liên danh Chủ đầu tư, liên danh tư vấn hay liên danh nhà thầu. Một liên danh là MỘT bên: giữ nguyên tên đầy đủ của liên danh, không liệt kê từng công ty thành viên. Riêng liên danh Chủ đầu tư đã nằm ở ownerOrganizationName nên không lặp lại trong groups.\n" +
+            "- KHÔNG lấy tên tổ chức từ trang bìa hay mục thông tin chung dự án để làm groups. Chỉ lấy các bên xuất hiện trong bảng phân công trách nhiệm, bảng phân quyền CDE, sơ đồ tổ chức hoặc bảng phối hợp.\n" +
+            "- BẢNG MÃ VAI TRÒ DÙNG ĐỂ ĐẶT TÊN TỆP KHÔNG PHẢI CÁC BÊN THAM GIA. Dấu hiệu nhận biết: mỗi dòng là MỘT CHỮ CÁI (A, B, C, D, E, F, G, M, W, X…) kèm một chức danh chung chung (Kiến trúc sư, Kỹ sư điện, Nhà thầu, Nhà thầu phụ…). TUYỆT ĐỐI không đưa các dòng đó vào groups. Trường 'Originator' / 'Đơn vị khởi tạo' của quy ước đặt tên cũng vậy.\n" +
+            "- MÃ VIẾT TẮT đơn vị (2-4 ký tự, ví dụ DP, HL, A2Z, HAD) dùng trong tên tệp KHÔNG phải một bên tham gia. Chỉ thấy mã mà không có tên đầy đủ của tổ chức thì BỎ QUA — tuyệt đối không tạo nhóm mà name chỉ là mã viết tắt.\n" +
+            "- CHỨC DANH CỦA NGƯỜI KHÔNG PHẢI MỘT BÊN. 'Quản lý BIM (BIM Manager)', 'Điều phối BIM (BIM Coordinator)', 'Kỹ thuật viên BIM (BIM Modeller)', 'Kiến trúc sư', 'Kỹ sư điện'... là vai trò của cá nhân BÊN TRONG một tổ chức — TUYỆT ĐỐI không đưa vào groups. groups chỉ gồm TỔ CHỨC / ĐƠN VỊ: chủ đầu tư, ban quản lý dự án, công ty tư vấn, nhà thầu, hoặc bộ phận/phòng ban của một đơn vị (ví dụ 'Bộ phận BIM', 'Bộ phận Thiết kế' là hợp lệ vì là đơn vị, không phải chức danh).\n" +
+            "- BẢNG PHÂN QUYỀN / MA TRẬN RACI thường bị trích xuất VỠ DỌC: tên các bên nằm ngay sau tiêu đề bảng, MỖI TỪ MỘT DÒNG và nối tiếp nhau (ví dụ: 'Chủ' / 'đầu tư' / 'Bộ' / 'phận' / 'BIM' / 'Bộ' / 'phận' / 'thiết' / 'kế' / 'Tư' / 'vấn' / 'thẩm' / 'tra'), rồi bên dưới mới tới các ô R, A, C, I. Hãy GHÉP các dòng rời đó lại thành tên từng bên. Đây là danh sách bên ĐÁNG TIN NHẤT của tài liệu — ưu tiên nó hơn mọi chỗ khác.\n" +
+            "- TIÊU CHÍ ĐƯA VÀO groups: chỉ nhận bên mà tài liệu nêu rõ họ CHỊU TRÁCH NHIỆM hoặc THAM GIA trong môi trường dữ liệu chung (CDE) — có quyền R/W/N, được giao đầu việc, hoặc có mặt trong bảng phân công/phối hợp. Chức danh chỉ được nhắc trong sơ đồ tổ chức hay bảng chú giải vai trò mà KHÔNG kèm trách nhiệm hay quyền nào trong CDE thì KHÔNG đưa vào.\n" +
+            "- partnerOrganizationName KHÔNG được trùng với name. Nếu name đã chính là tên công ty thì để partnerOrganizationName trống.\n" +
+            "- Chỉ trả JSON đúng schema, không kèm chữ nào khác.";
+
+        // Prompt 2 — chỉ quét nhóm/gói thầu trong MỘT lát giữa tài liệu.
+        private static string BepPartsPrompt(string slice) =>
+            "Đây là MỘT PHẦN của kế hoạch thực hiện BIM (BEP), không phải toàn bộ tài liệu.\n" +
+            "Chỉ trích CÁC BÊN THAM GIA / NHÓM LÀM VIỆC và GÓI THẦU thực sự được nhắc tới trong đoạn dưới đây.\n\n" +
+
+            "XỬ LÝ VĂN BẢN: text trích tự động từ file nên nhiều từ có thể DÍNH LIỀN và nội dung bảng bị trải thành từng dòng (nhãn một dòng, giá trị dòng sau). Tự tách từ, tự ghép nhãn với giá trị, giữ đúng nội dung gốc.\n\n" +
+
+            "ĐOẠN TÀI LIỆU:\n" +
+            $"{slice}\n\n" +
+
+            "QUY TẮC:\n" +
+            "- CHỈ lấy thứ xuất hiện trong đoạn trên. KHÔNG suy diễn, KHÔNG bổ sung các bên thông thường của ngành.\n" +
+            "- Chỉ lấy bên xuất hiện trong bảng phân công trách nhiệm, bảng phân quyền CDE dạng R/W/N, sơ đồ tổ chức hoặc bảng phối hợp.\n" +
+            "- BẢNG MÃ VAI TRÒ DÙNG ĐỂ ĐẶT TÊN TỆP KHÔNG PHẢI CÁC BÊN THAM GIA. Dấu hiệu: mỗi dòng là MỘT CHỮ CÁI (A, B, C, D, E, F, G, M, W, X…) kèm một chức danh chung chung (Kiến trúc sư, Kỹ sư điện, Nhà thầu…). TUYỆT ĐỐI không đưa vào groups. Trường 'Originator' / 'Đơn vị khởi tạo' cũng vậy.\n" +
+            "- MÃ VIẾT TẮT đơn vị (2-4 ký tự như DP, HL, A2Z, HAD) trong tên tệp KHÔNG phải một bên. Chỉ có mã, không có tên đầy đủ tổ chức -> BỎ QUA.\n" +
+            "- KHÔNG gộp các bên tương đồng: tài liệu liệt kê bao nhiêu bên thì giữ nguyên bấy nhiêu (nhiều loại tư vấn khác nhau thì tách riêng).\n" +
+            "- KHÔNG tách thành viên của BẤT KỲ LIÊN DANH nào thành các bên riêng (liên danh Chủ đầu tư, liên danh tư vấn, liên danh nhà thầu). Một liên danh là MỘT bên, giữ nguyên tên đầy đủ.\n" +
+            "- CHỨC DANH CỦA NGƯỜI KHÔNG PHẢI MỘT BÊN: 'Quản lý BIM', 'Điều phối BIM', 'Kỹ thuật viên BIM', 'Kiến trúc sư', 'Kỹ sư...' là vai trò của cá nhân trong một tổ chức — không đưa vào groups. Chỉ lấy TỔ CHỨC / ĐƠN VỊ / bộ phận.\n" +
+            "- TIÊU CHÍ ĐƯA VÀO groups: chỉ nhận bên mà đoạn này nêu rõ họ CHỊU TRÁCH NHIỆM hoặc THAM GIA trong CDE (quyền R/W/N, được giao đầu việc, có mặt trong bảng phân công/phối hợp). Chức danh chỉ được liệt kê suông, không kèm trách nhiệm hay quyền trong CDE -> KHÔNG đưa vào.\n" +
+            "- partnerOrganizationName KHÔNG được trùng với name; name đã là tên công ty thì để trống.\n" +
+            "- packages: CHỈ tạo khi đoạn này nêu rõ một gói thầu CÓ TÊN kèm giá trị hợp đồng hoặc nhà thầu cụ thể. Mô tả phạm vi công việc của một bên KHÔNG phải là gói thầu — không được đổi tên nó thành 'Gói thầu ...'. Không chắc -> MẢNG RỖNG.\n" +
+            "- Đoạn này không nhắc tới bên hay gói thầu nào -> trả về hai mảng rỗng.\n" +
+            "- Bỏ qua bảng kỹ thuật thuần tuý (LOD, hệ toạ độ, quy ước đặt tên, danh sách phần mềm).\n" +
             "- Chỉ trả JSON đúng schema, không kèm chữ nào khác.";
 
         // JSON schema cho Ollama structured output (field Format của /api/generate).
@@ -267,6 +722,48 @@ namespace Infrastructure.Adapters.Ai
             }
         };
 
+        // Schema hẹp cho pha 2: bỏ hết trường thông tin dự án vì chúng chỉ có ở phần đầu tài liệu.
+        private static readonly object BepPartsSchema = new
+        {
+            type = "object",
+            properties = new
+            {
+                groups = new
+                {
+                    type = "array",
+                    items = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            name = new { type = "string" },
+                            description = new { type = "string" },
+                            partnerOrganizationName = new { type = "string" }
+                        },
+                        required = new[] { "name" }
+                    }
+                },
+                packages = new
+                {
+                    type = "array",
+                    items = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            name = new { type = "string" },
+                            description = new { type = "string" },
+                            contractValue = new { type = "number" },
+                            currency = new { type = "string" },
+                            contractorOrganizationName = new { type = "string" }
+                        },
+                        required = new[] { "name" }
+                    }
+                }
+            },
+            required = new[] { "groups", "packages" }
+        };
+
         private static string AnalyzeContentPrompt(string projectName, string projectDescription, string? folderName, string content) =>
             "Bạn phân tích tài liệu xây dựng: Tóm tắt nội dung VÀ kiểm tra nội dung có đúng loại/chủ đề liên quan không.\n" +
             $"Tên dự án: {projectName}\n" +
@@ -283,7 +780,10 @@ namespace Infrastructure.Adapters.Ai
         private static readonly JsonSerializerOptions JsonOpts = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            NumberHandling = JsonNumberHandling.AllowReadingFromString
+            NumberHandling = JsonNumberHandling.AllowReadingFromString,
+            // num_ctx/num_gpu chưa cấu hình -> bỏ hẳn khỏi payload để Ollama dùng mặc định,
+            // thay vì gửi null xuống làm hỏng options.
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
 
 
@@ -295,7 +795,16 @@ namespace Infrastructure.Adapters.Ai
         private record GenerateRequest(string Model, string Prompt, bool Stream, bool Think, object Format, GenerateOptions Options);
         private record GenerateOptions(
             [property: JsonPropertyName("temperature")] double Temperature,
-            [property: JsonPropertyName("num_predict")] int NumPredict);
-        private record GenerateResponse(string? Response);
+            [property: JsonPropertyName("num_predict")] int NumPredict,
+            [property: JsonPropertyName("num_ctx")] int? NumCtx,
+            [property: JsonPropertyName("num_gpu")] int? NumGpu);
+
+        // done_reason/eval_count là thứ duy nhất cho biết vì sao output bị cắt.
+        // Không map thì mọi lỗi đều rơi xuống JsonException mù ở chỗ Deserialize.
+        private record GenerateResponse(
+            string? Response,
+            [property: JsonPropertyName("done_reason")] string? DoneReason,
+            [property: JsonPropertyName("prompt_eval_count")] int? PromptEvalCount,
+            [property: JsonPropertyName("eval_count")] int? EvalCount);
     }
 }

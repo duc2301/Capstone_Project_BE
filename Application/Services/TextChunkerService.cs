@@ -39,6 +39,70 @@ namespace Application.Services
         }
 
 
+        public IReadOnlyList<string> ChunkForExtraction(string text)
+        {
+            int maxSliceChars = ReadInt("TextChunker:ExtractionSliceSize", 28000);
+            int overlapChars = ReadInt("TextChunker:ExtractionOverlap", 800);
+
+            if (string.IsNullOrWhiteSpace(text)) return Array.Empty<string>();
+            if (overlapChars >= maxSliceChars) overlapChars = maxSliceChars / 10;   // guard
+
+            // Đoạn đơn lẻ dài hơn trần (bảng lớn không có dòng trống) phải cắt cứng trước,
+            // nếu không GroupIntoParents sẽ nhả ra một lát vượt context.
+            var paragraphs = SplitParagraphs(text)
+                .SelectMany(p => p.Length <= maxSliceChars
+                    ? (IEnumerable<string>)new[] { p }
+                    : HardSplit(p, maxSliceChars))
+                .ToList();
+
+            // Gộp tới ngưỡng đã trừ overlap, vì AddOverlap còn chèn thêm phần đuôi lát trước
+            // vào đầu mỗi lát — gộp thẳng tới maxSliceChars sẽ làm lát cuối cùng vượt trần.
+            return AddOverlap(GroupIntoParents(paragraphs, maxSliceChars - overlapChars), overlapChars);
+        }
+
+        private int ReadInt(string key, int fallback)
+            => int.TryParse(_configuration[key], out var v) && v > 0 ? v : fallback;
+
+        // Cắt một đoạn quá dài tại ranh giới dòng gần nhất, không cắt giữa từ.
+        private static List<string> HardSplit(string paragraph, int maxChars)
+        {
+            var parts = new List<string>();
+            int pos = 0;
+            while (pos < paragraph.Length)
+            {
+                int len = Math.Min(maxChars, paragraph.Length - pos);
+                if (pos + len < paragraph.Length)
+                {
+                    int nl = paragraph.LastIndexOf('\n', pos + len - 1, len);
+                    if (nl > pos) len = nl - pos + 1;
+                }
+                var part = paragraph.Substring(pos, len).Trim();
+                if (part.Length > 0) parts.Add(part);
+                pos += len;
+            }
+            return parts;
+        }
+
+        // Lặp phần đuôi của lát trước vào đầu lát sau: bảng/danh sách bị cắt ngang vẫn còn ngữ cảnh.
+        // Phần lặp này do bước gộp kết quả ở tầng trên khử trùng.
+        private static List<string> AddOverlap(List<string> slices, int overlapChars)
+        {
+            if (overlapChars <= 0 || slices.Count <= 1) return slices;
+
+            var result = new List<string>(slices.Count) { slices[0] };
+            for (int i = 1; i < slices.Count; i++)
+            {
+                var prev = slices[i - 1];
+                var tail = prev[^Math.Min(overlapChars, prev.Length)..];
+
+                int nl = tail.IndexOf('\n');                 // bắt đầu overlap từ đầu dòng cho sạch
+                if (nl >= 0 && nl < tail.Length - 1) tail = tail[(nl + 1)..];
+
+                result.Add(tail + "\n\n" + slices[i]);
+            }
+            return result;
+        }
+
         // Tách văn bản thành các "đoạn" theo dòng trống (\n\n) — ranh giới tự nhiên nhất.
         private static List<string> SplitParagraphs(string text)
         {

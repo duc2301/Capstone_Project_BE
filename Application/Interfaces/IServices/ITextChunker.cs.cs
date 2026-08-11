@@ -10,5 +10,6 @@ namespace Application.Interfaces.IServices
     {
         public record ChunkedParent(string Content, IReadOnlyList<string> Children);
         IReadOnlyList<ChunkedParent> Chunk(string text);
+        IReadOnlyList<string> ChunkForExtraction(string text);
     }
 }
