@@ -46,7 +46,9 @@ namespace Application.Services
                         FileName = best.FileName,
                         Snippet = best.Snippet,
                         Similarity = Math.Round(1 - best.Distance, 3),
-                        MatchCount = g.Count()
+                        MatchCount = g.Count(),
+                        Area = best.Area.ToString(),
+                        IsUnderRevision = best.IsUnderRevision
                     };
                 })
                 .OrderByDescending(r => r.Similarity)

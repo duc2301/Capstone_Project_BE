@@ -39,10 +39,10 @@ namespace Application.Services
             var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
             if (folder == null)
                 throw new ApiExceptionResponse("Folder not found", 404);
-
-            if (folder.Area != CdeArea.Published)
+            
+            if (folder.Area is not (CdeArea.Published or CdeArea.Archived))
             {
-                throw new ApiExceptionResponse("Chỉ đọc file khi đã ở published", 400);
+                throw new ApiExceptionResponse("Chỉ ingest file ở Published hoặc Archived", 400);
             }
 
             var contentHash = version.Checksum;
