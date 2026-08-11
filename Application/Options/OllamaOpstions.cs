@@ -9,6 +9,7 @@ namespace Application.Options
         public string? BaseUrl { get; set; } 
         public string? EmbeddingModel { get; set; } 
         public string? ChatModel { get; set; }
+        public string? CheckModel { get; set; }
         public string? SubModel { get; set; }
         public int? EmbeddingDimension { get; set; }
 
