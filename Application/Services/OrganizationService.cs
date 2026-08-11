@@ -15,11 +15,13 @@ namespace Application.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
+        private readonly IProjectService _projectService;
 
-        public OrganizationService(IUnitOfWork unitOfWork, IMapper mapper)
+        public OrganizationService(IUnitOfWork unitOfWork, IMapper mapper, IProjectService projectService)
         {
             _unitOfWork = unitOfWork;
             _mapper = mapper;
+            _projectService = projectService;
         }
 
         public async Task<IEnumerable<OrganizationResponseDTO>> GetAllAsync()
@@ -122,19 +124,8 @@ namespace Application.Services
             var managedProjectIds = allProjectsManagedByMembers.Select(p => p.Id).ToList();
             
             var allProjectIds = participatingProjectIds.Union(ownedProjects.Select(p => p.Id)).Union(managedProjectIds).Distinct().ToList();
-            
-            var allParticipatingProjects = new List<Project>();
-            if (allProjectIds.Any())
-            {
-                var dict = (await _unitOfWork.Repository<Project>().GetAllAsync()).ToDictionary(p => p.Id);
-                foreach (var pid in allProjectIds)
-                {
-                    if (dict.TryGetValue(pid, out var prj))
-                        allParticipatingProjects.Add(prj);
-                }
-            }
 
-            return _mapper.Map<List<ProjectResponseDTO>>(allParticipatingProjects);
+            return await _projectService.GetByIdsAsync(allProjectIds);
         }
 
         public async Task<OrganizationResponseDTO> CreateAsync(CreateOrganizationDTO dto)
