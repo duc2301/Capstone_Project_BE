@@ -125,7 +125,7 @@ namespace Infrastructure.Adapters.Ai
                     Stream: false,
                     Think: false,
                     Format: BepFormatSchema,
-                    Options: new GenerateOptions(0.2, 4096));
+                    Options: new GenerateOptions(0.2, -1));
 
                 var response = await client.PostAsync(url,
                     new StringContent(JsonSerializer.Serialize(payload, JsonOpts), Encoding.UTF8, "application/json"),
