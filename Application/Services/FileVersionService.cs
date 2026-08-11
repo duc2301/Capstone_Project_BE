@@ -4,6 +4,7 @@ using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
 using Domain.Enum.Audit;
+using Domain.Enum.Cde;
 using Domain.Enum.File;
 
 namespace Application.Services
@@ -133,12 +134,17 @@ namespace Application.Services
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new KeyNotFoundException($"FileItem {fileItemId} not found.");
 
-            var current = await RequireCurrentStateAsync(fileItemId);
+            // Khôi phục version chỉ được phép khi tài liệu đang ở khu vực WIP.
+            // File ở SHARED/PUBLISHED/ARCHIVED là bản đã chia sẻ/phát hành/lưu trữ — bất biến,
+            // muốn khôi phục phải đưa tài liệu về WIP trước.
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
+                ?? throw new KeyNotFoundException($"Folder {fileItem.FolderId} not found.");
 
-            // Cùng luật "upload thay thế": tài liệu đang Published không nhận version mới, phải về WIP trước.
-            if (current.Stage == VersionStage.Published)
+            if (folder.Area != CdeArea.Wip)
                 throw new InvalidOperationException(
-                    "Published documents cannot restore a past version. Return the document to WIP first.");
+                    $"Documents in the {FormatZone(folder.Area)} area cannot restore a past version. Return the document to WIP first.");
+
+            var current = await RequireCurrentStateAsync(fileItemId);
 
             var source = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(versionStateId)
                 ?? throw new KeyNotFoundException($"Version {versionStateId} not found.");
@@ -160,7 +166,6 @@ namespace Application.Services
             fileItem.CurrentVersionId = snapshot.Id;
             fileItem.UpdatedAt = DateTime.UtcNow;
 
-            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
             await _auditLog.LogAsync(
                 LogScope.Group, AuditAction.NewVersion, nameof(FileItem), fileItem.Id.ToString(), actorId,
                 detail: $"Khôi phục '{fileItem.Name}' từ phiên bản {source.DisplayVersion} thành {snapshot.DisplayVersion}",
@@ -241,6 +246,9 @@ namespace Application.Services
             var accounts = await _unitOfWork.Repository<Account>().FindAsync(a => uploaderIds.Contains(a.Id));
             return accounts.ToDictionary(a => a.Id, a => a.UserName);
         }
+
+        private static string FormatZone(CdeArea zone)
+            => zone == CdeArea.Wip ? "WIP" : zone.ToString();
 
         private async Task<FileVersionState> RequireCurrentStateAsync(Guid fileItemId)
         {
