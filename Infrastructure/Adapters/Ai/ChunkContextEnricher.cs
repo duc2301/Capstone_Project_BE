@@ -33,7 +33,7 @@ namespace Infrastructure.Adapters.Ai
                     BuildPrompt(fileMeta, parentContent),
                     Stream: false,
                     Think: false,
-                    Options: new GenerateOptions(0.2, 128));
+                    Options: new GenerateOptions(0.2, 128, _options.Value.NumCtx, _options.Value.NumGpu));
 
                 var response = await client.PostAsync(url,
                     new StringContent(JsonSerializer.Serialize(payload, JsonOpts), Encoding.UTF8, "application/json"),
@@ -70,14 +70,20 @@ namespace Infrastructure.Adapters.Ai
             return s.Length == 0 ? null : s;
         }
 
-        private static readonly JsonSerializerOptions JsonOpts =
-            new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        private static readonly JsonSerializerOptions JsonOpts = new()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            // Chưa cấu hình num_ctx/num_gpu -> bỏ khỏi payload thay vì gửi null.
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
 
         // map JSON Ollama
         private record GenerateRequest(string Model, string Prompt, bool Stream, bool Think, GenerateOptions Options);
         private record GenerateOptions(
             [property: JsonPropertyName("temperature")] double Temperature,
-            [property: JsonPropertyName("num_predict")] int NumPredict);
+            [property: JsonPropertyName("num_predict")] int NumPredict,
+            [property: JsonPropertyName("num_ctx")] int? NumCtx,
+            [property: JsonPropertyName("num_gpu")] int? NumGpu);
         private record GenerateResponse(string? Response);
     }
 }
