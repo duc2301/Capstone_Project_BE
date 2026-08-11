@@ -1,5 +1,6 @@
 ﻿using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
+using Microsoft.Extensions.Logging;
 using Syncfusion.DocIO;
 using Syncfusion.DocIO.DLS;
 using Syncfusion.Pdf;
@@ -12,6 +13,10 @@ namespace Infrastructure.Adapters.Document
     public class FileTextExtractorService : IFileTextExtractor
     {
         private static readonly HashSet<string> Supported = new HashSet<string> { "pdf", "docx", "doc", "txt", "md" };
+
+        private readonly ILogger<FileTextExtractorService> _logger;
+
+        public FileTextExtractorService(ILogger<FileTextExtractorService> logger) => _logger = logger;
 
         public async Task<string> ExtractTextAsync(Stream Content, string format, CancellationToken cancellationToken = default)
         {
@@ -56,13 +61,21 @@ namespace Infrastructure.Adapters.Document
         // GetText() nối phẳng toàn bộ tài liệu, làm mất ranh giới ô và hàng của bảng —
         // mà thông tin các bên tham gia trong BEP nằm chủ yếu ở bảng phân công/phân quyền.
         // Duyệt tay để giữ cấu trúc: mỗi hàng một dòng, các ô ngăn bằng " | ".
-        private static string ExtractWord(Stream input)
+        private string ExtractWord(Stream input)
         {
             using var doc = new WordDocument(input, FormatType.Automatic);
             var sb = new StringBuilder();
             foreach (WSection section in doc.Sections)
                 AppendBody(section.Body, sb);
-            return sb.ToString();
+
+            // Duyệt cây bỏ qua nội dung nằm ngoài body (header/footer/textbox). Nếu tài liệu có
+            // cấu trúc lạ và ra rỗng thì quay về GetText() — thà mất cấu trúc bảng còn hơn trả
+            // chuỗi trống, vì phía trên coi chuỗi trống là "không trích được" rồi bỏ qua lặng lẽ.
+            var text = sb.ToString();
+            if (!string.IsNullOrWhiteSpace(text)) return text;
+
+            _logger.LogWarning("Duyệt cấu trúc Word không ra nội dung, quay về GetText()");
+            return doc.GetText();
         }
 
         private static void AppendBody(WTextBody body, StringBuilder sb)
@@ -96,29 +109,44 @@ namespace Infrastructure.Adapters.Document
         // Khoảng trống ngang tối thiểu (theo tỉ lệ chiều cao chữ) để coi là có dấu cách.
         private const float SpaceGapRatio = 0.22f;
 
-        private static string ExtractPdf(Stream input)
+        private string ExtractPdf(Stream input)
         {
             using var loaded = new PdfLoadedDocument(input);
             var sb = new StringBuilder();
             for (int i = 0; i < loaded.Pages.Count; i++)
-                AppendPageText(loaded.Pages[i], sb);
+                AppendPageText(loaded.Pages[i], i, sb);
             return sb.ToString();
         }
 
 
-        private static void AppendPageText(PdfPageBase page, StringBuilder sb)
+        private void AppendPageText(PdfPageBase page, int pageIndex, StringBuilder sb)
         {
-            var flat = page.ExtractText(out TextLineCollection lines);
+            string flat;
+            TextLineCollection lines;
+            try
+            {
+                flat = page.ExtractText(out lines);
+            }
+            catch (Exception ex)
+            {
+                // Một trang hỏng (font lạ, nội dung mã hoá) không được làm hỏng cả tài liệu:
+                // phía trên coi lỗi trích xuất là "không đọc được file" và bỏ qua lặng lẽ.
+                _logger.LogWarning(ex, "Không lấy được hình học chữ ở trang {Page}, dùng bản phẳng", pageIndex + 1);
+                TryAppendFlat(page, sb);
+                return;
+            }
 
             // PDF ảnh/scan hoặc trang không lấy được hình học -> quay về bản phẳng giữ bố cục.
             if (lines?.TextLine is null || lines.TextLine.Count == 0)
             {
-                sb.AppendLine(string.IsNullOrEmpty(flat) ? page.ExtractText(true) : flat);
+                sb.AppendLine(string.IsNullOrEmpty(flat) ? SafeLayoutText(page, pageIndex) : flat);
                 return;
             }
 
             foreach (var line in lines.TextLine)
             {
+                if (line?.WordCollection is null) continue;
+
                 var lineText = new StringBuilder();
                 float previousRight = float.NaN;
 
@@ -138,6 +166,22 @@ namespace Infrastructure.Adapters.Document
                 sb.AppendLine(lineText.ToString());
             }
             sb.AppendLine();
+        }
+
+        private void TryAppendFlat(PdfPageBase page, StringBuilder sb)
+        {
+            try { sb.AppendLine(page.ExtractText()); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Bỏ qua một trang PDF không trích được chữ"); }
+        }
+
+        private string SafeLayoutText(PdfPageBase page, int pageIndex)
+        {
+            try { return page.ExtractText(true); }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Không trích được chữ ở trang {Page}", pageIndex + 1);
+                return string.Empty;
+            }
         }
 
         private string Norm(string format)
