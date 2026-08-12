@@ -52,4 +52,14 @@ namespace Application.DTOs.ResponseDTOs.PermissionMatrix
         public bool IsFullAccess { get; set; }
         public List<Guid> EditableFolderIds { get; set; } = new();
     }
+
+    // Kết quả 1 ô sau khi lưu — để FE cập nhật lại đúng trạng thái mà không cần tải lại toàn bộ.
+    public class MatrixCellResultDTO
+    {
+        public Guid TargetId { get; set; }
+        public MatrixTargetType TargetType { get; set; }
+        public Guid ProjectParticipantId { get; set; }
+        public PermissionLevel Level { get; set; }
+        public bool IsInherited { get; set; }
+    }
 }
