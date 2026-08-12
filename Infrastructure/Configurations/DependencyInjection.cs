@@ -90,6 +90,9 @@ namespace Infrastructure.Configurations
             services.AddScoped<IPermissionCheckingService, PermissionCheckingService>();
             services.AddScoped<IPermissionCheckingRepository, PermissionCheckingRepository>();
 
+            // Ma trận phân quyền (RACI): batch data access; service/controller thêm ở bước sau.
+            services.AddScoped<IPermissionMatrixRepository, PermissionMatrixRepository>();
+
             // Nhật ký hoạt động: các service nghiệp vụ gọi LogAsync để ghi;
             // 3 view đọc (Admin / PM dự án / thành viên nhóm) lọc quyền trong AuditLogRepository.
             services.AddScoped<IAuditLogService, AuditLogService>();
