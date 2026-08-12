@@ -9,6 +9,9 @@ namespace Application.DTOs.ResponseDTOs.Loi
     {
         public string FieldName { get; set; } = string.Empty;
         public string? Variant { get; set; }
+        public LoiDiscipline Discipline { get; set; }
+        public string ComponentCode { get; set; } = string.Empty;
+        public string ComponentName { get; set; } = string.Empty;
         public LoiParamGroup Group { get; set; }
         public LoiStage Stage { get; set; }
         public int MissingCount { get; set; }

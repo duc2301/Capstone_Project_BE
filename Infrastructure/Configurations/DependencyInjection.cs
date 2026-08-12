@@ -143,6 +143,9 @@ namespace Infrastructure.Configurations
             services.AddScoped<ILoiConformanceService, Application.Services.Loi.LoiConformanceService>();
             services.AddScoped<ILoiCheckService, Application.Services.Loi.LoiCheckService>();
             services.AddScoped<ILoiAliasService, Application.Services.Loi.LoiAliasService>();
+            services.AddScoped<ILoiRuleRepository, LoiRuleRepository>();
+            services.AddScoped<ILoiRuleAdminService, Application.Services.Loi.LoiRuleAdminService>();
+            services.AddScoped<ILoiRuleImportService, Application.Services.Loi.LoiRuleImportService>();
             services.AddSingleton<IFileTextExtractor, FileTextExtractorService>();
             services.AddSingleton<ITextChunker, TextChunkerService>();
 
