@@ -34,7 +34,7 @@ namespace Application.Services.Loi
             var version = await _uow.Repository<FileVersionState>().GetByIdAsync(fileVersionId);
             if (version is null || version.StoragePath is null)
             {
-                _logger.LogWarning("Bỏ qua kiểm LOI: FileVersion {Id} không tồn tại hoặc chưa có nội dung.", fileVersionId);
+                _logger.LogWarning("Bỏ qua đối chiếu thông tin phi hình học: FileVersion {Id} không tồn tại hoặc chưa có nội dung.", fileVersionId);
                 return;
             }
 
@@ -98,7 +98,7 @@ namespace Application.Services.Loi
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Kiểm LOI thất bại cho FileVersion {Id}.", fileVersionId);
+                _logger.LogError(ex, "Đối chiếu thông tin phi hình học thất bại cho FileVersion {Id}.", fileVersionId);
                 check.Status = LoiCheckStatus.Failed;
                 check.Verdict = LoiVerdict.Unknown;
                 check.Error = Truncate(ex.Message, MaxErrorLength);
@@ -118,7 +118,7 @@ namespace Application.Services.Loi
 
             var fallback = (await _uow.Repository<LoiRuleSet>().FindAsync(s => s.IsDefault)).FirstOrDefault();
             if (fallback is null)
-                _logger.LogWarning("Chưa có bộ luật LOI mặc định — kết quả kiểm sẽ rỗng.");
+                _logger.LogWarning("Chưa có bộ luật thông tin phi hình học mặc định — kết quả đối chiếu sẽ rỗng.");
 
             return fallback?.Id;
         }
@@ -140,7 +140,7 @@ namespace Application.Services.Loi
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Không lưu được trạng thái kiểm LOI của FileVersion {Id}.", fileVersionId);
+                _logger.LogError(ex, "Không lưu được trạng thái đối chiếu của FileVersion {Id}.", fileVersionId);
             }
         }
 
