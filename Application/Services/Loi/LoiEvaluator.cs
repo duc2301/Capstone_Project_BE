@@ -87,8 +87,9 @@ namespace Application.Services.Loi
                 return result;
             }
 
-            var missingCounter = new Dictionary<(string? Variant, string FieldName), MissingAccumulator>();
-            var unknownParams = new Dictionary<string, int>(StringComparer.Ordinal);
+            var missingCounter =
+                new Dictionary<(string ComponentCode, string? Variant, string FieldName), MissingAccumulator>();
+            var unknownParams = new Dictionary<(LoiDiscipline Discipline, string Name), int>();
             var uncovered = new Dictionary<string, LoiUncoveredComponentDTO>(StringComparer.Ordinal);
             long totalRules = 0, satisfiedRules = 0;
 
@@ -139,6 +140,9 @@ namespace Application.Services.Loi
                 {
                     FieldName = x.FieldName,
                     Variant = x.Variant,
+                    Discipline = x.Discipline,
+                    ComponentCode = x.ComponentCode,
+                    ComponentName = x.ComponentName,
                     Group = x.Group,
                     Stage = x.Stage,
                     MissingCount = x.Count
@@ -366,27 +370,40 @@ namespace Application.Services.Loi
         }
 
         private static void CollectUnknownParams(
-            IfcElementInfo element, ComponentRules component, Dictionary<string, int> counter)
+            IfcElementInfo element,
+            ComponentRules component,
+            Dictionary<(LoiDiscipline Discipline, string Name), int> counter)
         {
             foreach (var name in element.Properties.Keys)
             {
                 if (component.AllAcceptableNames.Contains(name)) continue;
-                counter[name] = counter.TryGetValue(name, out var c) ? c + 1 : 1;
+                var key = (component.Discipline, name);
+                counter[key] = counter.TryGetValue(key, out var c) ? c + 1 : 1;
             }
         }
 
         private static List<LoiUnmappedParamDTO> BuildSuggestions(
-            Dictionary<string, int> unknownParams, IReadOnlyList<LoiRequirement> requirements)
+            Dictionary<(LoiDiscipline Discipline, string Name), int> unknownParams,
+            IReadOnlyList<LoiRequirement> requirements)
         {
             if (unknownParams.Count == 0) return new List<LoiUnmappedParamDTO>();
 
-            var display = new Dictionary<string, string>(StringComparer.Ordinal);
+            var displayByDiscipline = new Dictionary<LoiDiscipline, Dictionary<string, string>>();
             foreach (var r in requirements)
+            {
+                if (!displayByDiscipline.TryGetValue(r.Discipline, out var display))
+                {
+                    display = new Dictionary<string, string>(StringComparer.Ordinal);
+                    displayByDiscipline[r.Discipline] = display;
+                }
                 display.TryAdd(r.ParamNameNormalized, r.ParamName);
+            }
 
             var suggestions = new List<LoiUnmappedParamDTO>();
-            foreach (var (name, count) in unknownParams)
+            foreach (var ((discipline, name), count) in unknownParams)
             {
+                if (!displayByDiscipline.TryGetValue(discipline, out var display)) continue;
+
                 var hit = LoiParamSuggester.Suggest(name, display.Keys);
                 if (hit is null) continue;
                 suggestions.Add(new LoiUnmappedParamDTO
@@ -418,6 +435,9 @@ namespace Application.Services.Loi
         {
             public string FieldName { get; init; } = string.Empty;
             public string? Variant { get; init; }
+            public LoiDiscipline Discipline { get; init; }
+            public string ComponentCode { get; init; } = string.Empty;
+            public string ComponentName { get; init; } = string.Empty;
             public LoiParamGroup Group { get; init; }
             public LoiStage Stage { get; init; }
             public HashSet<string> AcceptableNames { get; } = new(StringComparer.Ordinal);
@@ -431,6 +451,8 @@ namespace Application.Services.Loi
 
         private sealed class ComponentRules
         {
+            public LoiDiscipline Discipline { get; set; }
+
             public List<VariantRules> Variants { get; } = new();
 
             public HashSet<string> AllAcceptableNames { get; } = new(StringComparer.Ordinal);
@@ -447,7 +469,7 @@ namespace Application.Services.Loi
 
             foreach (var byCode in applicable.GroupBy(r => NormalizeCode(r.ComponentCode!)))
             {
-                var component = new ComponentRules();
+                var component = new ComponentRules { Discipline = byCode.First().Discipline };
                 foreach (var byVariant in byCode.GroupBy(r => r.Variant))
                 {
                     var variant = new VariantRules { Variant = byVariant.Key };
@@ -458,6 +480,9 @@ namespace Application.Services.Loi
                         {
                             FieldName = first.FieldName,
                             Variant = byVariant.Key,
+                            Discipline = first.Discipline,
+                            ComponentCode = first.ComponentCode ?? string.Empty,
+                            ComponentName = first.ComponentName ?? string.Empty,
                             Group = first.ParamGroup,
                             Stage = byField.Min(r => r.Stage)
                         };
@@ -539,23 +564,42 @@ namespace Application.Services.Loi
         {
             VariantRules? winner = null;
             double bestRatio = -1;
+            var bestSatisfied = -1;
 
             foreach (var variant in variants)
             {
                 var satisfied = variant.Rules.Count(rule => IsSatisfied(rule, element));
                 var ratio = satisfied / (double)variant.Rules.Count;
 
-                if (ratio > bestRatio)
-                {
-                    bestRatio = ratio;
-                    winner = variant;
-                }
+                if (winner is not null
+                    && !IsBetterVariant(ratio, satisfied, variant, bestRatio, bestSatisfied, winner))
+                    continue;
+
+                bestRatio = ratio;
+                bestSatisfied = satisfied;
+                winner = variant;
             }
 
             if (winner is null) return null;
 
             var missing = winner.Rules.Where(rule => !IsSatisfied(rule, element)).ToList();
             return new VariantScore { Rules = winner.Rules, MissingRules = missing };
+        }
+
+        private static bool IsBetterVariant(
+            double ratio, int satisfied, VariantRules candidate,
+            double bestRatio, int bestSatisfied, VariantRules current)
+        {
+            if (ratio != bestRatio) return ratio > bestRatio;
+            if (satisfied != bestSatisfied) return satisfied > bestSatisfied;
+            return CompareVariantNames(candidate.Variant, current.Variant) < 0;
+        }
+
+        private static int CompareVariantNames(string? left, string? right)
+        {
+            if (left is null) return right is null ? 0 : -1;
+            if (right is null) return 1;
+            return string.CompareOrdinal(left, right);
         }
 
         private static bool IsSatisfied(RuleGroup rule, IfcElementInfo element) =>
@@ -565,15 +609,19 @@ namespace Application.Services.Loi
         {
             public required string FieldName { get; init; }
             public required string? Variant { get; init; }
+            public required LoiDiscipline Discipline { get; init; }
+            public required string ComponentCode { get; init; }
+            public required string ComponentName { get; init; }
             public required LoiParamGroup Group { get; init; }
             public required LoiStage Stage { get; init; }
             public int Count { get; set; }
         }
 
         private static void Accumulate(
-            Dictionary<(string? Variant, string FieldName), MissingAccumulator> counter, RuleGroup rule)
+            Dictionary<(string ComponentCode, string? Variant, string FieldName), MissingAccumulator> counter,
+            RuleGroup rule)
         {
-            var key = (rule.Variant, rule.FieldName);
+            var key = (rule.ComponentCode, rule.Variant, rule.FieldName);
             if (counter.TryGetValue(key, out var acc))
             {
                 acc.Count++;
@@ -583,6 +631,9 @@ namespace Application.Services.Loi
             {
                 FieldName = rule.FieldName,
                 Variant = rule.Variant,
+                Discipline = rule.Discipline,
+                ComponentCode = rule.ComponentCode,
+                ComponentName = rule.ComponentName,
                 Group = rule.Group,
                 Stage = rule.Stage,
                 Count = 1
@@ -618,7 +669,7 @@ namespace Application.Services.Loi
             return null;
         }
 
-        private static string NormalizeCode(string code)
+        public static string NormalizeCode(string code)
         {
             var sb = new StringBuilder(code.Length);
             foreach (var ch in code)

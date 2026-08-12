@@ -93,6 +93,8 @@ namespace Infrastructure.DbContexts
         // --- File Versioning (trạng thái version hiện hành của tài liệu) ---
         public virtual DbSet<FileVersionState> FileVersionStates { get; set; }
 
+        public virtual DbSet<LoiRuleSet> LoiRuleSets { get; set; }
+        public virtual DbSet<LoiParameter> LoiParameters { get; set; }
         public virtual DbSet<LoiComponent> LoiComponents { get; set; }
         public virtual DbSet<LoiRequirement> LoiRequirements { get; set; }
         public virtual DbSet<LoiFieldAlias> LoiFieldAliases { get; set; }
@@ -125,6 +127,12 @@ namespace Infrastructure.DbContexts
                 .HasOne(p => p.OwnerOrganization)
                 .WithMany()
                 .HasForeignKey(p => p.OwnerOrganizationId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<Project>()
+                .HasOne<LoiRuleSet>()
+                .WithMany()
+                .HasForeignKey(p => p.LoiRuleSetId)
                 .OnDelete(DeleteBehavior.SetNull);
 
             modelBuilder.Entity<Account>()
@@ -556,15 +564,37 @@ namespace Infrastructure.DbContexts
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
+            modelBuilder.Entity<LoiRuleSet>(b =>
+            {
+                b.HasIndex(x => x.IsDefault);
+            });
+
+            modelBuilder.Entity<LoiParameter>(b =>
+            {
+                b.HasIndex(x => new { x.RuleSetId, x.Discipline, x.NameNormalized }).IsUnique();
+                b.HasOne(x => x.RuleSet)
+                    .WithMany()
+                    .HasForeignKey(x => x.RuleSetId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
             modelBuilder.Entity<LoiComponent>(b =>
             {
-                b.HasIndex(x => x.CodeNormalized).IsUnique();
+                b.HasIndex(x => new { x.RuleSetId, x.CodeNormalized }).IsUnique();
+                b.HasOne<LoiRuleSet>()
+                    .WithMany()
+                    .HasForeignKey(x => x.RuleSetId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             modelBuilder.Entity<LoiRequirement>(b =>
             {
-                b.HasIndex(x => new { x.Discipline, x.ComponentCode });
+                b.HasIndex(x => new { x.RuleSetId, x.Discipline, x.ComponentCode });
                 b.HasIndex(x => x.ParamNameNormalized);
+                b.HasOne<LoiRuleSet>()
+                    .WithMany()
+                    .HasForeignKey(x => x.RuleSetId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             modelBuilder.Entity<LoiFieldAlias>(b =>

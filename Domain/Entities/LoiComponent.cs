@@ -6,6 +6,8 @@ namespace Domain.Entities
     {
         public Guid Id { get; set; }
 
+        public Guid RuleSetId { get; set; }
+
         public LoiDiscipline Discipline { get; set; }
 
         public string Code { get; set; } = null!;

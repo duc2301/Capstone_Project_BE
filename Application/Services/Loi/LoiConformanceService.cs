@@ -54,9 +54,13 @@ namespace Application.Services.Loi
 
             try
             {
-                var requirements = (await _uow.Repository<LoiRequirement>().GetAllAsync()).ToList();
-
                 var projectId = await GetProjectIdAsync(version.FileItemId);
+                var ruleSetId = await ResolveRuleSetIdAsync(projectId);
+
+                var requirements = ruleSetId is null
+                    ? new List<LoiRequirement>()
+                    : (await _uow.Repository<LoiRequirement>().FindAsync(r => r.RuleSetId == ruleSetId.Value)).ToList();
+
                 var aliases = (await _uow.Repository<LoiFieldAlias>()
                         .FindAsync(a => a.ProjectId == null || a.ProjectId == projectId))
                     .ToList();
@@ -65,7 +69,9 @@ namespace Application.Services.Loi
                 await using (var stream = await _storage.OpenReadAsync(version.StoragePath!, ct))
                     model = await _extractor.ExtractAsync(stream, ct);
 
-                var components = (await _uow.Repository<LoiComponent>().GetAllAsync()).ToList();
+                var components = ruleSetId is null
+                    ? new List<LoiComponent>()
+                    : (await _uow.Repository<LoiComponent>().FindAsync(c => c.RuleSetId == ruleSetId.Value)).ToList();
 
                 var result = LoiEvaluator.Evaluate(model, requirements, aliases, components, check.TargetStage);
 
@@ -99,6 +105,22 @@ namespace Application.Services.Loi
                 check.UpdatedAt = DateTime.UtcNow;
                 await SaveStatusAsync(fileVersionId);
             }
+        }
+
+        private async Task<Guid?> ResolveRuleSetIdAsync(Guid? projectId)
+        {
+            if (projectId.HasValue)
+            {
+                var project = await _uow.Repository<Project>().GetByIdAsync(projectId.Value);
+                if (project?.LoiRuleSetId is not null)
+                    return project.LoiRuleSetId;
+            }
+
+            var fallback = (await _uow.Repository<LoiRuleSet>().FindAsync(s => s.IsDefault)).FirstOrDefault();
+            if (fallback is null)
+                _logger.LogWarning("Chưa có bộ luật LOI mặc định — kết quả kiểm sẽ rỗng.");
+
+            return fallback?.Id;
         }
 
         private async Task<Guid?> GetProjectIdAsync(Guid fileItemId)

@@ -6,6 +6,8 @@ namespace Domain.Entities
     {
         public Guid Id { get; set; }
 
+        public Guid RuleSetId { get; set; }
+
         public LoiDiscipline Discipline { get; set; }
 
         public string? ComponentCode { get; set; }
@@ -13,6 +15,8 @@ namespace Domain.Entities
         public string? ComponentName { get; set; }
 
         public string? Variant { get; set; }
+
+        public int FieldOrder { get; set; }
 
         public string FieldName { get; set; } = null!;
 
