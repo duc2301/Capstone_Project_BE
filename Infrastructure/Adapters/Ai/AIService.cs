@@ -47,7 +47,13 @@ namespace Infrastructure.Adapters.Ai
 
             var content = extractedFile.Text;
             if (string.IsNullOrWhiteSpace(content))
+            {
+                // Không log thì hỏng ở đây là vô hình: worker nền thấy null sẽ bỏ qua,
+                // người dùng chỉ thấy file không có cảnh báo mà không có lỗi nào.
+                _logger.LogWarning("Không trích được chữ từ file {FileItemId} ({Format}) — bỏ qua phân tích nội dung",
+                    fileItemId, extractedFile.Version.Format);
                 return null;
+            }
 
             //const int MaxContentChars = 6000;
             //var sample = content.Length > MaxContentChars ? content[..MaxContentChars] : content;
@@ -57,8 +63,11 @@ namespace Infrastructure.Adapters.Ai
                 var client = _httpClientFactory.CreateClient();
                 var url = $"{_options.Value.BaseUrl.TrimEnd('/')}/api/generate";
 
+                // Kiểm tra nội dung có liên quan hay không là bài toán phán đoán, khác hẳn việc
+                // trích xuất theo schema của BEP — nên dùng model riêng. ChatModel đã hạ xuống 4b
+                // để parse BEP cho nhanh, dùng chung sẽ làm cờ "nghi ngờ" kém hẳn đi.
                 var payload = new GenerateRequest(
-                    _options.Value.ChatModel,
+                    _options.Value.CheckModel ?? _options.Value.ChatModel,
                     AnalyzeContentPrompt(project.ProjectName, project.ProjectDescription, folder?.Name, content),
                     Stream: false,
                     Think: false,
@@ -127,31 +136,29 @@ namespace Infrastructure.Adapters.Ai
             {
                 // Pha 1 — 6 trường thông tin dự án chỉ xuất hiện ở phần đầu tài liệu
                 // (trang bìa + mục thông tin chung), nên chỉ lát đầu mới hỏi đủ schema.
-                var result = await CallBepAsync(BepParsePrompt(slices[0]), BepFormatSchema, ct);
+                var result = await CallBepAsync(BepInfoPrompt(slices[0]), BepInfoSchema, ct);
                 if (result is null)
                 {
                     _logger.LogError("Ollama parse BEP trả về nội dung rỗng/không đúng schema ở lát đầu");
                     throw new ApiExceptionResponse("Không xử lý được kết quả AI, vui lòng thử lại.", 502);
                 }
 
+                // Pha 1b — quét nhóm/gói thầu trên chính lát đầu, dùng schema hẹp như các lát sau.
+                var firstParts = await CallBepAsync(BepPartsPrompt(slices[0]), BepPartsSchema, ct);
+                if (firstParts is not null) MergeParts(result, firstParts);
+
                 // Trường đơn chỉ được điền từ lát 1. Ranh giới lát đổi theo độ dài từng tài liệu,
                 // nên mục thông tin chung có thể rơi sang lát 2 và mất vĩnh viễn (pha 2 không lấy
                 // trường đơn). Chạy bù ĐÚNG MỘT lượt full schema trên lát 2, chỉ điền chỗ còn trống.
-                int nextSlice = 1;
                 if (slices.Count > 1 && HasMissingScalars(result))
                 {
-                    var fallback = await CallBepAsync(BepParsePrompt(slices[1]), BepFormatSchema, ct);
-                    if (fallback is not null)
-                    {
-                        FillMissingScalars(result, fallback);
-                        MergeParts(result, fallback);
-                    }
-                    nextSlice = 2;
+                    var fallback = await CallBepAsync(BepInfoPrompt(slices[1]), BepInfoSchema, ct);
+                    if (fallback is not null) FillMissingScalars(result, fallback);
                 }
 
                 // Pha 2 — các lát sau chỉ quét nhóm/gói thầu. Schema hẹp lại vừa giảm token phải sinh
                 // (nút thắt nằm ở tốc độ sinh) vừa bớt chỗ cho model bịa các trường không có mặt.
-                for (int i = nextSlice; i < slices.Count; i++)
+                for (int i = 1; i < slices.Count; i++)
                 {
                     if (!MayContainParties(slices[i]) || IsNamingConventionSlice(slices[i])) continue;
 
@@ -612,6 +619,51 @@ namespace Infrastructure.Adapters.Ai
         private const int CharsPerPage = 3000;
 
         private static int RepeatThreshold(int totalChars) => Math.Max(5, totalChars / CharsPerPage / 2);
+
+        // Schema hẹp cho pha 1a: chỉ 6 trường thông tin dự án, không có groups/packages.
+        private static readonly object BepInfoSchema = new
+        {
+            type = "object",
+            properties = new
+            {
+                projectName = new { type = "string" },
+                projectCode = new { type = "string" },
+                projectDescription = new { type = "string" },
+                ownerOrganizationName = new { type = "string" },
+                address = new { type = "string" },
+                contactAddress = new { type = "string" }
+            },
+            required = new[]
+            {
+                "projectName", "projectCode", "projectDescription",
+                "ownerOrganizationName", "address", "contactAddress"
+            }
+        };
+
+        // Prompt pha 1a — CHỈ thông tin dự án. Tách khỏi phần quét nhóm vì nhồi cả hai vào một
+        // lượt làm model chia trí: đo được trên BEP Viettel và Metropole, khi thêm hướng dẫn đọc
+        // bảng phân quyền thì số nhóm đúng tăng mạnh nhưng address biến mất ở cả hai file.
+        private static string BepInfoPrompt(string content) =>
+            "Bạn là trợ lý trích xuất thông tin từ tài liệu BEP (BIM Execution Plan / Kế hoạch thực hiện BIM) để điền form khởi tạo dự án.\n" +
+            "MỖI BEP CÓ CẤU TRÚC, CÁCH ĐÁNH MỤC VÀ ĐẶT NHÃN KHÁC NHAU. Hãy hiểu Ý NGHĨA nội dung để trích, KHÔNG phụ thuộc số mục hay nhãn cố định.\n\n" +
+
+            "XỬ LÝ VĂN BẢN: text được trích tự động từ file (PDF/DOCX) nên nhiều từ có thể DÍNH LIỀN (mất dấu cách), và nội dung trong bảng bị trải thành từng dòng: nhãn ở một dòng, giá trị ở dòng ngay sau. Hãy tự tách từ, tự ghép nhãn với giá trị, và trả về giá trị chuẩn hoá (có dấu cách, đúng chính tả), GIỮ ĐÚNG nội dung gốc — không đổi tên riêng, không bịa.\n\n" +
+
+            "TÀI LIỆU (phần đầu):\n" +
+            $"{content}\n\n" +
+            "TRÍCH ĐÚNG 6 TRƯỜNG SAU (theo Ý NGHĨA):\n" +
+            "- projectName: tên dự án / công trình. Trường quan trọng nhất — hầu như BEP nào cũng có, cố gắng luôn tìm ra.\n" +
+            "- projectCode: mã / ký hiệu dự án nếu có; không có để trống.\n" +
+            "- projectDescription: 1-2 câu mô tả loại công trình và mục tiêu áp dụng BIM, dựa trên nội dung; không bịa số liệu.\n" +
+            "- ownerOrganizationName: tên tổ chức Chủ đầu tư / Chủ sở hữu dự án (bên đặt hàng/thuê thực hiện).\n" +
+            "- address: địa điểm / địa chỉ CÔNG TRÌNH (nơi thi công/xây dựng). Với công trình dạng TUYẾN (đường, cao tốc, cầu, hầm, kênh) thì địa điểm CHÍNH LÀ phạm vi tuyến: ghép 'Điểm đầu' và 'Điểm cuối' (kèm chiều dài tuyến nếu có) thành một chuỗi. Đừng bỏ trống chỉ vì tài liệu không ghi số nhà/đường.\n" +
+            "- contactAddress: địa chỉ LIÊN HỆ / giao dịch (trụ sở, văn phòng chủ đầu tư, Ban QLDA, đầu mối liên hệ). Nếu tài liệu có một mục/ô mang nghĩa 'địa chỉ liên hệ' thì TRÍCH NGUYÊN VĂN giá trị đó, kể cả khi ghi ngắn gọn (chỉ quận/thành phố) hay không đầy đủ số nhà — vẫn tính là có. Chỉ để trống khi tài liệu KHÔNG hề nhắc tới địa chỉ liên hệ. Đây là trường KHÁC address: address = nơi xây dựng công trình, contactAddress = nơi liên hệ; không được điền trùng giá trị của address.\n\n" +
+
+            "QUY TẮC:\n" +
+            "- KHÔNG bịa. Trường không tìm thấy -> chuỗi rỗng.\n" +
+            "- KHÔNG trích danh sách các bên tham gia ở lượt này — việc đó làm ở lượt khác. Chỉ tập trung đúng 6 trường trên.\n" +
+            "- Bỏ qua bảng kỹ thuật thuần tuý (LOD, hệ toạ độ, quy ước đặt tên, danh sách phần mềm, ma trận phân quyền) vì chúng không chứa 6 trường trên.\n" +
+            "- Chỉ trả JSON đúng schema, không kèm chữ nào khác.";
 
         private static string BepParsePrompt(string content) =>
             "Bạn là trợ lý trích xuất thông tin từ tài liệu BEP (BIM Execution Plan / Kế hoạch thực hiện BIM) để điền form khởi tạo dự án.\n" +
