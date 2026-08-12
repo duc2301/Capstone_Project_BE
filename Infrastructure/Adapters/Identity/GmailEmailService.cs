@@ -87,7 +87,7 @@ namespace Infrastructure.Adapters.Identity
                           <tr>
                             <td style="background-color:#406623;padding:32px 40px;text-align:center;">
                               <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.3px;">
-                                🌿 BIM CDE Portal
+                                BIM CDE Portal
                               </h1>
                             </td>
                           </tr>
