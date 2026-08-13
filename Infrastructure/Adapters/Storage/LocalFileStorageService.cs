@@ -64,6 +64,13 @@ namespace Infrastructure.Adapters.Storage
         public Task<string?> GetPresignedUrlAsync(string storagePath, int expiryMinutes = 60, CancellationToken ct = default)
             => Task.FromResult<string?>(null);
 
+        public Task DeleteAsync(string storagePath, CancellationToken ct = default)
+        {
+            var full = ToFullPath(storagePath);
+            if (File.Exists(full)) File.Delete(full);
+            return Task.CompletedTask;
+        }
+
         public string GetContentType(string fileNameOrExt)
         {
             var ext = NormalizeExt(Path.GetExtension(fileNameOrExt) is { Length: > 0 } e ? e : fileNameOrExt);

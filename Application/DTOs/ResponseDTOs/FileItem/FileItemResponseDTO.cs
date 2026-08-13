@@ -14,6 +14,7 @@ namespace Application.DTOs.ResponseDTOs.FileItem
         public string? DisplayVersion { get; set; }
         // Email người upload bản hiện hành
         public string? UploaderEmail { get; set; }
+        public Guid? UploadedByAccountId { get; set; }
         // Dung lượng (byte) của bản hiện hành (null nếu chưa có nội dung)
         public long? FileSizeBytes { get; set; }
         // Định dạng file của bản hiện hành, vd "DWG", "RVT", "PDF" (null nếu chưa có nội dung)

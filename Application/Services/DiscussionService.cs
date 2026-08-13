@@ -19,19 +19,22 @@ namespace Application.Services
         private readonly INotificationService _notification;
         private readonly IDiscussionBroadcaster _broadcaster;
         private readonly IAuditLogService _auditLog;
+        private readonly IIssueActivityService _issueActivity;
 
         public DiscussionService(
             IUnitOfWork unitOfWork,
             IMapper mapper,
             INotificationService notification,
             IDiscussionBroadcaster broadcaster,
-            IAuditLogService auditLog)
+            IAuditLogService auditLog,
+            IIssueActivityService issueActivity)
         {
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _notification = notification;
             _broadcaster = broadcaster;
             _auditLog = auditLog;
+            _issueActivity = issueActivity;
         }
 
         public async Task<DiscussionResponseDTO?> GetByIdAsync(Guid id)
@@ -223,6 +226,8 @@ namespace Application.Services
 
             if (discussion.ScopeType == DiscussionScopeType.Issue && discussion.ScopeId.HasValue)
             {
+                await _issueActivity.MarkInProgressOnActivityAsync(discussion.ScopeId.Value, actorId);
+
                 var alreadyNotified = mentionedIds.Append(actorId).ToHashSet();
                 var replyRecipientIds = (await GetIssueParticipantAccountIdsAsync(discussion.ScopeId.Value))
                     .Where(id => !alreadyNotified.Contains(id))

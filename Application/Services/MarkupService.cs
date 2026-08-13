@@ -16,19 +16,22 @@ namespace Application.Services
         private readonly IMarkupBroadcaster _broadcaster;
         private readonly INotificationService _notification;
         private readonly IAuditLogService _auditLog;
+        private readonly IIssueActivityService _issueActivity;
 
         public MarkupService(
             IUnitOfWork unitOfWork,
             IPermissionCheckingService permission,
             IMarkupBroadcaster broadcaster,
             INotificationService notification,
-            IAuditLogService auditLog)
+            IAuditLogService auditLog,
+            IIssueActivityService issueActivity)
         {
             _unitOfWork = unitOfWork;
             _permission = permission;
             _broadcaster = broadcaster;
             _notification = notification;
             _auditLog = auditLog;
+            _issueActivity = issueActivity;
         }
 
 
@@ -61,6 +64,9 @@ namespace Application.Services
             await _unitOfWork.Repository<MarkupSet>().CreateAsync(set);
             await LogMarkupAsync(AuditAction.Create, set, fileItem, actorId, $"Tạo bộ ghi chú '{set.Title}' trên '{fileItem.Name}'");
             await _unitOfWork.CommitAsync();
+
+            if (set.IssueId.HasValue)
+                await _issueActivity.MarkInProgressOnActivityAsync(set.IssueId.Value, actorId);
 
             var actorName = await GetAccountNameAsync(actorId);
             return BuildSetDto(set, version.WorkingVersion, actorName, 0, 0, new List<FileNoteResponseDTO>());

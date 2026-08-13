@@ -26,6 +26,7 @@ namespace Application.DTOs.RequestDTOs.Issue
         // tranh truong hop client tu xung la nguoi khac tao issue.
         public Guid? AssignedToAccountId { get; set; }
         public Guid? AssignedToOrganizationId { get; set; }
+        public Guid? AssignedToGroupId { get; set; }
         public DateTime? DueDate { get; set; }
         public Guid? LinkedFolderId { get; set; }
         public Guid? LinkedFileItemId { get; set; }

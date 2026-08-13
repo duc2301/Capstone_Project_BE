@@ -215,6 +215,7 @@ namespace Application.Services
                 file.Description = version.Description;
                 file.Warnning = version.Warnning;
                 file.WarnningMessage = version.WarnningMessage;
+                file.UploadedByAccountId = version.UploadedByAccountId;
                 file.UploaderEmail = version.UploadedByAccountId.HasValue
                     && emailsByAccountId.TryGetValue(version.UploadedByAccountId.Value, out var email)
                     ? email
