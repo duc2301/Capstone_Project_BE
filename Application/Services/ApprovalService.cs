@@ -124,9 +124,10 @@ namespace Application.Services
             foreach (var signer in signers)
                 await _unitOfWork.Repository<ApprovalRequestSigner>().CreateAsync(signer);
 
-            // Người được assign ký đích danh (Shared->Published) được cấp quyền xem file mãi mãi để
-            // ký được, kể cả khi nhóm họ không có CanView. Grant bị thu hồi khi file trả về WIP.
-            await GrantFileViewToSignerAccountsAsync(fileItem.Id, request.Id, signers);
+            // Người được assign ký (Leader) và TOÀN BỘ đội của họ được cấp quyền xem file mãi mãi: người
+            // ký cần xem để ký, và có thể nhờ thành viên rành chuyên môn hơn trong đội cùng kiểm tra.
+            // Grant bị thu hồi khi file trả về WIP.
+            await GrantFileViewToSignerTeamsAsync(fileItem.Id, request.Id, folder.ProjectId, signers);
 
             // folderId = folder NGUỒN lúc thao tác -> cả vòng đời (submit/approve/reject) cùng một tập người xem.
             await _auditLog.LogAsync(
@@ -581,15 +582,18 @@ namespace Application.Services
         }
 
         /// <summary>
-        /// Cấp quyền xem file (FileViewGrant) cho từng account được assign ký. Họ cần xem được file để
-        /// ký kể cả khi nhóm của họ không có CanView trên folder. Grant giữ mãi tới khi file được trả
-        /// về WIP thì bị thu hồi (ZoneReturnRequestService). Signer theo NHÓM không cần grant — nhóm
-        /// phụ trách vốn đã có quyền xem. Upsert theo (FileItemId, AccountId) để không vi phạm unique
-        /// index nếu người này còn grant cũ từ vòng duyệt trước.
+        /// Cấp quyền xem file (FileViewGrant) cho người được assign ký VÀ toàn bộ đội của họ. Mỗi account
+        /// signer (ở Shared->Published bắt buộc là Leader active của 1 nhóm trong dự án) được mở rộng thành
+        /// tất cả thành viên active của (các) nhóm họ lãnh đạo — để cả đội cùng xem/kiểm tra giúp người ký,
+        /// kể cả khi nhóm chưa có CanView trên folder. Grant giữ mãi tới khi file trả về WIP thì bị thu hồi
+        /// (ZoneReturnRequestService). Signer theo NHÓM không cần grant — nhóm phụ trách vốn đã có quyền xem.
+        /// Danh sách thành viên là ẢNH CHỤP lúc submit: người vào đội sau sẽ không tự có quyền tới khi submit lại.
+        /// Upsert theo (FileItemId, AccountId) để không vi phạm unique index nếu đã có grant cũ.
         /// </summary>
-        private async Task GrantFileViewToSignerAccountsAsync(
+        private async Task GrantFileViewToSignerTeamsAsync(
             Guid fileItemId,
             Guid approvalRequestId,
+            Guid projectId,
             IReadOnlyCollection<ApprovalRequestSigner> signers)
         {
             var signerAccountIds = signers
@@ -600,12 +604,16 @@ namespace Application.Services
             if (signerAccountIds.Count == 0)
                 return;
 
+            var grantAccountIds = await ResolveSignerTeamMemberAccountIdsAsync(projectId, signerAccountIds);
+            if (grantAccountIds.Count == 0)
+                return;
+
             var existingGrants = (await _unitOfWork.Repository<FileViewGrant>().FindAsync(
-                    g => g.FileItemId == fileItemId && signerAccountIds.Contains(g.AccountId)))
+                    g => g.FileItemId == fileItemId && grantAccountIds.Contains(g.AccountId)))
                 .ToDictionary(g => g.AccountId);
 
             var now = DateTime.UtcNow;
-            foreach (var accountId in signerAccountIds)
+            foreach (var accountId in grantAccountIds)
             {
                 if (existingGrants.TryGetValue(accountId, out var existing))
                 {
@@ -625,6 +633,47 @@ namespace Application.Services
                     CreatedAt = now
                 });
             }
+        }
+
+        /// <summary>
+        /// Với mỗi account signer (Leader active của 1 nhóm trong dự án), trả về TẤT CẢ account là thành
+        /// viên active của (các) nhóm họ lãnh đạo — dùng để cấp quyền xem cho cả đội. Luôn bao gồm chính
+        /// người ký. Nếu không tìm được nhóm nào họ lãnh đạo (dữ liệu bất thường), fallback cấp cho riêng
+        /// người ký để không mất quyền xem tối thiểu.
+        /// </summary>
+        private async Task<List<Guid>> ResolveSignerTeamMemberAccountIdsAsync(
+            Guid projectId, IReadOnlyCollection<Guid> signerAccountIds)
+        {
+            // Các group đang là participant active của dự án.
+            var projectGroupIds = (await _unitOfWork.Repository<ProjectParticipant>().FindAsync(
+                    p => p.ProjectId == projectId && p.Status == ProjectParticipantStatus.Active))
+                .Select(p => p.GroupId)
+                .ToHashSet();
+
+            // Nhóm mà mỗi signer đang lãnh đạo (Leader active) trong phạm vi dự án.
+            var ledGroupIds = projectGroupIds.Count == 0
+                ? new HashSet<Guid>()
+                : (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                        m => signerAccountIds.Contains(m.AccountId)
+                             && m.Role == GroupMemberRole.Leader
+                             && m.Status == GroupMemberStatus.Active
+                             && projectGroupIds.Contains(m.GroupId)))
+                    .Select(m => m.GroupId)
+                    .ToHashSet();
+
+            var accountIds = new HashSet<Guid>(signerAccountIds); // luôn gồm chính người ký
+
+            if (ledGroupIds.Count > 0)
+            {
+                var memberAccountIds = (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                        m => ledGroupIds.Contains(m.GroupId)
+                             && m.Status == GroupMemberStatus.Active))
+                    .Select(m => m.AccountId);
+                foreach (var id in memberAccountIds)
+                    accountIds.Add(id);
+            }
+
+            return accountIds.ToList();
         }
 
         private async Task EnsureSignerAccountsExistAsync(IReadOnlyCollection<Guid> accountIds)
