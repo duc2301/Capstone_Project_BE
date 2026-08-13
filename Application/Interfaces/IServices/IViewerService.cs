@@ -9,6 +9,8 @@ namespace Application.Interfaces.IServices
         Task<UploadModelResponseDTO> UploadAndTranslateAsync(
             Stream content, string fileName, long? contentLength = null, CancellationToken ct = default);
 
+        Task RetranslateAsync(string urn, CancellationToken ct = default);
+
         Task<TranslationStatusResponseDTO> GetStatusAsync(string urn, CancellationToken ct = default);
     }
 }

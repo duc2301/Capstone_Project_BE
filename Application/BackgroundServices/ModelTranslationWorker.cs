@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using Application.DTOs.ResponseDTOs.Viewer;
 using Application.Interfaces.IBackgroundServices;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
@@ -15,8 +17,14 @@ namespace Application.BackgroundServices
     // (request đã kết thúc -> scope bị dispose -> lưu DB sẽ ObjectDisposedException).
     public sealed class ModelTranslationWorker : BackgroundService
     {
-        private const int PollIntervalMs = 5000;
+        private const int PollInitialDelayMs = 10_000;
+        private const int PollMaxDelayMs = 60_000;
+        private static readonly TimeSpan PollTimeout = TimeSpan.FromMinutes(30);
+        private static readonly TimeSpan ForcedRestartGrace = TimeSpan.FromSeconds(60);
+        private const int ConsumerCount = 3;
         private const int MaxErrorLength = 500;
+
+        private readonly ConcurrentDictionary<Guid, byte> _inFlight = new();
 
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly IModelTranslationQueue _queue;
@@ -37,10 +45,18 @@ namespace Application.BackgroundServices
             // Chống mất job khi BE restart/crash: quét lại các bản còn dang dở rồi đẩy vào hàng đợi.
             await RequeueUnfinishedAsync(stoppingToken);
 
-            await foreach (var fileVersionId in _queue.ReadAllAsync(stoppingToken))
+            var consumers = new Task[ConsumerCount];
+            for (var i = 0; i < ConsumerCount; i++)
+                consumers[i] = ConsumeAsync(stoppingToken);
+
+            await Task.WhenAll(consumers);
+        }
+
+        private async Task ConsumeAsync(CancellationToken ct)
+        {
+            await foreach (var fileVersionId in _queue.ReadAllAsync(ct))
             {
-                // Một job lỗi KHÔNG được làm chết worker -> bắt lỗi trọn vẹn ở ProcessAsync.
-                await ProcessAsync(fileVersionId, stoppingToken);
+                await ProcessAsync(fileVersionId, ct);
             }
         }
 
@@ -78,6 +94,19 @@ namespace Application.BackgroundServices
 
         private async Task ProcessAsync(Guid fileVersionId, CancellationToken ct)
         {
+            if (!_inFlight.TryAdd(fileVersionId, 0)) return;
+            try
+            {
+                await ProcessCoreAsync(fileVersionId, ct);
+            }
+            finally
+            {
+                _inFlight.TryRemove(fileVersionId, out _);
+            }
+        }
+
+        private async Task ProcessCoreAsync(Guid fileVersionId, CancellationToken ct)
+        {
             using var scope = _scopeFactory.CreateScope();
             var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
             var viewer = scope.ServiceProvider.GetRequiredService<IViewerService>();
@@ -101,23 +130,52 @@ namespace Application.BackgroundServices
                 version.ViewerError = null;
                 await uow.CommitAsync();
 
-                // Tên file phải kèm ĐÚNG đuôi (rvt/ifc/nwd…) để APS nhận diện định dạng nguồn.
-                var fileItem = await uow.Repository<FileItem>().GetByIdAsync(version.FileItemId);
-                var baseName = fileItem?.Name ?? "model";
-                var fileName = $"{baseName}.{version.Format}";
+                string? urn = null;
+                var forcedRestart = false;
 
-                string urn;
-                await using (var stream = await storage.OpenReadAsync(version.StoragePath!, ct))
+                if (!string.IsNullOrWhiteSpace(version.ViewerUrn))
                 {
-                    var translated = await viewer.UploadAndTranslateAsync(stream, fileName, version.FileSizeBytes ?? 0, ct);
-                    urn = translated.Urn;
+                    var existing = version.ViewerUrn;
+                    var current = await viewer.GetStatusAsync(existing, ct);
+
+                    if (current.Status == TranslationStatuses.Success)
+                    {
+                        version.ViewerProgress = current.Progress;
+                        version.ViewerStatus = ModelViewerStatus.Ready;
+                        await uow.CommitAsync();
+                        return;
+                    }
+
+                    if (current.Status != TranslationStatuses.NotFound)
+                    {
+                        urn = existing;
+                        if (current.Status is TranslationStatuses.Failed or TranslationStatuses.Timeout)
+                        {
+                            await viewer.RetranslateAsync(existing, ct);
+                            forcedRestart = true;
+                        }
+                    }
                 }
 
-                // Lưu URN sớm (ngay khi job dịch đã được khởi tạo) — /view có thể mount viewer trong lúc còn dịch.
-                version.ViewerUrn = urn;
-                await uow.CommitAsync();
+                if (urn is null)
+                {
+                    // Tên file phải kèm ĐÚNG đuôi (rvt/ifc/nwd…) để APS nhận diện định dạng nguồn.
+                    var fileItem = await uow.Repository<FileItem>().GetByIdAsync(version.FileItemId);
+                    var baseName = fileItem?.Name ?? "model";
+                    var fileName = $"{baseName}.{version.Format}";
 
-                await PollUntilDoneAsync(uow, viewer, version, urn, ct);
+                    await using (var stream = await storage.OpenReadAsync(version.StoragePath!, ct))
+                    {
+                        var translated = await viewer.UploadAndTranslateAsync(stream, fileName, version.FileSizeBytes ?? 0, ct);
+                        urn = translated.Urn;
+                    }
+
+                    // Lưu URN sớm (ngay khi job dịch đã được khởi tạo) — /view có thể mount viewer trong lúc còn dịch.
+                    version.ViewerUrn = urn;
+                    await uow.CommitAsync();
+                }
+
+                await PollUntilDoneAsync(uow, viewer, version, urn, forcedRestart, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -141,30 +199,43 @@ namespace Application.BackgroundServices
         }
 
         private static async Task PollUntilDoneAsync(
-            IUnitOfWork uow, IViewerService viewer, FileVersionState version, string urn, CancellationToken ct)
+            IUnitOfWork uow, IViewerService viewer, FileVersionState version, string urn,
+            bool forcedRestart, CancellationToken ct)
         {
+            var now = DateTime.UtcNow;
+            var deadline = now.Add(PollTimeout);
+            var acceptTerminalFrom = forcedRestart ? now.Add(ForcedRestartGrace) : now;
+            var delayMs = PollInitialDelayMs;
+
             while (!ct.IsCancellationRequested)
             {
+                await Task.Delay(delayMs, ct);
+                delayMs = Math.Min(delayMs * 2, PollMaxDelayMs);
+
                 var status = await viewer.GetStatusAsync(urn, ct);
                 version.ViewerProgress = status.Progress;
 
-                switch (status.Status)
+                if (status.Status == TranslationStatuses.Success)
                 {
-                    case "success":
-                        version.ViewerStatus = ModelViewerStatus.Ready;
-                        await uow.CommitAsync();
-                        return;
-                    case "failed":
-                    case "timeout":
-                        version.ViewerStatus = ModelViewerStatus.Failed;
-                        version.ViewerError = $"APS translation {status.Status}.";
-                        await uow.CommitAsync();
-                        return;
-                    default:
-                        await uow.CommitAsync();   // lưu tiến độ để /view trả về mà không gọi APS
-                        await Task.Delay(PollIntervalMs, ct);
-                        break;
+                    version.ViewerStatus = ModelViewerStatus.Ready;
+                    await uow.CommitAsync();
+                    return;
                 }
+
+                var failedAtAps = status.Status is TranslationStatuses.Failed or TranslationStatuses.Timeout
+                    && DateTime.UtcNow >= acceptTerminalFrom;
+
+                if (failedAtAps || DateTime.UtcNow >= deadline)
+                {
+                    version.ViewerStatus = ModelViewerStatus.Failed;
+                    version.ViewerError = failedAtAps
+                        ? $"APS translation {status.Status}."
+                        : $"APS translation did not finish within {PollTimeout.TotalMinutes:0} minutes.";
+                    await uow.CommitAsync();
+                    return;
+                }
+
+                await uow.CommitAsync();
             }
         }
 

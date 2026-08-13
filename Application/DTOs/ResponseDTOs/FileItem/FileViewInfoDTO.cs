@@ -24,6 +24,8 @@ namespace Application.DTOs.ResponseDTOs.FileItem
         // % tiến độ dịch (vd "75% complete") khi đang Processing — để FE hiển thị.
         public string? ViewerProgress { get; set; }
 
+        public string? ViewerError { get; set; }
+
         // Dùng khi Kind = "inline" (presigned URL của nội dung hoặc của bản PDF preview).
         public string? Url { get; set; }
 
