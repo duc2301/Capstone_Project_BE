@@ -18,6 +18,8 @@ namespace Application.DTOs.ResponseDTOs.Issue
         public string? RaisedByName { get; set; }
         public Guid? AssignedToAccountId { get; set; }
         public string? AssignedToName { get; set; }
+        public Guid? AssignedToGroupId { get; set; }
+        public string? AssignedToGroupName { get; set; }
 
         public DateTime? DueDate { get; set; }
         public DateTime? CreatedAt { get; set; }

@@ -21,6 +21,7 @@ namespace Application.DTOs.ResponseDTOs.FileItem
         public string? Format { get; set; }
 
         public Guid? CreatedByAccountId { get; set; }
+        public Guid? CurrentVersionUploadedByAccountId { get; set; }
         public string? AuthorName { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }

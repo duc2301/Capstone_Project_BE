@@ -48,7 +48,7 @@ namespace Application.Services.Loi
             var version = await _uow.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
             if (!string.Equals(version.Format, IfcFormat, StringComparison.OrdinalIgnoreCase))
-                throw new ApiExceptionResponse("Chỉ kiểm LOI cho file .ifc.", 400);
+                throw new ApiExceptionResponse("Chỉ đối chiếu thông tin phi hình học cho file .ifc.", 400);
 
             var now = DateTime.UtcNow;
             var check = (await _uow.Repository<FileVersionLoiCheck>()
