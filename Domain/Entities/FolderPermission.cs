@@ -4,7 +4,7 @@ namespace Domain.Entities
 {
     // ACL trên thư mục, gán cho Nhóm hoặc Tổ chức.
     // 5 cờ trong tài liệu + Xem ngầm định. Workflow phiếu yêu cầu suy quyền từ đây.
-    public class FolderPermission
+    public class FolderPermission : IPermissionAcl
     {
         public Guid Id { get; set; }
         public Guid FolderId { get; set; }

@@ -15,6 +15,5 @@ namespace Domain.Entities
         public DateTime? UpdatedAt { get; set; }
         public Project Project { get; set; } = null!;
         public ICollection<DiscussionMessage> Messages { get; set; } = new List<DiscussionMessage>();
-        public ICollection<DiscussionCitedFolder> CitedFolders { get; set; } = new List<DiscussionCitedFolder>();
     }
 }

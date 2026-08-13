@@ -10,7 +10,7 @@ namespace Application.Interfaces.IServices
     {
         Task<IEnumerable<GroupFolderPermissionResponseDTO>> GetGroupFolderPermissionResponsesAsync(Guid folderId);
 
-        Task<FolderPermissionsViewModelDTO> GetDataForPermissionUIAsync(Guid folderId);
+        Task<FolderPermissionsViewModelDTO> GetDataForPermissionUIAsync(Guid folderId, Guid callerAccountId);
 
         Task<IEnumerable<GroupFolderPermissionResponseDTO>> GetActiveParticipantsByFolderId(Guid folderId);
 

@@ -35,20 +35,27 @@ namespace Application.Services
             return _mapper.Map<IEnumerable<GroupFilePermissionResponseDTO>>(items);
         }
 
-        public async Task<FilePermissionsViewModelDTO> GetDataForPermissionUIAsync(Guid fileItemId)
+        public async Task<FilePermissionsViewModelDTO> GetDataForPermissionUIAsync(Guid fileItemId, Guid callerAccountId)
         {
+            // Groups the caller belongs to are excluded so they cannot kick themselves out of the group.
+            var callerParticipantIds = await _unitOfWork.FilePermissionRepository.GetCallerParticipantIdsByFileItemIdAsync(fileItemId, callerAccountId);
+
             var items = await _unitOfWork.FilePermissionRepository.GetActivePartipantsByFileItemIdAsync(fileItemId);
 
             var activeGroupOfFile = _mapper.Map<IEnumerable<GroupFilePermissionResponseDTO>>(items.Values.ToList());
 
             var allProjectParticipants = await _unitOfWork.FilePermissionRepository.GetAllParticipantsByFileItemIdAsync(fileItemId);
 
-            var availableGroups = allProjectParticipants.Where(pp => !items.ContainsKey(pp.ProjectParticipantId)).ToList();
+            var availableGroups = allProjectParticipants
+                .Where(pp => !items.ContainsKey(pp.ProjectParticipantId) && !callerParticipantIds.Contains(pp.ProjectParticipantId))
+                .ToList();
 
             return new FilePermissionsViewModelDTO
             {
                 AvailableGroups = availableGroups,
-                SelectedPermissions = activeGroupOfFile.ToList()
+                SelectedPermissions = activeGroupOfFile
+                    .Where(p => !callerParticipantIds.Contains(p.ProjectParticipantId))
+                    .ToList()
             };
         }
 
@@ -79,13 +86,8 @@ namespace Application.Services
             {
                 if (existingPermissions.TryGetValue(participantId, out var perm))
                 {
-                    perm.Status = PermissionStatus.Inactive;
-                    perm.CanView = false;
-                    perm.CanEdit = false;
-                    //perm.CanUpdate = false;
-                    //perm.CanDownload = false;
-                    //perm.CanVerify = false;
-                    perm.CanApprove = false;
+                    // Gỡ khỏi danh sách override = trả file về kế thừa quyền thư mục (dòng Inactive).
+                    PermissionLevelMapper.Apply(perm, PermissionLevel.Inherit, isFile: true);
 
                     updatedParticipantIds.Add(participantId);
 
@@ -98,19 +100,7 @@ namespace Application.Services
 
             foreach (var u in dto.GroupsPermission)
             {
-                if (existingPermissions.TryGetValue(u.ProjectParticipantId, out var permission))
-                {
-                    // Update existing rows if the group was previously assigned permissions but then removed
-                    permission.CanView = u.CanView;
-                    permission.CanEdit = u.CanEdit;
-                    //permission.CanUpdate = u.CanUpdate;
-                    //permission.CanDownload = u.CanDownload;
-                    //permission.CanVerify = u.CanVerify;
-                    permission.CanApprove = true;
-                    permission.Status = PermissionStatus.Active;
-
-                }
-                else
+                if (!existingPermissions.TryGetValue(u.ProjectParticipantId, out var permission))
                 {
                     permission = new FilePermission
                     {
@@ -122,13 +112,9 @@ namespace Application.Services
                     toCreate.Add(permission);
                 }
 
-                permission.CanView = u.CanView;
-                permission.CanEdit = u.CanEdit;
-                //permission.CanUpdate = u.CanUpdate;
-                //permission.CanDownload = u.CanDownload;
-                //permission.CanVerify = u.CanVerify;
-                permission.CanApprove = true;
-                permission.Status = PermissionStatus.Active;
+                // Ánh xạ mức quyền qua nguồn chân lý duy nhất (đồng nhất với ma trận phân quyền).
+                PermissionLevelMapper.Apply(
+                    permission, PermissionLevelMapper.FromFlags(u.CanView, u.CanEdit), isFile: true);
 
                 updatedParticipantIds.Add(u.ProjectParticipantId);
 

@@ -1,0 +1,422 @@
+using Application.DTOs.RequestDTOs.PermissionMatrix;
+using Application.DTOs.ResponseDTOs.Folder;
+using Application.DTOs.ResponseDTOs.PermissionMatrix;
+using Application.ExceptionMiddleware;
+using Application.Interfaces.IRepositories;
+using Application.Interfaces.IServices;
+using Application.Interfaces.IUnitOfWork;
+using Domain.Entities;
+using Domain.Enum.Audit;
+using Domain.Enum.Cde;
+using Domain.Enum.Permission;
+
+namespace Application.Services
+{
+    /// <summary>
+    /// Dựng và lưu ma trận phân quyền. Đọc theo lô qua IPermissionMatrixRepository (tránh N+1),
+    /// tái dùng FolderTreeService cho phần lọc/hiển thị cây, và PermissionLevelMapper cho hợp đồng
+    /// lưu trữ. Đường đọc quyền vẫn nằm ở PermissionCheckingService (không đụng tới).
+    /// </summary>
+    public class PermissionMatrixService : IPermissionMatrixService
+    {
+        private readonly IPermissionMatrixRepository _matrixRepo;
+        private readonly IPermissionCheckingService _permissionChecking;
+        private readonly IFolderTreeService _folderTreeService;
+        private readonly IUnitOfWork _unitOfWork;
+        private readonly IAuditLogService _auditLog;
+
+        public PermissionMatrixService(
+            IPermissionMatrixRepository matrixRepo,
+            IPermissionCheckingService permissionChecking,
+            IFolderTreeService folderTreeService,
+            IUnitOfWork unitOfWork,
+            IAuditLogService auditLog)
+        {
+            _matrixRepo = matrixRepo;
+            _permissionChecking = permissionChecking;
+            _folderTreeService = folderTreeService;
+            _unitOfWork = unitOfWork;
+            _auditLog = auditLog;
+        }
+
+        // ===== GET =====
+
+        public async Task<PermissionMatrixResponseDTO> GetMatrixAsync(
+            Guid projectId, Guid accountId, bool isSystemAdmin, CdeArea? area = null)
+        {
+            if (!await _matrixRepo.ProjectExistsAsync(projectId))
+                throw new ApiExceptionResponse("Project not found.", 404);
+
+            var isFullAccess = isSystemAdmin
+                || await _permissionChecking.HasProjectFullAccessAsync(projectId, accountId);
+            if (!isFullAccess && !await _matrixRepo.IsLeaderInProjectAsync(projectId, accountId))
+                throw new ApiExceptionResponse("You do not have permission to access the permission matrix.", 403);
+
+            // Cột = bên tham gia đang hoạt động, TRỪ nhóm của chính caller (không tự sửa quyền nhóm mình).
+            var callerParticipantIds = await _matrixRepo.GetCallerParticipantIdsAsync(projectId, accountId);
+            var participants = await _matrixRepo.GetActiveParticipantsByProjectAsync(projectId);
+            var columns = participants
+                .Where(pp => !callerParticipantIds.Contains(pp.Id))
+                .Select(pp => new MatrixColumnDTO
+                {
+                    ProjectParticipantId = pp.Id,
+                    GroupId = pp.GroupId,
+                    GroupName = pp.Group?.Name ?? string.Empty
+                })
+                .ToList();
+
+            // Hàng thư mục: tái dùng cây đã lọc. Truyền isFullAccess làm cờ "không giới hạn" để
+            // admin/PM/PA thấy toàn bộ cây (kể cả WIP), còn leader chỉ thấy nhánh mình được View.
+            var treeRoots = await _folderTreeService.GetTreeAsync(projectId, accountId, isFullAccess, area);
+
+            var flatFolders = new List<(FolderTreeNodeDTO node, Guid? displayParentId)>();
+            void Walk(FolderTreeNodeDTO n, Guid? parentId)
+            {
+                flatFolders.Add((n, parentId));
+                foreach (var child in n.Children) Walk(child, n.Id);
+            }
+            foreach (var root in treeRoots) Walk(root, null);
+
+            var visibleFolderIds = flatFolders.Select(f => f.node.Id).ToHashSet();
+
+            // Tập được sửa (chỉ tính cho leader; full-access sửa mọi folder không phải root + mọi file).
+            var editableFolderIds = isFullAccess
+                ? new HashSet<Guid>()
+                : await ComputeLeaderEditableFolderIdsAsync(projectId, accountId);
+
+            // Hiển thị file: full-access thấy mọi file trong folder hiện; còn lại chỉ ở folder có quyền View.
+            var viewableFolderIds = isFullAccess
+                ? visibleFolderIds
+                : await _permissionChecking.GetViewableFolderIdsAsync(projectId, accountId);
+            var fileFolderIds = visibleFolderIds.Where(viewableFolderIds.Contains).ToList();
+
+            var files = await _matrixRepo.GetFilesByFolderIdsAsync(fileFolderIds);
+            var fileIds = files.Select(f => f.Id).ToList();
+
+            var folderPermIndex = IndexFolderPerms(
+                await _matrixRepo.GetActiveFolderPermissionsByFolderIdsAsync(visibleFolderIds.ToList()));
+            var filePermIndex = IndexFilePerms(
+                await _matrixRepo.GetActiveFilePermissionsByFileIdsAsync(fileIds));
+
+            var filesByFolder = files
+                .GroupBy(f => f.FolderId)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            var rows = new List<MatrixRowDTO>();
+            foreach (var (node, displayParentId) in flatFolders)
+            {
+                var isRoot = node.ParentFolderId == null;
+                var folderEditable = !isRoot && (isFullAccess || editableFolderIds.Contains(node.Id));
+
+                rows.Add(new MatrixRowDTO
+                {
+                    TargetId = node.Id,
+                    TargetType = MatrixTargetType.Folder,
+                    ParentRowId = displayParentId,
+                    Name = node.Name,
+                    Area = node.Area,
+                    IsRootArea = isRoot,
+                    Assignable = !isRoot,
+                    Cells = columns.Select(col => new MatrixCellDTO
+                    {
+                        ProjectParticipantId = col.ProjectParticipantId,
+                        Level = FolderCellLevel(folderPermIndex, node.Id, col.ProjectParticipantId),
+                        IsInherited = false,
+                        Editable = folderEditable
+                    }).ToList()
+                });
+
+                if (!filesByFolder.TryGetValue(node.Id, out var folderFiles)) continue;
+
+                var fileEditable = isFullAccess || editableFolderIds.Contains(node.Id);
+                foreach (var file in folderFiles)
+                {
+                    rows.Add(new MatrixRowDTO
+                    {
+                        TargetId = file.Id,
+                        TargetType = MatrixTargetType.File,
+                        ParentRowId = node.Id,
+                        Name = file.Name,
+                        Area = node.Area,
+                        IsRootArea = false,
+                        Assignable = true,
+                        Cells = columns.Select(col =>
+                        {
+                            var (level, inherited) = ResolveFileCell(
+                                filePermIndex, folderPermIndex, file.Id, node.Id, col.ProjectParticipantId);
+                            return new MatrixCellDTO
+                            {
+                                ProjectParticipantId = col.ProjectParticipantId,
+                                Level = level,
+                                IsInherited = inherited,
+                                Editable = fileEditable
+                            };
+                        }).ToList()
+                    });
+                }
+            }
+
+            return new PermissionMatrixResponseDTO
+            {
+                ProjectId = projectId,
+                Columns = columns,
+                Rows = rows,
+                Actor = new MatrixActorScopeDTO
+                {
+                    IsFullAccess = isFullAccess,
+                    EditableFolderIds = isFullAccess ? new List<Guid>() : editableFolderIds.ToList()
+                }
+            };
+        }
+
+        // ===== PUT =====
+
+        public async Task<List<MatrixCellResultDTO>> SaveMatrixAsync(
+            Guid projectId, SavePermissionMatrixDTO dto, Guid accountId, bool isSystemAdmin)
+        {
+            if (!await _matrixRepo.ProjectExistsAsync(projectId))
+                throw new ApiExceptionResponse("Project not found.", 404);
+
+            var isFullAccess = isSystemAdmin
+                || await _permissionChecking.HasProjectFullAccessAsync(projectId, accountId);
+            if (!isFullAccess && !await _matrixRepo.IsLeaderInProjectAsync(projectId, accountId))
+                throw new ApiExceptionResponse("You do not have permission to edit the permission matrix.", 403);
+
+            var changes = dto.Changes ?? new List<MatrixCellChangeDTO>();
+            if (changes.Count == 0)
+                throw new ApiExceptionResponse("No changes provided.", 400);
+
+            // Dữ liệu tham chiếu để kiểm tra hợp lệ.
+            var projectFolders = await _matrixRepo.GetProjectFoldersAsync(projectId);
+            var folderById = projectFolders.ToDictionary(f => f.Id);
+            var rootAreaIds = projectFolders.Where(f => f.ParentFolderId == null).Select(f => f.Id).ToHashSet();
+
+            var participantIds = (await _matrixRepo.GetActiveParticipantsByProjectAsync(projectId))
+                .Select(pp => pp.Id).ToHashSet();
+
+            // Nhóm của chính caller không nằm trên ma trận -> chặn luôn ở đường ghi (tránh payload dựng tay).
+            var callerParticipantIds = await _matrixRepo.GetCallerParticipantIdsAsync(projectId, accountId);
+
+            var fileChangeIds = changes
+                .Where(c => c.TargetType == MatrixTargetType.File)
+                .Select(c => c.TargetId).Distinct().ToList();
+            var fileById = (await _matrixRepo.GetFilesByIdsAsync(fileChangeIds)).ToDictionary(f => f.Id);
+
+            var editableFolderIds = isFullAccess
+                ? null
+                : await ComputeLeaderEditableFolderIdsAsync(projectId, accountId);
+
+            // Kiểm tra TOÀN BỘ lô trước khi ghi.
+            foreach (var c in changes)
+            {
+                if (!participantIds.Contains(c.ProjectParticipantId))
+                    throw new ApiExceptionResponse("Participant does not belong to this project.", 400);
+
+                if (callerParticipantIds.Contains(c.ProjectParticipantId))
+                    throw new ApiExceptionResponse("You cannot change permissions for your own group.", 403);
+
+                if (c.TargetType == MatrixTargetType.Folder)
+                {
+                    if (!folderById.ContainsKey(c.TargetId))
+                        throw new ApiExceptionResponse("Folder does not belong to this project.", 400);
+                    if (rootAreaIds.Contains(c.TargetId))
+                        throw new ApiExceptionResponse("Root areas are not assignable.", 403);
+                    if (c.Level == PermissionLevel.Inherit)
+                        throw new ApiExceptionResponse("Folders cannot inherit; use N/R/W.", 400);
+                    if (!(isFullAccess || editableFolderIds!.Contains(c.TargetId)))
+                        throw new ApiExceptionResponse("You cannot assign permissions on this folder.", 403);
+                }
+                else
+                {
+                    if (!fileById.TryGetValue(c.TargetId, out var file) || !folderById.ContainsKey(file.FolderId))
+                        throw new ApiExceptionResponse("File does not belong to this project.", 400);
+                    if (!(isFullAccess || editableFolderIds!.Contains(file.FolderId)))
+                        throw new ApiExceptionResponse("You cannot assign permissions on this file.", 403);
+                }
+            }
+
+            // Nạp CÓ tracking các dòng hiện có để cập nhật.
+            var changedFolderIds = changes
+                .Where(c => c.TargetType == MatrixTargetType.Folder)
+                .Select(c => c.TargetId).Distinct().ToList();
+            var changedParticipantIds = changes.Select(c => c.ProjectParticipantId).Distinct().ToList();
+
+            var existingFolderPerms = (await _matrixRepo
+                    .GetFolderPermissionsForUpdateAsync(changedFolderIds, changedParticipantIds))
+                .Where(fp => fp.ProjectParticipantId.HasValue)
+                .ToDictionary(fp => (fp.FolderId, fp.ProjectParticipantId!.Value));
+            var existingFilePerms = (await _matrixRepo
+                    .GetFilePermissionsForUpdateAsync(fileChangeIds, changedParticipantIds))
+                .Where(fp => fp.ProjectParticipantId.HasValue)
+                .ToDictionary(fp => (fp.FileItemId, fp.ProjectParticipantId!.Value));
+
+            var foldersToCreate = new List<FolderPermission>();
+            var filesToCreate = new List<FilePermission>();
+
+            foreach (var c in changes)
+            {
+                if (c.TargetType == MatrixTargetType.Folder)
+                {
+                    if (existingFolderPerms.TryGetValue((c.TargetId, c.ProjectParticipantId), out var perm))
+                    {
+                        PermissionLevelMapper.Apply(perm, c.Level, isFile: false);
+                    }
+                    else if (c.Level is PermissionLevel.Read or PermissionLevel.Write)
+                    {
+                        // N/Inherit không có dòng cũ = vắng mặt = không quyền -> không cần tạo dòng.
+                        var np = new FolderPermission
+                        {
+                            Id = Guid.NewGuid(),
+                            FolderId = c.TargetId,
+                            ProjectParticipantId = c.ProjectParticipantId
+                        };
+                        PermissionLevelMapper.Apply(np, c.Level, isFile: false);
+                        foldersToCreate.Add(np);
+                    }
+                }
+                else
+                {
+                    if (existingFilePerms.TryGetValue((c.TargetId, c.ProjectParticipantId), out var perm))
+                    {
+                        PermissionLevelMapper.Apply(perm, c.Level, isFile: true);
+                    }
+                    else if (c.Level != PermissionLevel.Inherit)
+                    {
+                        // N (chặn) / R / W đều cần dòng override. Inherit không có dòng cũ = giữ kế thừa.
+                        var np = new FilePermission
+                        {
+                            Id = Guid.NewGuid(),
+                            FileItemId = c.TargetId,
+                            ProjectParticipantId = c.ProjectParticipantId
+                        };
+                        PermissionLevelMapper.Apply(np, c.Level, isFile: true);
+                        filesToCreate.Add(np);
+                    }
+                }
+            }
+
+            if (foldersToCreate.Count > 0)
+                await _unitOfWork.Repository<FolderPermission>().CreateRangeAsync(foldersToCreate);
+            if (filesToCreate.Count > 0)
+                await _unitOfWork.Repository<FilePermission>().CreateRangeAsync(filesToCreate);
+
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.PermissionChange,
+                nameof(Project), projectId.ToString(), accountId,
+                detail: $"Cập nhật ma trận phân quyền: {changes.Count} ô",
+                projectId: projectId);
+
+            await _unitOfWork.CommitAsync();
+
+            return await BuildSaveResultAsync(changes);
+        }
+
+        // ===== Helpers =====
+
+        // Tập folder leader được sửa = folder được giao (có FolderPermission Active cho nhóm leader),
+        // trừ root area, cộng toàn bộ folder con (BFS trên bản đồ cha->con của dự án).
+        private async Task<HashSet<Guid>> ComputeLeaderEditableFolderIdsAsync(Guid projectId, Guid accountId)
+        {
+            var leaderParticipantIds = await _matrixRepo.GetLeaderParticipantIdsAsync(projectId, accountId);
+            if (leaderParticipantIds.Count == 0) return new HashSet<Guid>();
+
+            var delegatedRoots = await _matrixRepo
+                .GetFolderIdsWithActivePermissionForParticipantsAsync(leaderParticipantIds);
+
+            var projectFolders = await _matrixRepo.GetProjectFoldersAsync(projectId);
+            var rootAreaIds = projectFolders.Where(f => f.ParentFolderId == null).Select(f => f.Id).ToHashSet();
+            var childrenByParent = projectFolders
+                .Where(f => f.ParentFolderId.HasValue)
+                .GroupBy(f => f.ParentFolderId!.Value)
+                .ToDictionary(g => g.Key, g => g.Select(f => f.Id).ToList());
+
+            var result = new HashSet<Guid>();
+            var queue = new Queue<Guid>(delegatedRoots.Where(id => !rootAreaIds.Contains(id)));
+            while (queue.Count > 0)
+            {
+                var id = queue.Dequeue();
+                if (!result.Add(id)) continue;
+                if (childrenByParent.TryGetValue(id, out var kids))
+                    foreach (var k in kids) queue.Enqueue(k);
+            }
+            return result;
+        }
+
+        private async Task<List<MatrixCellResultDTO>> BuildSaveResultAsync(List<MatrixCellChangeDTO> changes)
+        {
+            var folderIds = changes
+                .Where(c => c.TargetType == MatrixTargetType.Folder)
+                .Select(c => c.TargetId).Distinct().ToList();
+            var fileIds = changes
+                .Where(c => c.TargetType == MatrixTargetType.File)
+                .Select(c => c.TargetId).Distinct().ToList();
+
+            var folderIdByFile = (await _matrixRepo.GetFilesByIdsAsync(fileIds))
+                .ToDictionary(f => f.Id, f => f.FolderId);
+
+            var folderPermFolderIds = folderIds.Union(folderIdByFile.Values).Distinct().ToList();
+            var folderPermIndex = IndexFolderPerms(
+                await _matrixRepo.GetActiveFolderPermissionsByFolderIdsAsync(folderPermFolderIds));
+            var filePermIndex = IndexFilePerms(
+                await _matrixRepo.GetActiveFilePermissionsByFileIdsAsync(fileIds));
+
+            var results = new List<MatrixCellResultDTO>(changes.Count);
+            foreach (var c in changes)
+            {
+                if (c.TargetType == MatrixTargetType.Folder)
+                {
+                    results.Add(new MatrixCellResultDTO
+                    {
+                        TargetId = c.TargetId,
+                        TargetType = c.TargetType,
+                        ProjectParticipantId = c.ProjectParticipantId,
+                        Level = FolderCellLevel(folderPermIndex, c.TargetId, c.ProjectParticipantId),
+                        IsInherited = false
+                    });
+                }
+                else
+                {
+                    var folderId = folderIdByFile.TryGetValue(c.TargetId, out var fid) ? fid : Guid.Empty;
+                    var (level, inherited) = ResolveFileCell(
+                        filePermIndex, folderPermIndex, c.TargetId, folderId, c.ProjectParticipantId);
+                    results.Add(new MatrixCellResultDTO
+                    {
+                        TargetId = c.TargetId,
+                        TargetType = c.TargetType,
+                        ProjectParticipantId = c.ProjectParticipantId,
+                        Level = level,
+                        IsInherited = inherited
+                    });
+                }
+            }
+            return results;
+        }
+
+        private static Dictionary<(Guid, Guid), FolderPermission> IndexFolderPerms(List<FolderPermission> perms)
+            => perms.Where(p => p.ProjectParticipantId.HasValue)
+                    .ToDictionary(p => (p.FolderId, p.ProjectParticipantId!.Value));
+
+        private static Dictionary<(Guid, Guid), FilePermission> IndexFilePerms(List<FilePermission> perms)
+            => perms.Where(p => p.ProjectParticipantId.HasValue)
+                    .ToDictionary(p => (p.FileItemId, p.ProjectParticipantId!.Value));
+
+        // Ô thư mục: có dòng Active -> N/R/W; không có -> N (thư mục phẳng, mặc định không quyền).
+        private static PermissionLevel FolderCellLevel(
+            Dictionary<(Guid, Guid), FolderPermission> folderPermIndex, Guid folderId, Guid participantId)
+            => folderPermIndex.TryGetValue((folderId, participantId), out var acl)
+                ? PermissionLevelMapper.ToLevel(acl)
+                : PermissionLevel.NoAccess;
+
+        // Ô file: có override -> lấy trực tiếp (Explicit); không có -> kế thừa quyền thư mục (Inherited).
+        private static (PermissionLevel level, bool inherited) ResolveFileCell(
+            Dictionary<(Guid, Guid), FilePermission> filePermIndex,
+            Dictionary<(Guid, Guid), FolderPermission> folderPermIndex,
+            Guid fileId, Guid folderId, Guid participantId)
+        {
+            if (filePermIndex.TryGetValue((fileId, participantId), out var fileAcl))
+                return (PermissionLevelMapper.ToLevel(fileAcl), false);
+
+            return (FolderCellLevel(folderPermIndex, folderId, participantId), true);
+        }
+    }
+}

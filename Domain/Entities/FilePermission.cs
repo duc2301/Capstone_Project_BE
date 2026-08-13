@@ -6,7 +6,7 @@ using System.Text;
 
 namespace Domain.Entities
 {
-    public class FilePermission
+    public class FilePermission : IPermissionAcl
     {
         public Guid Id { get; set; }
         public Guid FileItemId { get; set; }

@@ -16,7 +16,5 @@ namespace Domain.Entities
         public DateTime? UpdatedAt { get; set; }
 
         public ContractPackage ContractPackage { get; set; } = null!;
-        public ICollection<ContractAppendix> Appendices { get; set; } = new List<ContractAppendix>();
-        public ICollection<BillItem> BillItems { get; set; } = new List<BillItem>();
     }
 }

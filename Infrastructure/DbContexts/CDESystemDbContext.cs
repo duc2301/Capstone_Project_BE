@@ -55,16 +55,13 @@ namespace Infrastructure.DbContexts
 
         // --- Module E: Thảo luận ---
         public virtual DbSet<Discussion> Discussions { get; set; }
-        public virtual DbSet<DiscussionCitedFolder> DiscussionCitedFolders { get; set; }
         public virtual DbSet<DiscussionMessage> DiscussionMessages { get; set; }
         public virtual DbSet<MessageAttachment> MessageAttachments { get; set; }
         public virtual DbSet<MessageMention> MessageMentions { get; set; }
 
         // --- Module F: Issues / RFI ---
         public virtual DbSet<Issue> Issues { get; set; }
-        public virtual DbSet<IssueComment> IssueComments { get; set; }
         public virtual DbSet<IssueAttachment> IssueAttachments { get; set; }
-        public virtual DbSet<IssueCitedFolder> IssueCitedFolders { get; set; }
         public virtual DbSet<IssueMention> IssueMentions { get; set; }
 
         // --- Module H: Nhật ký / RAG ---
@@ -74,8 +71,6 @@ namespace Infrastructure.DbContexts
 
         // --- Module J: Hợp đồng / Bill thầu ---
         public virtual DbSet<Contract> Contracts { get; set; }
-        public virtual DbSet<ContractAppendix> ContractAppendices { get; set; }
-        public virtual DbSet<BillItem> BillItems { get; set; }
 
         // --- Module L: Giải phóng mặt bằng / Công trường số ---
         public virtual DbSet<ProjectLocation> ProjectLocations { get; set; }
@@ -224,11 +219,7 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(l => l.LinkedFileItemId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            modelBuilder.Entity<BillItem>()
-                .HasOne(b => b.ParentBillItem)
-                .WithMany(b => b.ChildBillItems)
-                .HasForeignKey(b => b.ParentBillItemId)
-                .OnDelete(DeleteBehavior.Restrict);
+            
 
             modelBuilder.Entity<DiscussionMessage>()
                 .HasOne(m => m.ReplyToMessage)

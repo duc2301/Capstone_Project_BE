@@ -3,6 +3,7 @@ using System;
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Pgvector;
@@ -12,9 +13,11 @@ using Pgvector;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    partial class CDESystemDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260813122452_DeleteUnecessaryTable")]
+    partial class DeleteUnecessaryTable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1243,9 +1246,6 @@ namespace Infrastructure.Migrations
                     b.Property<Guid?>("AssignedToAccountId")
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("AssignedToGroupId")
-                        .HasColumnType("uuid");
-
                     b.Property<Guid?>("AssignedToOrganizationId")
                         .HasColumnType("uuid");
 
@@ -1380,12 +1380,9 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<Guid>("RuleSetId")
-                        .HasColumnType("uuid");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("RuleSetId", "CodeNormalized")
+                    b.HasIndex("CodeNormalized")
                         .IsUnique();
 
                     b.ToTable("LoiComponents");
@@ -1424,40 +1421,6 @@ namespace Infrastructure.Migrations
                     b.ToTable("LoiFieldAliases");
                 });
 
-            modelBuilder.Entity("Domain.Entities.LoiParameter", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Discipline")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("NameNormalized")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("OrderIndex")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("ParamGroup")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("RuleSetId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RuleSetId", "Discipline", "NameNormalized")
-                        .IsUnique();
-
-                    b.ToTable("LoiParameters");
-                });
-
             modelBuilder.Entity("Domain.Entities.LoiRequirement", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1481,9 +1444,6 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<int>("FieldOrder")
-                        .HasColumnType("integer");
-
                     b.Property<int>("ParamGroup")
                         .HasColumnType("integer");
 
@@ -1495,9 +1455,6 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<Guid>("RuleSetId")
-                        .HasColumnType("uuid");
-
                     b.Property<int>("Stage")
                         .HasColumnType("integer");
 
@@ -1508,44 +1465,9 @@ namespace Infrastructure.Migrations
 
                     b.HasIndex("ParamNameNormalized");
 
-                    b.HasIndex("RuleSetId", "Discipline", "ComponentCode");
+                    b.HasIndex("Discipline", "ComponentCode");
 
                     b.ToTable("LoiRequirements");
-                });
-
-            modelBuilder.Entity("Domain.Entities.LoiRuleSet", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("CreatedByAccountId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsDefault")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsSystem")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IsDefault");
-
-                    b.ToTable("LoiRuleSets");
                 });
 
             modelBuilder.Entity("Domain.Entities.MarkupSet", b =>
@@ -2061,9 +1983,6 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime?>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid?>("LoiRuleSetId")
-                        .HasColumnType("uuid");
-
                     b.Property<Guid?>("ManagerAccountId")
                         .HasColumnType("uuid");
 
@@ -2093,8 +2012,6 @@ namespace Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("LoiRuleSetId");
 
                     b.HasIndex("OwnerOrganizationId");
 
@@ -2747,35 +2664,6 @@ namespace Infrastructure.Migrations
                     b.Navigation("MemberOrganization");
                 });
 
-            modelBuilder.Entity("Domain.Entities.LoiComponent", b =>
-                {
-                    b.HasOne("Domain.Entities.LoiRuleSet", null)
-                        .WithMany()
-                        .HasForeignKey("RuleSetId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Domain.Entities.LoiParameter", b =>
-                {
-                    b.HasOne("Domain.Entities.LoiRuleSet", "RuleSet")
-                        .WithMany()
-                        .HasForeignKey("RuleSetId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("RuleSet");
-                });
-
-            modelBuilder.Entity("Domain.Entities.LoiRequirement", b =>
-                {
-                    b.HasOne("Domain.Entities.LoiRuleSet", null)
-                        .WithMany()
-                        .HasForeignKey("RuleSetId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("Domain.Entities.MarkupSet", b =>
                 {
                     b.HasOne("Domain.Entities.FileItem", "FileItem")
@@ -2912,11 +2800,6 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Domain.Entities.Project", b =>
                 {
-                    b.HasOne("Domain.Entities.LoiRuleSet", null)
-                        .WithMany()
-                        .HasForeignKey("LoiRuleSetId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("Domain.Entities.Organization", "OwnerOrganization")
                         .WithMany()
                         .HasForeignKey("OwnerOrganizationId")

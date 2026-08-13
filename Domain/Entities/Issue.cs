@@ -26,7 +26,6 @@ namespace Domain.Entities
         public DateTime? UpdatedAt { get; set; }
 
         public Project Project { get; set; } = null!;
-        public ICollection<IssueComment> Comments { get; set; } = new List<IssueComment>();
         public ICollection<IssueAttachment> Attachments { get; set; } = new List<IssueAttachment>();
     }
 }
