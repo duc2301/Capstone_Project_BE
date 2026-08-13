@@ -15,6 +15,7 @@ namespace Application.Interfaces.IRepositories
         Task<IEnumerable<FolderPermission>> GetFolderPermissionsByParticipantIdsAsync(Guid folderId, List<Guid> listFolderPermissionId);
         Task<FolderPermission?> GetFolderPermissionByFolderIdAndParticipantIdAsync(Guid folderId, Guid participantId);
         Task<IEnumerable<ParticipantItems>> GetAllParticipantsByFolderIdAsync(Guid folderId);
+        Task<HashSet<Guid>> GetCallerParticipantIdsByFolderIdAsync(Guid folderId, Guid accountId);
 
     }
 }

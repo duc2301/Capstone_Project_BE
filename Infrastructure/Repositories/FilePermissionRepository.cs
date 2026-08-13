@@ -1,6 +1,7 @@
 using Application.DTOs.ResponseDTOs.Permission;
 using Application.Interfaces.IRepositories;
 using Domain.Entities;
+using Domain.Enum.Group;
 using Domain.Enum.Permission;
 using Domain.Enum.Project;
 using Infrastructure.DbContexts;
@@ -66,6 +67,31 @@ namespace Infrastructure.Repositories
                             })
                             .AsNoTracking()
                             .ToListAsync();
+        }
+
+        /// <summary>
+        /// Get the ProjectParticipant ids (within the file's project) that the caller belongs to,
+        /// i.e. participants whose group the caller is an active member of.
+        /// Used to hide the caller's own group from the permission-assigning UI so they cannot
+        /// remove/kick themselves out of the group.
+        /// </summary>
+        public async Task<HashSet<Guid>> GetCallerParticipantIdsByFileItemIdAsync(Guid fileItemId, Guid accountId)
+        {
+            var projectId = await _context.FileItems
+                            .Where(f => f.Id == fileItemId)
+                            .Select(f => f.Folder.ProjectId)
+                            .SingleAsync();
+
+            var participantIds = await _context.ProjectParticipants
+                            .Where(pp => pp.ProjectId == projectId
+                                      && pp.Status == ProjectParticipantStatus.Active
+                                      && _context.GroupMembers.Any(gm => gm.GroupId == pp.GroupId
+                                                                      && gm.AccountId == accountId
+                                                                      && gm.Status == GroupMemberStatus.Active))
+                            .Select(pp => pp.Id)
+                            .ToListAsync();
+
+            return participantIds.ToHashSet();
         }
 
         public async Task<IEnumerable<FilePermission>> GetActiveGroupsByFileItemId(Guid fileitemId)

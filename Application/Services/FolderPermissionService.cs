@@ -30,20 +30,27 @@ namespace Application.Services
             return _mapper.Map<IEnumerable<GroupFolderPermissionResponseDTO>>(items);
         }
 
-        public async Task<FolderPermissionsViewModelDTO> GetDataForPermissionUIAsync(Guid folderId)
+        public async Task<FolderPermissionsViewModelDTO> GetDataForPermissionUIAsync(Guid folderId, Guid callerAccountId)
         {
+            // Groups the caller belongs to are excluded so they cannot kick themselves out of the group.
+            var callerParticipantIds = await _unitOfWork.FolderPermissionRepository.GetCallerParticipantIdsByFolderIdAsync(folderId, callerAccountId);
+
             var items = await _unitOfWork.FolderPermissionRepository.GetActivePartipantsByFolderIdAsync(folderId);
 
             var activeGroupOfFolder = _mapper.Map<IEnumerable<GroupFolderPermissionResponseDTO>>(items.Values.ToList());
 
             var allProjectParticipants = await _unitOfWork.FolderPermissionRepository.GetAllParticipantsByFolderIdAsync(folderId);
 
-            var availableGroups = allProjectParticipants.Where(pp => !items.ContainsKey(pp.ProjectParticipantId)).ToList();
+            var availableGroups = allProjectParticipants
+                .Where(pp => !items.ContainsKey(pp.ProjectParticipantId) && !callerParticipantIds.Contains(pp.ProjectParticipantId))
+                .ToList();
 
             return new FolderPermissionsViewModelDTO
             {
                 AvailableGroups = availableGroups,
-                SelectedPermissions = activeGroupOfFolder.ToList()
+                SelectedPermissions = activeGroupOfFolder
+                    .Where(p => !callerParticipantIds.Contains(p.ProjectParticipantId))
+                    .ToList()
             };
         }
 

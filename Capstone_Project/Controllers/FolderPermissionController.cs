@@ -33,7 +33,7 @@ namespace Capstone_Project.Controllers
         [HttpGet("{folderId:guid}/group-ui")]
         public async Task<IActionResult> GetDataForFolderPermissionUI(Guid folderId)
         {
-            var result = await _folderPermissionService.GetDataForPermissionUIAsync(folderId);
+            var result = await _folderPermissionService.GetDataForPermissionUIAsync(folderId, User.GetAccountId());
             return Ok(ApiResponse.Success("Group with permission retrieved successfully", result));
         }
 
