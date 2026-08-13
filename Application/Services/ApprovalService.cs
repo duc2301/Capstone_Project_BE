@@ -727,11 +727,21 @@ namespace Application.Services
             if (account?.Role == Domain.Enum.Account.AccountRole.Admin)
                 return true;
 
+            if (await IsProjectManagerOfFileAsync(actor, fileItem))
+                return true;
+
             if (request.RequiresSignature && await IsRequiredSignerAsync(actor, request.Id))
                 return true;
 
             var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, requireApprovePermission: true);
             return await IsGroupLeaderAsync(actor, teamGroupIds);
+        }
+
+        private async Task<bool> IsProjectManagerOfFileAsync(Guid actor, FileItem fileItem)
+        {
+            var folder = await GetFolderAsync(fileItem.FolderId);
+            var project = await _unitOfWork.Repository<Project>().GetByIdAsync(folder.ProjectId);
+            return project?.ManagerAccountId == actor;
         }
 
         /// <summary>Actor có phải người/nhóm (thành viên active) được chỉ định ký cho request này không.</summary>

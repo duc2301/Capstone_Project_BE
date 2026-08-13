@@ -146,6 +146,7 @@ namespace Application.Services
                 Urn = version.ViewerUrn,                 // có thể đã có (Processing/Ready) hoặc null (Pending)
                 ViewerStatus = version.ViewerStatus,
                 ViewerProgress = version.ViewerProgress,
+                ViewerError = version.ViewerError,
                 FileName = fileName,
                 Format = format,
             };
