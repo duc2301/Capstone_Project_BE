@@ -24,6 +24,7 @@ namespace Capstone_Project.Controllers
         private readonly IPdfSignatureService _pdfSignature;
         private readonly IFileLinkService _fileLink;
         private readonly IFileArchiveService _fileArchive;
+        private readonly IFileDeletionService _fileDeletion;
 
         public FileItemsController(
             IFileItemService service,
@@ -34,7 +35,8 @@ namespace Capstone_Project.Controllers
             IFileSignaturePositionService signaturePosition,
             IPdfSignatureService pdfSignature,
             IFileLinkService fileLink,
-            IFileArchiveService fileArchive)
+            IFileArchiveService fileArchive,
+            IFileDeletionService fileDeletion)
         {
             _service = service;
             _upload = upload;
@@ -45,6 +47,7 @@ namespace Capstone_Project.Controllers
             _pdfSignature = pdfSignature;
             _fileLink = fileLink;
             _fileArchive = fileArchive;
+            _fileDeletion = fileDeletion;
         }
 
         // Luồng tải file lên (multipart/form-data): file + FolderId + FileType + (Name tùy chọn).
@@ -130,6 +133,12 @@ namespace Capstone_Project.Controllers
             => Ok(ApiResponse.Success(
                 "File sealed to archive",
                 new { archivedFileItemId = await _fileArchive.SealToArchiveAsync(id, User.GetAccountId(), User.GetSystemRole() ?? string.Empty) }));
+
+        [HttpDelete("{id:guid}/flagged")]
+        public async Task<IActionResult> DeleteFlagged(Guid id, CancellationToken ct)
+            => Ok(ApiResponse.Success(
+                "File deleted",
+                await _fileDeletion.DeleteFlaggedAsync(id, User.GetAccountId(), User.IsAdmin(), ct)));
 
         /// <summary>
         /// Luu vi tri dat chu ky truc quan tren PDF (chi PDF, chi khi file dang o WIP).

@@ -131,6 +131,15 @@ namespace Infrastructure.Adapters.Storage
             return Task.FromResult<string?>(Client.GetPreSignedURL(req));
         }
 
+        public async Task DeleteAsync(string storagePath, CancellationToken ct = default)
+        {
+            await Client.DeleteObjectAsync(new DeleteObjectRequest
+            {
+                BucketName = _bucket,
+                Key = storagePath
+            }, ct);
+        }
+
         public string GetContentType(string fileNameOrExt)
         {
             var ext = NormalizeExt(Path.GetExtension(fileNameOrExt) is { Length: > 0 } e ? e : fileNameOrExt);

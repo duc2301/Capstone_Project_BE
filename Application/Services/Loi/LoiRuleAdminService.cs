@@ -63,7 +63,7 @@ namespace Application.Services.Loi
 
             await _uow.Repository<LoiRuleSet>().CreateAsync(entity);
             await _audit.LogAsync(LogScope.System, AuditAction.Create, RuleSetEntity, entity.Id.ToString(), actor,
-                $"Tạo bộ luật LOI \"{entity.Name}\"");
+                $"Tạo bộ luật thông tin phi hình học \"{entity.Name}\"");
             await _uow.CommitAsync();
 
             return Map(entity, await _rules.GetRuleSetCountsAsync(ct),
@@ -88,7 +88,7 @@ namespace Application.Services.Loi
             entity.UpdatedAt = DateTime.UtcNow;
             _uow.Repository<LoiRuleSet>().Update(entity);
             await _audit.LogAsync(LogScope.System, AuditAction.Update, RuleSetEntity, entity.Id.ToString(), actor,
-                $"Sửa bộ luật LOI \"{entity.Name}\"");
+                $"Sửa bộ luật thông tin phi hình học \"{entity.Name}\"");
             await _uow.CommitAsync();
 
             return Map(entity, await _rules.GetRuleSetCountsAsync(ct),
@@ -114,7 +114,7 @@ namespace Application.Services.Loi
 
             _uow.Repository<LoiRuleSet>().Delete(entity);
             await _audit.LogAsync(LogScope.System, AuditAction.Delete, RuleSetEntity, entity.Id.ToString(), actor,
-                $"Xoá bộ luật LOI \"{entity.Name}\"");
+                $"Xoá bộ luật thông tin phi hình học \"{entity.Name}\"");
             await _uow.CommitAsync();
         }
 
@@ -135,7 +135,7 @@ namespace Application.Services.Loi
             _uow.Repository<LoiRuleSet>().Update(entity);
 
             await _audit.LogAsync(LogScope.System, AuditAction.Update, RuleSetEntity, entity.Id.ToString(), actor,
-                $"Đặt \"{entity.Name}\" làm bộ luật LOI mặc định");
+                $"Đặt \"{entity.Name}\" làm bộ luật thông tin phi hình học mặc định");
             await _uow.CommitAsync();
 
             return Map(entity, await _rules.GetRuleSetCountsAsync(ct),
@@ -182,7 +182,7 @@ namespace Application.Services.Loi
 
             await _uow.Repository<LoiComponent>().CreateAsync(entity);
             await _audit.LogAsync(LogScope.System, AuditAction.Create, ComponentEntity, entity.Id.ToString(), actor,
-                $"Thêm cấu kiện LOI {entity.Code} — {entity.Name}");
+                $"Thêm cấu kiện {entity.Code} — {entity.Name}");
             await _uow.CommitAsync();
 
             return MapComponent(entity, await _rules.GetComponentUsageAsync(ruleSetId, ct));
@@ -233,7 +233,7 @@ namespace Application.Services.Loi
 
             _uow.Repository<LoiComponent>().Update(entity);
             await _audit.LogAsync(LogScope.System, AuditAction.Update, ComponentEntity, entity.Id.ToString(), actor,
-                $"Sửa cấu kiện LOI {entity.Code} — {entity.Name}");
+                $"Sửa cấu kiện {entity.Code} — {entity.Name}");
             await _uow.CommitAsync();
 
             return MapComponent(entity, await _rules.GetComponentUsageAsync(ruleSetId, ct));
@@ -250,7 +250,7 @@ namespace Application.Services.Loi
 
             _uow.Repository<LoiComponent>().Delete(entity);
             await _audit.LogAsync(LogScope.System, AuditAction.Delete, ComponentEntity, entity.Id.ToString(), actor,
-                $"Xoá cấu kiện LOI {entity.Code} — {entity.Name} ({requirements.Count} dòng yêu cầu)");
+                $"Xoá cấu kiện {entity.Code} — {entity.Name} ({requirements.Count} dòng yêu cầu)");
             await _uow.CommitAsync();
         }
 
@@ -336,7 +336,7 @@ namespace Application.Services.Loi
             }
 
             await _audit.LogAsync(LogScope.System, AuditAction.Update, RequirementEntity, component.Id.ToString(), actor,
-                $"Cập nhật yêu cầu LOI của {component.Code} — biến thể \"{variant ?? "(mặc định)"}\": {dto.Rows.Count} dòng / {cellCount} ô");
+                $"Cập nhật yêu cầu thông tin của {component.Code} — biến thể \"{variant ?? "(mặc định)"}\": {dto.Rows.Count} dòng / {cellCount} ô");
             await _uow.CommitAsync();
 
             return await GetMatrixAsync(ruleSetId, componentId, ct);
@@ -370,7 +370,7 @@ namespace Application.Services.Loi
             }
 
             await _audit.LogAsync(LogScope.System, AuditAction.Update, RequirementEntity, component.Id.ToString(), actor,
-                $"Đổi tên biến thể LOI của {component.Code}: \"{currentVariant ?? "(mặc định)"}\" thành \"{newVariant ?? "(mặc định)"}\"");
+                $"Đổi tên biến thể của {component.Code}: \"{currentVariant ?? "(mặc định)"}\" thành \"{newVariant ?? "(mặc định)"}\"");
             await _uow.CommitAsync();
 
             return await GetMatrixAsync(ruleSetId, componentId, ct);
@@ -391,7 +391,7 @@ namespace Application.Services.Loi
                 _uow.Repository<LoiRequirement>().Delete(requirement);
 
             await _audit.LogAsync(LogScope.System, AuditAction.Delete, RequirementEntity, component.Id.ToString(), actor,
-                $"Xoá biến thể LOI \"{normalized ?? "(mặc định)"}\" của {component.Code} ({target.Count} dòng)");
+                $"Xoá biến thể \"{normalized ?? "(mặc định)"}\" của {component.Code} ({target.Count} dòng)");
             await _uow.CommitAsync();
 
             return await GetMatrixAsync(ruleSetId, componentId, ct);
@@ -438,7 +438,7 @@ namespace Application.Services.Loi
 
             await _uow.Repository<LoiParameter>().CreateAsync(entity);
             await _audit.LogAsync(LogScope.System, AuditAction.Create, ParameterEntity, entity.Id.ToString(), actor,
-                $"Thêm tham số chuẩn LOI \"{entity.Name}\"");
+                $"Thêm tham số chuẩn \"{entity.Name}\"");
             await _uow.CommitAsync();
 
             return MapParameter(entity, await _rules.GetParameterUsageAsync(ruleSetId, ct));
@@ -490,7 +490,7 @@ namespace Application.Services.Loi
 
             _uow.Repository<LoiParameter>().Update(entity);
             await _audit.LogAsync(LogScope.System, AuditAction.Update, ParameterEntity, entity.Id.ToString(), actor,
-                $"Sửa tham số chuẩn LOI \"{entity.Name}\" ({affected.Count} dòng yêu cầu cập nhật theo)");
+                $"Sửa tham số chuẩn \"{entity.Name}\" ({affected.Count} dòng yêu cầu cập nhật theo)");
             await _uow.CommitAsync();
 
             return MapParameter(entity, await _rules.GetParameterUsageAsync(ruleSetId, ct));
@@ -508,7 +508,7 @@ namespace Application.Services.Loi
 
             _uow.Repository<LoiParameter>().Delete(entity);
             await _audit.LogAsync(LogScope.System, AuditAction.Delete, ParameterEntity, entity.Id.ToString(), actor,
-                $"Xoá tham số chuẩn LOI \"{entity.Name}\"");
+                $"Xoá tham số chuẩn \"{entity.Name}\"");
             await _uow.CommitAsync();
         }
 
@@ -595,7 +595,7 @@ namespace Application.Services.Loi
 
             if (!isSystemAdmin && project.ManagerAccountId != actor)
                 throw new ApiExceptionResponse(
-                    "Chỉ quản trị hệ thống hoặc quản lý dự án được đổi bộ luật kiểm LOI của dự án.", 403);
+                    "Chỉ quản trị hệ thống hoặc quản lý dự án được đổi bộ luật thông tin phi hình học của dự án.", 403);
 
             LoiRuleSet? ruleSet = null;
             if (ruleSetId.HasValue)
@@ -607,8 +607,8 @@ namespace Application.Services.Loi
 
             await _audit.LogAsync(LogScope.Project, AuditAction.Update, RuleSetEntity, projectId.ToString(), actor,
                 ruleSet is null
-                    ? "Dự án dùng bộ luật kiểm LOI mặc định của hệ thống"
-                    : $"Dự án chuyển sang bộ luật kiểm LOI \"{ruleSet.Name}\"",
+                    ? "Dự án dùng bộ luật thông tin phi hình học mặc định của hệ thống"
+                    : $"Dự án chuyển sang bộ luật thông tin phi hình học \"{ruleSet.Name}\"",
                 projectId);
             await _uow.CommitAsync();
 
@@ -640,14 +640,14 @@ namespace Application.Services.Loi
 
             if (!isSystemAdmin && project.ManagerAccountId != actor)
                 throw new ApiExceptionResponse(
-                    "Chỉ quản trị hệ thống hoặc quản lý dự án được xem danh sách bộ luật kiểm LOI.", 403);
+                    "Chỉ quản trị hệ thống hoặc quản lý dự án được xem danh sách bộ luật thông tin phi hình học.", 403);
 
             return await GetRuleSetsAsync(ct);
         }
 
         private async Task<LoiRuleSet> RequireRuleSetAsync(Guid ruleSetId) =>
             await _uow.Repository<LoiRuleSet>().GetByIdAsync(ruleSetId)
-            ?? throw new ApiExceptionResponse("Không tìm thấy bộ luật kiểm LOI.", 404);
+            ?? throw new ApiExceptionResponse("Không tìm thấy bộ luật thông tin phi hình học.", 404);
 
         private async Task<LoiComponent> RequireComponentAsync(Guid ruleSetId, Guid componentId)
         {

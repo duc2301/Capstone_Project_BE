@@ -194,6 +194,7 @@ namespace Application.Services
                     SizeBytes = cur?.FileSizeBytes ?? 0,
                     Format = cur?.Format,
                     CreatedByAccountId = f.CreatedByAccountId,
+                    CurrentVersionUploadedByAccountId = cur?.UploadedByAccountId,
                     AuthorName = f.CreatedByAccountId.HasValue && accounts.TryGetValue(f.CreatedByAccountId.Value, out var a) ? a.UserName : null,
                     CreatedAt = f.CreatedAt,
                     UpdatedAt = f.UpdatedAt,

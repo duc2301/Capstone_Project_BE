@@ -80,6 +80,8 @@ namespace Infrastructure.Configurations
             services.AddScoped<IMarkupService, MarkupService>();
             services.AddScoped<IDiscussionService, DiscussionService>();
             services.AddScoped<IIssueService, IssueService>();
+            services.AddScoped<IIssueActivityService, IssueActivityService>();
+            services.AddScoped<IFileDeletionService, FileDeletionService>();
             services.AddScoped<IContractService, ContractService>();
             services.AddScoped<IFilePermissionService, FilePermissionService>();
             services.AddScoped<IFolderPermissionService, FolderPermissionService>();

@@ -14,6 +14,8 @@ namespace Application.Interfaces.IServices
         // URL truy cập tạm thời (pre-signed) để xem/tải thẳng. null nếu provider không hỗ trợ (vd đĩa local).
         Task<string?> GetPresignedUrlAsync(string storagePath, int expiryMinutes = 60, CancellationToken ct = default);
 
+        Task DeleteAsync(string storagePath, CancellationToken ct = default);
+
         string GetContentType(string fileNameOrExt);
     }
 

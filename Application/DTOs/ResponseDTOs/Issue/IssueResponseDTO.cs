@@ -17,6 +17,9 @@ namespace Application.DTOs.ResponseDTOs.Issue
         public Guid? AssignedToAccountId { get; set; }
         public string? AssignedToName { get; set; }
         public Guid? AssignedToOrganizationId { get; set; }
+        public string? AssignedToOrganizationName { get; set; }
+        public Guid? AssignedToGroupId { get; set; }
+        public string? AssignedToGroupName { get; set; }
         public DateTime? DueDate { get; set; }
         public Guid? LinkedFolderId { get; set; }
         public Guid? LinkedFileItemId { get; set; }

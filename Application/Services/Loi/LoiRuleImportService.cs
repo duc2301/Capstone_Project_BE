@@ -148,7 +148,7 @@ namespace Application.Services.Loi
             _uow.Repository<LoiRuleSet>().Update(ruleSet);
 
             await _audit.LogAsync(LogScope.System, AuditAction.Update, RuleSetEntity, ruleSet.Id.ToString(), actor,
-                $"Nhập bộ luật LOI từ Excel ({ModeLabel(dto.Mode)}) vào \"{ruleSet.Name}\": "
+                $"Nhập bộ luật thông tin phi hình học từ Excel ({ModeLabel(dto.Mode)}) vào \"{ruleSet.Name}\": "
                 + $"{writtenComponents} cấu kiện · {writtenRows} dòng yêu cầu · {dto.Parameters.Count} tham số"
                 + (removedComponents > 0 ? $" · xoá {removedComponents} cấu kiện vắng mặt" : string.Empty));
 
@@ -738,7 +738,7 @@ namespace Application.Services.Loi
                 ("", "Ví dụ: dòng \"Thể tích\" đánh dấu ở cột \"Khối tích\" nghĩa là model phải có tham số tên Khối tích."),
             };
 
-            sheet.Range[1, 1].Text = "HƯỚNG DẪN ĐIỀN BỘ LUẬT KIỂM LOI";
+            sheet.Range[1, 1].Text = "HƯỚNG DẪN ĐIỀN BỘ LUẬT THÔNG TIN PHI HÌNH HỌC";
             sheet.Range[1, 1].CellStyle.Font.Bold = true;
             sheet.Range[1, 1].CellStyle.Font.Size = 14;
 
@@ -821,7 +821,7 @@ namespace Application.Services.Loi
                 .ToList();
 
             sheet.Range[LoiRuleImportSheet.TitleRow, 1].Text =
-                $"MA TRẬN YÊU CẦU LOI — BỘ MÔN {LoiRuleImportSheet.DisciplineName(discipline).ToUpperInvariant()}";
+                $"MA TRẬN YÊU CẦU THÔNG TIN — BỘ MÔN {LoiRuleImportSheet.DisciplineName(discipline).ToUpperInvariant()}";
             sheet.Range[LoiRuleImportSheet.TitleRow, 1].CellStyle.Font.Bold = true;
 
             var headers = new[] { "Mã cấu kiện", "Tên cấu kiện", "Biến thể", "Thông tin cần có" };
@@ -903,6 +903,6 @@ namespace Application.Services.Loi
 
         private async Task<LoiRuleSet> RequireRuleSetAsync(Guid ruleSetId) =>
             await _uow.Repository<LoiRuleSet>().GetByIdAsync(ruleSetId)
-            ?? throw new ApiExceptionResponse("Không tìm thấy bộ luật kiểm LOI.", 404);
+            ?? throw new ApiExceptionResponse("Không tìm thấy bộ luật thông tin phi hình học.", 404);
     }
 }

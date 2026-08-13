@@ -57,7 +57,7 @@ namespace Application.Services.Loi
             {
                 if (text.Length + read > maxFileSizeBytes)
                     throw new InvalidOperationException(
-                        $"File IFC lớn hơn {maxFileSizeBytes / (1024 * 1024)}MB nên không kiểm LOI được.");
+                        $"File IFC lớn hơn {maxFileSizeBytes / (1024 * 1024)}MB nên không đối chiếu thông tin phi hình học được.");
 
                 text.Append(buffer, 0, read);
             }

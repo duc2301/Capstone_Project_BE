@@ -103,7 +103,7 @@ namespace Application.Services.Loi
 
             if (!await _folderTreeRepository.HasFullAccessAsync(projectId, actor))
                 throw new ApiExceptionResponse(
-                    "Chỉ quản trị hệ thống hoặc quản lý dự án được sửa từ điển tham số LOI.", 403);
+                    "Chỉ quản trị hệ thống hoặc quản lý dự án được sửa từ điển tên tham số.", 403);
         }
 
         private static LoiAliasResponseDTO Map(LoiFieldAlias a) => new()
