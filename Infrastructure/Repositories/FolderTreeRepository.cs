@@ -61,6 +61,42 @@ namespace Infrastructure.Repositories
             return folderIds.ToHashSet();
         }
 
+        // Các file mà account xem được qua đường quyền RIÊNG TỪNG FILE (FileViewGrant theo tài khoản,
+        // hoặc FilePermission override cho phép CanView của nhóm account đang tham gia) NHƯNG folder chứa
+        // file lại KHÔNG View được. Đây là các file lẽ ra bị ẩn khỏi cây -> cần "kéo lên" tổ tiên View được.
+        // Loại các file nằm trong folder đã View được (chúng hiển thị bình thường dưới folder gốc của mình).
+        public async Task<List<FileItem>> GetExtraViewableFilesAsync(
+            Guid projectId, Guid accountId, HashSet<Guid> viewableFolderIds)
+        {
+            // (a) Grant xem theo tài khoản.
+            var grantedFileIds = _context.FileViewGrants
+                .Where(g => g.AccountId == accountId
+                         && g.Status == PermissionStatus.Active
+                         && g.FileItem.Folder.ProjectId == projectId)
+                .Select(g => g.FileItemId);
+
+            // (b) FilePermission override CHO PHÉP xem (CanView = true) của nhóm account đang là thành viên Active.
+            var permittedFileIds = _context.FilePermissions
+                .Where(fp => fp.CanView
+                          && fp.Status == PermissionStatus.Active
+                          && fp.FileItem.Folder.ProjectId == projectId
+                          && fp.ProjectParticipant != null
+                          && fp.ProjectParticipant.Status == ProjectParticipantStatus.Active
+                          && fp.ProjectParticipant.Group.Members.Any(m =>
+                                m.AccountId == accountId && m.Status == GroupMemberStatus.Active))
+                .Select(fp => fp.FileItemId);
+
+            var fileIds = await grantedFileIds.Concat(permittedFileIds).Distinct().ToListAsync();
+            if (fileIds.Count == 0) return new List<FileItem>();
+
+            // Loại file trong folder đã View được -> tránh trùng với danh sách file hiển thị bình thường.
+            return await _context.FileItems
+                .Where(fi => fileIds.Contains(fi.Id) && !viewableFolderIds.Contains(fi.FolderId))
+                .OrderBy(fi => fi.Name)
+                .AsNoTracking()
+                .ToListAsync();
+        }
+
 
         // check if user is admin or not
         public async Task<bool> HasFullAccessAsync(Guid projectId, Guid accountId)
