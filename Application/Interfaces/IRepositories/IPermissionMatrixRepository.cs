@@ -20,6 +20,12 @@ namespace Application.Interfaces.IRepositories
         /// <summary>Các bên tham gia đang hoạt động của dự án (kèm Group để lấy tên).</summary>
         Task<List<ProjectParticipant>> GetActiveParticipantsByProjectAsync(Guid projectId);
 
+        /// <summary>
+        /// Id các ProjectParticipant (trong dự án) mà caller là thành viên nhóm đang hoạt động —
+        /// tức nhóm của chính caller. Dùng để loại nhóm caller khỏi ma trận (không tự sửa quyền nhóm mình).
+        /// </summary>
+        Task<HashSet<Guid>> GetCallerParticipantIdsAsync(Guid projectId, Guid accountId);
+
         // ===== Dữ liệu hàng =====
         /// <summary>Tất cả folder (không phải template) của dự án — để dựng cây cha/con + kiểm tra hợp lệ.</summary>
         Task<List<Folder>> GetProjectFoldersAsync(Guid projectId);

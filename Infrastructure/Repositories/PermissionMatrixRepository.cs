@@ -47,6 +47,19 @@ namespace Infrastructure.Repositories
                 .AsNoTracking()
                 .ToListAsync();
 
+        public async Task<HashSet<Guid>> GetCallerParticipantIdsAsync(Guid projectId, Guid accountId)
+        {
+            var ids = await _context.ProjectParticipants
+                .Where(pp => pp.ProjectId == projectId
+                          && pp.Status == ProjectParticipantStatus.Active
+                          && _context.GroupMembers.Any(gm => gm.GroupId == pp.GroupId
+                                                          && gm.AccountId == accountId
+                                                          && gm.Status == GroupMemberStatus.Active))
+                .Select(pp => pp.Id)
+                .ToListAsync();
+            return ids.ToHashSet();
+        }
+
         // ===== Row data =====
 
         public async Task<List<Folder>> GetProjectFoldersAsync(Guid projectId)

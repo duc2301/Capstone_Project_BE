@@ -52,9 +52,11 @@ namespace Application.Services
             if (!isFullAccess && !await _matrixRepo.IsLeaderInProjectAsync(projectId, accountId))
                 throw new ApiExceptionResponse("You do not have permission to access the permission matrix.", 403);
 
-            // Cột = bên tham gia đang hoạt động.
+            // Cột = bên tham gia đang hoạt động, TRỪ nhóm của chính caller (không tự sửa quyền nhóm mình).
+            var callerParticipantIds = await _matrixRepo.GetCallerParticipantIdsAsync(projectId, accountId);
             var participants = await _matrixRepo.GetActiveParticipantsByProjectAsync(projectId);
             var columns = participants
+                .Where(pp => !callerParticipantIds.Contains(pp.Id))
                 .Select(pp => new MatrixColumnDTO
                 {
                     ProjectParticipantId = pp.Id,
@@ -192,6 +194,9 @@ namespace Application.Services
             var participantIds = (await _matrixRepo.GetActiveParticipantsByProjectAsync(projectId))
                 .Select(pp => pp.Id).ToHashSet();
 
+            // Nhóm của chính caller không nằm trên ma trận -> chặn luôn ở đường ghi (tránh payload dựng tay).
+            var callerParticipantIds = await _matrixRepo.GetCallerParticipantIdsAsync(projectId, accountId);
+
             var fileChangeIds = changes
                 .Where(c => c.TargetType == MatrixTargetType.File)
                 .Select(c => c.TargetId).Distinct().ToList();
@@ -206,6 +211,9 @@ namespace Application.Services
             {
                 if (!participantIds.Contains(c.ProjectParticipantId))
                     throw new ApiExceptionResponse("Participant does not belong to this project.", 400);
+
+                if (callerParticipantIds.Contains(c.ProjectParticipantId))
+                    throw new ApiExceptionResponse("You cannot change permissions for your own group.", 403);
 
                 if (c.TargetType == MatrixTargetType.Folder)
                 {
