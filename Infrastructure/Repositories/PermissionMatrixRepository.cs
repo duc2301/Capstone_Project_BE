@@ -38,6 +38,9 @@ namespace Infrastructure.Repositories
                            && pp.ProjectId == projectId
                            && pp.Status == ProjectParticipantStatus.Active));
 
+        public Task<bool> IsProjectManagerAsync(Guid projectId, Guid accountId)
+            => _context.Projects.AnyAsync(p => p.Id == projectId && p.ManagerAccountId == accountId);
+
         // ===== Columns =====
 
         public async Task<List<ProjectParticipant>> GetActiveParticipantsByProjectAsync(Guid projectId)

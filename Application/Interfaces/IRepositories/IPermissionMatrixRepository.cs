@@ -16,6 +16,12 @@ namespace Application.Interfaces.IRepositories
         /// <summary>True nếu account là Leader (GroupMember) của ít nhất 1 nhóm đang tham gia dự án.</summary>
         Task<bool> IsLeaderInProjectAsync(Guid projectId, Guid accountId);
 
+        /// <summary>
+        /// True nếu account là Project Manager (Project.ManagerAccountId) của dự án. Dùng để mở khu vực
+        /// Published/Archived trên ma trận — chỉ Admin hệ thống + PM được sửa quyền các vùng này (KHÔNG gồm PA).
+        /// </summary>
+        Task<bool> IsProjectManagerAsync(Guid projectId, Guid accountId);
+
         // ===== Cột =====
         /// <summary>Các bên tham gia đang hoạt động của dự án (kèm Group để lấy tên).</summary>
         Task<List<ProjectParticipant>> GetActiveParticipantsByProjectAsync(Guid projectId);

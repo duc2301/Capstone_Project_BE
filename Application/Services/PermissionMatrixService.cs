@@ -52,6 +52,10 @@ namespace Application.Services
             if (!isFullAccess && !await _matrixRepo.IsLeaderInProjectAsync(projectId, accountId))
                 throw new ApiExceptionResponse("You do not have permission to access the permission matrix.", 403);
 
+            // Chỉ Admin hệ thống + PM (KHÔNG gồm PA) được thấy & sửa quyền vùng Published/Archived trên ma trận.
+            var canManageRestrictedAreas = isSystemAdmin
+                || await _matrixRepo.IsProjectManagerAsync(projectId, accountId);
+
             // Cột = bên tham gia đang hoạt động, TRỪ nhóm của chính caller (không tự sửa quyền nhóm mình).
             var callerParticipantIds = await _matrixRepo.GetCallerParticipantIdsAsync(projectId, accountId);
             var participants = await _matrixRepo.GetActiveParticipantsByProjectAsync(projectId);
@@ -72,7 +76,15 @@ namespace Application.Services
             var flatFolders = new List<(FolderTreeNodeDTO node, Guid? displayParentId)>();
             void Walk(FolderTreeNodeDTO n, Guid? parentId)
             {
+                // Vùng Published/Archived: Admin/PM thấy đầy đủ (sửa được); người khác chỉ thấy folder GỐC
+                // của vùng (hiển thị cho biết vùng tồn tại) rồi dừng — không lộ folder con/file bên trong.
+                var restrictedForCaller = !canManageRestrictedAreas && IsExcludedArea(n.Area);
+                var isRoot = n.ParentFolderId == null;
+                if (restrictedForCaller && !isRoot) return;
+
                 flatFolders.Add((n, parentId));
+
+                if (restrictedForCaller) return;   // giữ tiêu đề vùng gốc, không đệ quy vào con
                 foreach (var child in n.Children) Walk(child, n.Id);
             }
             foreach (var root in treeRoots) Walk(root, null);
@@ -85,10 +97,16 @@ namespace Application.Services
                 : await ComputeLeaderEditableFolderIdsAsync(projectId, accountId);
 
             // Hiển thị file: full-access thấy mọi file trong folder hiện; còn lại chỉ ở folder có quyền View.
+            // Với người không quản vùng Published/Archived, không lấy file của các folder thuộc vùng đó
+            // (kể cả folder gốc vẫn hiển thị làm tiêu đề).
             var viewableFolderIds = isFullAccess
                 ? visibleFolderIds
                 : await _permissionChecking.GetViewableFolderIdsAsync(projectId, accountId);
-            var fileFolderIds = visibleFolderIds.Where(viewableFolderIds.Contains).ToList();
+            var fileFolderIds = flatFolders
+                .Where(f => canManageRestrictedAreas || !IsExcludedArea(f.node.Area))
+                .Select(f => f.node.Id)
+                .Where(viewableFolderIds.Contains)
+                .ToList();
 
             var files = await _matrixRepo.GetFilesByFolderIdsAsync(fileFolderIds);
             var fileIds = files.Select(f => f.Id).ToList();
@@ -182,6 +200,10 @@ namespace Application.Services
             if (!isFullAccess && !await _matrixRepo.IsLeaderInProjectAsync(projectId, accountId))
                 throw new ApiExceptionResponse("You do not have permission to edit the permission matrix.", 403);
 
+            // Chỉ Admin hệ thống + PM (KHÔNG gồm PA) được sửa quyền vùng Published/Archived.
+            var canManageRestrictedAreas = isSystemAdmin
+                || await _matrixRepo.IsProjectManagerAsync(projectId, accountId);
+
             var changes = dto.Changes ?? new List<MatrixCellChangeDTO>();
             if (changes.Count == 0)
                 throw new ApiExceptionResponse("No changes provided.", 400);
@@ -217,8 +239,10 @@ namespace Application.Services
 
                 if (c.TargetType == MatrixTargetType.Folder)
                 {
-                    if (!folderById.ContainsKey(c.TargetId))
+                    if (!folderById.TryGetValue(c.TargetId, out var targetFolder))
                         throw new ApiExceptionResponse("Folder does not belong to this project.", 400);
+                    if (IsExcludedArea(targetFolder.Area) && !canManageRestrictedAreas)
+                        throw new ApiExceptionResponse("Only admin/PM can assign permissions in Published/Archived areas.", 403);
                     if (rootAreaIds.Contains(c.TargetId))
                         throw new ApiExceptionResponse("Root areas are not assignable.", 403);
                     if (c.Level == PermissionLevel.Inherit)
@@ -228,8 +252,10 @@ namespace Application.Services
                 }
                 else
                 {
-                    if (!fileById.TryGetValue(c.TargetId, out var file) || !folderById.ContainsKey(file.FolderId))
+                    if (!fileById.TryGetValue(c.TargetId, out var file) || !folderById.TryGetValue(file.FolderId, out var owningFolder))
                         throw new ApiExceptionResponse("File does not belong to this project.", 400);
+                    if (IsExcludedArea(owningFolder.Area) && !canManageRestrictedAreas)
+                        throw new ApiExceptionResponse("Only admin/PM can assign permissions in Published/Archived areas.", 403);
                     if (!(isFullAccess || editableFolderIds!.Contains(file.FolderId)))
                         throw new ApiExceptionResponse("You cannot assign permissions on this file.", 403);
                 }
@@ -391,6 +417,10 @@ namespace Application.Services
             }
             return results;
         }
+
+        // Published/Archived: nội dung đã phê duyệt/niêm phong — ma trận không quản quyền các vùng này.
+        private static bool IsExcludedArea(CdeArea area)
+            => area is CdeArea.Published or CdeArea.Archived;
 
         private static Dictionary<(Guid, Guid), FolderPermission> IndexFolderPerms(List<FolderPermission> perms)
             => perms.Where(p => p.ProjectParticipantId.HasValue)
