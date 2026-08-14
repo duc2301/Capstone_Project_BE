@@ -8,9 +8,10 @@ namespace Domain.Entities
     /// họ không được cấp CanView trên folder chứa file.
     ///
     /// Grant là một đường "Allow" CỘNG THÊM, độc lập với ACL nhóm (FolderPermission/FilePermission) —
-    /// không phải override. Người được cấp giữ quyền xem file mãi mãi cho tới khi file được trả về
-    /// WIP thì toàn bộ grant của file bị thu hồi (xem ZoneReturnRequestService). Bị từ chối duyệt
-    /// KHÔNG thu hồi (file vẫn ở Shared).
+    /// không phải override. Grant bị thu hồi (hard-delete) khi file RỜI khu vực Shared: chuyển sang
+    /// Published (hoàn tất ký — xem ApprovalService.ApproveAsync) hoặc trả về WIP (xem
+    /// ZoneReturnRequestService). Bị từ chối duyệt mà file VẪN Ở Shared thì KHÔNG thu hồi (chỉ khi
+    /// thực sự trả về WIP). Độc lập với IssueFileViewGrant: thu hồi grant người ký không đụng grant issue.
     /// </summary>
     public class FileViewGrant
     {

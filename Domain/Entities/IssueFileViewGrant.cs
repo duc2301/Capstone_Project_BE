@@ -6,8 +6,11 @@ namespace Domain.Entities
     /// Đường "Allow" CỘNG THÊM: cho phép người được giao issue (hoặc ẢNH CHỤP thành viên nhóm được giao)
     /// XEM file được liên kết của issue, kể cả khi nhóm của họ không có CanView trên folder chứa file.
     /// Độc lập với ACL nhóm VÀ với FileViewGrant của luồng ký (bảng riêng -> không đụng unique index).
-    /// Bị thu hồi (hard-delete) khi issue được đóng. Là ảnh chụp lúc tạo issue: reassignment / người vào
-    /// nhóm sau không được cấp (ngoài phạm vi hiện tại).
+    /// Bị thu hồi (hard-delete) khi: (1) issue được resolve (IssueService, theo IssueId — không đụng grant
+    /// của issue khác/luồng ký), (2) file liên kết chuyển sang Published (ApprovalService.ApproveAsync),
+    /// hoặc (3) file liên kết trả về WIP (ZoneReturnRequestService) — (2)(3) theo FileItemId. Cấp cho issue
+    /// trên file ở cả Shared lẫn Published. Là ảnh chụp lúc tạo issue: reassignment / người vào nhóm sau
+    /// không được cấp (ngoài phạm vi hiện tại).
     /// </summary>
     public class IssueFileViewGrant
     {
