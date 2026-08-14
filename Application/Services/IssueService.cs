@@ -66,9 +66,6 @@ namespace Application.Services
             if (issue.LinkedFileItemId.HasValue)
                 return await _permission.HasViewFileAsync(issue.LinkedFileItemId.Value, accountId);
 
-            if (issue.LinkedFolderId.HasValue)
-                return await _permission.HasViewFolderAsync(issue.LinkedFolderId.Value, accountId);
-
             return false;
         }
 
@@ -177,7 +174,7 @@ namespace Application.Services
             Guid? FolderOf(Issue issue)
                 => issue.LinkedFileItemId.HasValue && fileById.TryGetValue(issue.LinkedFileItemId.Value, out var file)
                     ? file.FolderId
-                    : issue.LinkedFolderId;
+                    : null;
 
             bool CanSee(Issue issue)
             {
@@ -311,7 +308,9 @@ namespace Application.Services
 
         public async Task<IssueResponseDTO> CreateAsync(CreateIssueDTO dto, Guid actorId)
         {
-            if (dto.LinkedFileItemId.HasValue)
+            if (!dto.LinkedFileItemId.HasValue)
+                throw new ApiExceptionResponse("Issue must be linked to a file.", 400);
+
             {
                 var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(dto.LinkedFileItemId.Value)
                     ?? throw new ApiExceptionResponse("Linked file not found.", 404);
@@ -539,14 +538,9 @@ namespace Application.Services
                 folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
                     ?? throw new ApiExceptionResponse("File folder not found.", 404);
             }
-            else if (issue.LinkedFolderId.HasValue)
-            {
-                folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(issue.LinkedFolderId.Value)
-                    ?? throw new ApiExceptionResponse("Linked folder not found.", 404);
-            }
             else
             {
-                throw new ApiExceptionResponse("Issue has no linked file/folder to store attachment.", 400);
+                throw new ApiExceptionResponse("Issue has no linked file to store attachment.", 400);
             }
 
             var extension = Path.GetExtension(fileName);
@@ -589,7 +583,7 @@ namespace Application.Services
             var folderIds = issues.Select(i =>
                     i.LinkedFileItemId.HasValue && fileById.TryGetValue(i.LinkedFileItemId.Value, out var f)
                         ? f.FolderId
-                        : i.LinkedFolderId)
+                        : (Guid?)null)
                 .Where(id => id.HasValue).Select(id => id!.Value).ToHashSet();
             var folderNameById = folderIds.Count == 0
                 ? new Dictionary<Guid, string>()
@@ -601,7 +595,7 @@ namespace Application.Services
                 var folderId = i.LinkedFileItemId.HasValue
                         && fileById.TryGetValue(i.LinkedFileItemId.Value, out var file)
                     ? file.FolderId
-                    : i.LinkedFolderId;
+                    : (Guid?)null;
 
                 return new ProjectIssueListItemDTO
                 {

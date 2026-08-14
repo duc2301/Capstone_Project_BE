@@ -58,6 +58,13 @@ namespace Application.Interfaces.IRepositories
         /// </summary>
         Task<bool> HasActiveFileViewGrantAsync(Guid fileItemId, Guid accountId);
 
+        /// <summary>
+        /// True if the account holds an active issue-derived view grant on the file (IssueFileViewGrant),
+        /// issued because an issue on this file was assigned to them (or their group). Additive Allow,
+        /// independent of the group ACL and of the signer-flow FileViewGrant.
+        /// </summary>
+        Task<bool> HasActiveIssueFileViewGrantAsync(Guid fileItemId, Guid accountId);
+
         // ===== Current-user permission retrieval (viewing only) =====
 
         Task<Account?> GetAccountAsync(Guid accountId);

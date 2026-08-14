@@ -21,7 +21,6 @@ namespace Application.DTOs.ResponseDTOs.Issue
         public Guid? AssignedToGroupId { get; set; }
         public string? AssignedToGroupName { get; set; }
         public DateTime? DueDate { get; set; }
-        public Guid? LinkedFolderId { get; set; }
         public Guid? LinkedFileItemId { get; set; }
         public string? ModelLocationJson { get; set; }
         public DateTime? CreatedAt { get; set; }

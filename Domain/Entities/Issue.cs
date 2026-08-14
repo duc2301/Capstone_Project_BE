@@ -19,7 +19,6 @@ namespace Domain.Entities
         public Guid? AssignedToOrganizationId { get; set; }
         public Guid? AssignedToGroupId { get; set; }
         public DateTime? DueDate { get; set; }
-        public Guid? LinkedFolderId { get; set; }
         public Guid? LinkedFileItemId { get; set; }
         public string? ModelLocationJson { get; set; }   // vị trí trên mô hình 3D
         public DateTime? CreatedAt { get; set; }

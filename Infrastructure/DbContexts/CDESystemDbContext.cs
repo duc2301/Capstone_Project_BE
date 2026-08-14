@@ -63,6 +63,7 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<Issue> Issues { get; set; }
         public virtual DbSet<IssueAttachment> IssueAttachments { get; set; }
         public virtual DbSet<IssueMention> IssueMentions { get; set; }
+        public virtual DbSet<IssueFileViewGrant> IssueFileViewGrants { get; set; }
 
         // --- Module H: Nhật ký / RAG ---
         public virtual DbSet<AuditLog> AuditLogs { get; set; }
@@ -288,6 +289,32 @@ namespace Infrastructure.DbContexts
                     .WithMany()
                     .HasForeignKey(x => x.SourceApprovalRequestId)
                     .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            // Grant xem file sinh ra từ issue (người được giao / thành viên nhóm được giao). Bảng RIÊNG,
+            // tách khỏi FileViewGrant của luồng ký -> không đụng unique index, thu hồi theo IssueId không
+            // bao giờ chạm grant của người ký. Xóa issue hoặc file -> xóa grant (Cascade); Account Restrict.
+            modelBuilder.Entity<IssueFileViewGrant>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+
+                entity.HasIndex(x => new { x.IssueId, x.FileItemId, x.AccountId })
+                    .IsUnique();
+
+                entity.HasOne(x => x.Issue)
+                    .WithMany()
+                    .HasForeignKey(x => x.IssueId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(x => x.FileItem)
+                    .WithMany()
+                    .HasForeignKey(x => x.FileItemId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(x => x.Account)
+                    .WithMany()
+                    .HasForeignKey(x => x.AccountId)
+                    .OnDelete(DeleteBehavior.Restrict);
             });
 
             // Joint Venture Member relationships
