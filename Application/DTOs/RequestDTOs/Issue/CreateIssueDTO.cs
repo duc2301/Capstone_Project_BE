@@ -28,7 +28,8 @@ namespace Application.DTOs.RequestDTOs.Issue
         public Guid? AssignedToOrganizationId { get; set; }
         public Guid? AssignedToGroupId { get; set; }
         public DateTime? DueDate { get; set; }
-        public Guid? LinkedFolderId { get; set; }
+
+        [Required]
         public Guid? LinkedFileItemId { get; set; }
         public string? ModelLocationJson { get; set; }
     }

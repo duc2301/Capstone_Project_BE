@@ -107,22 +107,32 @@ namespace Application.Services
                 ?? throw new ApiExceptionResponse("Folder not found.", 404);
 
             // Quyền View kiểm tra tại thời điểm click vào folder, không kiểm tra sẵn trên cây.
-            var canView = isSystemAdmin
+            var hasFullAccess = isSystemAdmin
                 || await _folderTreeRepository.IsProjectManagerAsync(folder.ProjectId, accountId)
                 || (folder.Area != CdeArea.Wip
-                    && await _folderTreeRepository.HasFullAccessAsync(folder.ProjectId, accountId))
+                    && await _folderTreeRepository.HasFullAccessAsync(folder.ProjectId, accountId));
+
+            var canView = hasFullAccess
                 || await _folderTreeRepository.CanViewFolderAsync(folderId, accountId);
 
-            if (!canView)
-            {
-                // Khu vực gốc luôn mở được: trả danh sách rỗng thay vì 403.
-                if (folder.ParentFolderId == null)
-                    return new List<FileItemResponseDTO>();
-
+            // Khu vực gốc luôn mở được (trả rỗng rồi kéo file được cấp riêng lên); folder con thì 403.
+            if (!canView && folder.ParentFolderId != null)
                 throw new ApiExceptionResponse("You do not have permission to view this folder.", 403);
+
+            var files = canView
+                ? await _folderTreeRepository.GetFilesByFolderIdAsync(folderId)
+                : new List<Domain.Entities.FileItem>();
+
+            // Kéo file được cấp quyền riêng (folder chứa không View được) lên folder đang mở nếu đây là
+            // tổ tiên gần nhất còn View được. Bỏ qua với user full access — họ đã thấy folder thật.
+            if (!hasFullAccess)
+            {
+                var viewableIds = await _folderTreeRepository.GetViewableFolderIdsAsync(folder.ProjectId, accountId);
+                var hoisted = await BuildHoistedFilesByAnchorAsync(folder.ProjectId, accountId, viewableIds);
+                if (hoisted.TryGetValue(folderId, out var extra))
+                    files = files.Concat(extra).ToList();
             }
 
-            var files = await _folderTreeRepository.GetFilesByFolderIdAsync(folderId);
             return await EnrichWithVersionInfoAsync(_mapper.Map<List<FileItemResponseDTO>>(files));
         }
 
@@ -149,9 +159,10 @@ namespace Application.Services
             var children = await _folderTreeRepository.GetChildFoldersAsync(folderId);
 
             // Subfolder cũng lọc theo quyền View — user chỉ thấy nhánh mình được phép vào.
+            HashSet<Guid>? viewableIds = null;
             if (!hasFullAccess)
             {
-                var viewableIds = await _folderTreeRepository.GetViewableFolderIdsAsync(folder.ProjectId, accountId);
+                viewableIds = await _folderTreeRepository.GetViewableFolderIdsAsync(folder.ProjectId, accountId);
                 children = children.Where(f => viewableIds.Contains(f.Id)).ToList();
             }
 
@@ -169,6 +180,15 @@ namespace Application.Services
             var files = canViewFolder
                 ? await _folderTreeRepository.GetFilesByFolderIdAsync(folderId)
                 : new List<Domain.Entities.FileItem>();
+
+            // Kéo file được cấp quyền riêng (folder chứa không View được) lên folder đang mở nếu đây là
+            // tổ tiên gần nhất còn View được. viewableIds != null ⟺ user không có full access.
+            if (viewableIds != null)
+            {
+                var hoisted = await BuildHoistedFilesByAnchorAsync(folder.ProjectId, accountId, viewableIds);
+                if (hoisted.TryGetValue(folderId, out var extra))
+                    files = files.Concat(extra).ToList();
+            }
 
             return new FolderContentsDTO
             {
@@ -223,6 +243,45 @@ namespace Application.Services
             }
 
             return files;
+        }
+
+        // Map: folderId hiển thị (tổ tiên gần nhất còn View được) -> các file được cấp quyền RIÊNG
+        // (FileViewGrant/FilePermission CanView) nhưng nằm trong folder KHÔNG View được. File được "kéo lên"
+        // folder anchor để không bị ẩn khỏi cây; folder thật (không có quyền) vẫn ẩn. Anchor tối thiểu là khu
+        // vực gốc (ParentFolderId == null — luôn hiển thị), nên mọi file được cấp quyền đều có chỗ hiển thị.
+        private async Task<Dictionary<Guid, List<Domain.Entities.FileItem>>> BuildHoistedFilesByAnchorAsync(
+            Guid projectId, Guid accountId, HashSet<Guid> viewableFolderIds)
+        {
+            var extraFiles = await _folderTreeRepository
+                .GetExtraViewableFilesAsync(projectId, accountId, viewableFolderIds);
+            if (extraFiles.Count == 0)
+                return new Dictionary<Guid, List<Domain.Entities.FileItem>>();
+
+            var allFolders = await _folderTreeRepository.GetProjectFoldersAsync(projectId, null);
+            var folderById = allFolders.ToDictionary(f => f.Id);
+
+            // "Còn hiển thị" = folder có quyền View, hoặc khu vực gốc (luôn hiển thị với mọi thành viên).
+            var anchorIds = new HashSet<Guid>(viewableFolderIds);
+            foreach (var f in allFolders)
+                if (f.ParentFolderId == null) anchorIds.Add(f.Id);
+
+            var result = new Dictionary<Guid, List<Domain.Entities.FileItem>>();
+            foreach (var file in extraFiles)
+            {
+                if (!folderById.TryGetValue(file.FolderId, out var folder)) continue;
+
+                // Folder chứa file có thể chính là khu vực gốc (luôn hiển thị dù không "View được") -> neo tại đó;
+                // ngược lại đi lên tìm tổ tiên gần nhất còn hiển thị.
+                var anchorId = anchorIds.Contains(folder.Id)
+                    ? folder.Id
+                    : FindNearestVisibleAncestorId(folder, folderById, anchorIds);
+                if (!anchorId.HasValue) continue;
+
+                if (!result.TryGetValue(anchorId.Value, out var list))
+                    result[anchorId.Value] = list = new List<Domain.Entities.FileItem>();
+                list.Add(file);
+            }
+            return result;
         }
 
         // Tìm tổ tiên gần nhất còn hiển thị của folder (đi ngược ParentFolderId trên toàn bộ

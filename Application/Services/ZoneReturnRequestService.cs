@@ -169,6 +169,14 @@ namespace Application.Services
             foreach (var grant in viewGrants)
                 _unitOfWork.Repository<FileViewGrant>().Delete(grant);
 
+            // Đồng thời thu hồi grant xem sinh ra từ ISSUE trên file này (bảng riêng, độc lập grant người
+            // ký). Đây là trigger "issue trả về WIP" -> mất quyền xem cộng thêm do issue cấp.
+            var issueViewGrants = (await _unitOfWork.Repository<IssueFileViewGrant>().FindAsync(
+                    g => g.FileItemId == fileItem.Id))
+                .ToList();
+            foreach (var grant in issueViewGrants)
+                _unitOfWork.Repository<IssueFileViewGrant>().Delete(grant);
+
             // Versioning: quay về WIP từ tài liệu đã publish (C{rev}) -> P{WorkingRevision}.01,
             // PublishedRevision bảo toàn. Quay về từ Shared: version giữ nguyên.
             if (fileItem.CurrentVersionId.HasValue)

@@ -17,6 +17,11 @@ namespace Application.Interfaces.IRepositories
         // (qua GroupMember Active -> ProjectParticipant Active -> FolderPermission Active + CanView).
         Task<HashSet<Guid>> GetViewableFolderIdsAsync(Guid projectId, Guid accountId);
 
+        // Các file account xem được qua quyền RIÊNG TỪNG FILE (FileViewGrant / FilePermission CanView)
+        // nhưng folder chứa lại không View được -> cần kéo lên tổ tiên View được để không bị ẩn khỏi cây.
+        Task<List<FileItem>> GetExtraViewableFilesAsync(
+            Guid projectId, Guid accountId, HashSet<Guid> viewableFolderIds);
+
         // Account thuộc 1 group giữ vai trò ProjectAdmin (PM) đang Active trong dự án -> thấy toàn bộ cây.
         Task<bool> HasFullAccessAsync(Guid projectId, Guid accountId);
 

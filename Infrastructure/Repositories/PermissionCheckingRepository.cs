@@ -132,6 +132,14 @@ namespace Infrastructure.Repositories
                             && g.Status == PermissionStatus.Active);
         }
 
+        public async Task<bool> HasActiveIssueFileViewGrantAsync(Guid fileItemId, Guid accountId)
+        {
+            return await _context.IssueFileViewGrants
+                .AnyAsync(g => g.FileItemId == fileItemId
+                            && g.AccountId == accountId
+                            && g.Status == PermissionStatus.Active);
+        }
+
         // ===== Current-user permission retrieval (viewing only) =====
 
         public async Task<Account?> GetAccountAsync(Guid accountId)

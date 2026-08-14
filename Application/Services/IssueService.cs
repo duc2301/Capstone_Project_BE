@@ -66,9 +66,6 @@ namespace Application.Services
             if (issue.LinkedFileItemId.HasValue)
                 return await _permission.HasViewFileAsync(issue.LinkedFileItemId.Value, accountId);
 
-            if (issue.LinkedFolderId.HasValue)
-                return await _permission.HasViewFolderAsync(issue.LinkedFolderId.Value, accountId);
-
             return false;
         }
 
@@ -177,7 +174,7 @@ namespace Application.Services
             Guid? FolderOf(Issue issue)
                 => issue.LinkedFileItemId.HasValue && fileById.TryGetValue(issue.LinkedFileItemId.Value, out var file)
                     ? file.FolderId
-                    : issue.LinkedFolderId;
+                    : null;
 
             bool CanSee(Issue issue)
             {
@@ -311,7 +308,9 @@ namespace Application.Services
 
         public async Task<IssueResponseDTO> CreateAsync(CreateIssueDTO dto, Guid actorId)
         {
-            if (dto.LinkedFileItemId.HasValue)
+            if (!dto.LinkedFileItemId.HasValue)
+                throw new ApiExceptionResponse("Issue must be linked to a file.", 400);
+
             {
                 var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(dto.LinkedFileItemId.Value)
                     ?? throw new ApiExceptionResponse("Linked file not found.", 404);
@@ -354,6 +353,8 @@ namespace Application.Services
             if (entity.AssignedToAccountId.HasValue)
             {
                 await AddParticipantsAsync(entity.Id, new[] { entity.AssignedToAccountId.Value });
+                await GrantIssueFileViewAsync(
+                    entity.Id, entity.LinkedFileItemId!.Value, new[] { entity.AssignedToAccountId.Value });
                 if (entity.AssignedToAccountId.Value != actorId)
                 {
                     await _notification.NotifyAsync(
@@ -367,6 +368,7 @@ namespace Application.Services
             {
                 var memberIds = await GetActiveGroupMemberIdsAsync(entity.AssignedToGroupId.Value);
                 await AddParticipantsAsync(entity.Id, memberIds);
+                await GrantIssueFileViewAsync(entity.Id, entity.LinkedFileItemId!.Value, memberIds);
 
                 var recipientIds = memberIds.Where(id => id != actorId).ToList();
                 if (recipientIds.Count > 0)
@@ -427,6 +429,9 @@ namespace Application.Services
                 detail: $"Đánh dấu đã giải quyết vấn đề '{issue.Title}'",
                 projectId: issue.ProjectId);
             await _unitOfWork.CommitAsync();
+
+            // Issue đóng -> thu hồi grant xem file sinh ra từ issue này.
+            await RevokeIssueFileViewAsync(issue.Id);
             var discussion = (await _unitOfWork.Repository<Discussion>().FindAsync(
                     d => d.ScopeType == DiscussionScopeType.Issue && d.ScopeId == issueId))
                 .FirstOrDefault();
@@ -539,14 +544,9 @@ namespace Application.Services
                 folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
                     ?? throw new ApiExceptionResponse("File folder not found.", 404);
             }
-            else if (issue.LinkedFolderId.HasValue)
-            {
-                folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(issue.LinkedFolderId.Value)
-                    ?? throw new ApiExceptionResponse("Linked folder not found.", 404);
-            }
             else
             {
-                throw new ApiExceptionResponse("Issue has no linked file/folder to store attachment.", 400);
+                throw new ApiExceptionResponse("Issue has no linked file to store attachment.", 400);
             }
 
             var extension = Path.GetExtension(fileName);
@@ -589,7 +589,7 @@ namespace Application.Services
             var folderIds = issues.Select(i =>
                     i.LinkedFileItemId.HasValue && fileById.TryGetValue(i.LinkedFileItemId.Value, out var f)
                         ? f.FolderId
-                        : i.LinkedFolderId)
+                        : (Guid?)null)
                 .Where(id => id.HasValue).Select(id => id!.Value).ToHashSet();
             var folderNameById = folderIds.Count == 0
                 ? new Dictionary<Guid, string>()
@@ -601,7 +601,7 @@ namespace Application.Services
                 var folderId = i.LinkedFileItemId.HasValue
                         && fileById.TryGetValue(i.LinkedFileItemId.Value, out var file)
                     ? file.FolderId
-                    : i.LinkedFolderId;
+                    : (Guid?)null;
 
                 return new ProjectIssueListItemDTO
                 {
@@ -714,6 +714,61 @@ namespace Application.Services
                 .Distinct()
                 .ToList();
 
+        // Cấp quyền xem file được liên kết cho danh sách account (người được giao / ẢNH CHỤP thành viên
+        // nhóm được giao). Đường Allow cộng thêm, độc lập ACL nhóm. Upsert-and-reactivate theo
+        // (IssueId, AccountId) để không vi phạm unique index nếu grant đã tồn tại.
+        private async Task GrantIssueFileViewAsync(Guid issueId, Guid fileItemId, IEnumerable<Guid> accountIds)
+        {
+            var wanted = accountIds.Distinct().ToList();
+            if (wanted.Count == 0) return;
+
+            var existing = (await _unitOfWork.Repository<IssueFileViewGrant>().FindAsync(
+                    g => g.IssueId == issueId && wanted.Contains(g.AccountId)))
+                .ToDictionary(g => g.AccountId);
+
+            var now = DateTime.UtcNow;
+            var changed = false;
+            foreach (var accountId in wanted)
+            {
+                if (existing.TryGetValue(accountId, out var grant))
+                {
+                    if (grant.Status != PermissionStatus.Active)
+                    {
+                        grant.Status = PermissionStatus.Active;
+                        _unitOfWork.Repository<IssueFileViewGrant>().Update(grant);
+                        changed = true;
+                    }
+                    continue;
+                }
+
+                await _unitOfWork.Repository<IssueFileViewGrant>().CreateAsync(new IssueFileViewGrant
+                {
+                    Id = Guid.NewGuid(),
+                    IssueId = issueId,
+                    FileItemId = fileItemId,
+                    AccountId = accountId,
+                    Status = PermissionStatus.Active,
+                    CreatedAt = now
+                });
+                changed = true;
+            }
+
+            if (changed) await _unitOfWork.CommitAsync();
+        }
+
+        // Thu hồi toàn bộ grant sinh ra từ 1 issue (khi đóng issue). Vì grant nằm ở bảng riêng và khóa
+        // theo IssueId nên không bao giờ chạm grant của luồng ký hay của issue khác trên cùng file.
+        private async Task RevokeIssueFileViewAsync(Guid issueId)
+        {
+            var grants = (await _unitOfWork.Repository<IssueFileViewGrant>()
+                .FindAsync(g => g.IssueId == issueId)).ToList();
+            if (grants.Count == 0) return;
+
+            foreach (var grant in grants)
+                _unitOfWork.Repository<IssueFileViewGrant>().Delete(grant);
+            await _unitOfWork.CommitAsync();
+        }
+
         private async Task AddParticipantsAsync(Guid issueId, IEnumerable<Guid> accountIds)
         {
             var wanted = accountIds.Distinct().ToList();
@@ -819,17 +874,8 @@ namespace Application.Services
             var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
                 ?? throw new ApiExceptionResponse("File folder not found.", 404);
 
-            var permittedParticipantIds = (await _unitOfWork.Repository<FolderPermission>().FindAsync(
-                    fp => fp.FolderId == folder.Id
-                       && fp.Status == PermissionStatus.Active
-                       && fp.CanView
-                       && fp.ProjectParticipantId != null))
-                .Select(fp => fp.ProjectParticipantId!.Value)
-                .ToHashSet();
-            if (permittedParticipantIds.Count == 0) return new HashSet<Guid>();
-
             return (await _unitOfWork.Repository<ProjectParticipant>().FindAsync(
-                    p => permittedParticipantIds.Contains(p.Id)
+                    p => p.ProjectId == folder.ProjectId
                       && p.Status == ProjectParticipantStatus.Active))
                 .Select(p => p.GroupId)
                 .ToHashSet();
