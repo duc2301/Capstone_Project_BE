@@ -86,7 +86,17 @@ namespace Infrastructure.Repositories
                                 m.AccountId == accountId && m.Status == GroupMemberStatus.Active))
                 .Select(fp => fp.FileItemId);
 
-            var fileIds = await grantedFileIds.Concat(permittedFileIds).Distinct().ToListAsync();
+            // (c) Grant xem sinh ra từ issue được giao (người được giao / thành viên nhóm được giao).
+            var issueGrantedFileIds = _context.IssueFileViewGrants
+                .Where(g => g.AccountId == accountId
+                         && g.Status == PermissionStatus.Active
+                         && g.FileItem.Folder.ProjectId == projectId)
+                .Select(g => g.FileItemId);
+
+            var fileIds = await grantedFileIds
+                .Concat(permittedFileIds)
+                .Concat(issueGrantedFileIds)
+                .Distinct().ToListAsync();
             if (fileIds.Count == 0) return new List<FileItem>();
 
             // Loại file trong folder đã View được -> tránh trùng với danh sách file hiển thị bình thường.
