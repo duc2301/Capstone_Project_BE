@@ -7,6 +7,7 @@ using AutoMapper;
 using Domain.Entities;
 using Domain.Enum.Account;
 using Domain.Enum.Audit;
+using Domain.Enum.Group;
 using Domain.Enum.Project;
 
 namespace Application.Services
@@ -163,7 +164,7 @@ namespace Application.Services
         public async Task<List<ProjectResponseDTO>> GetMyProjectsAsync(Guid actor)
         {
             var myGroupIds = (await _unitOfWork.Repository<GroupMember>()
-                    .FindAsync(gm => gm.AccountId == actor))
+                    .FindAsync(gm => gm.AccountId == actor && gm.Status == GroupMemberStatus.Active))
                 .Select(gm => gm.GroupId)
                 .ToHashSet();
 

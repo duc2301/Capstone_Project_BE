@@ -23,6 +23,10 @@ namespace Capstone_Project.Controllers
         public async Task<IActionResult> GetAll()
             => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAllAsync()));
 
+        [HttpGet("mine")]
+        public async Task<IActionResult> GetMine()
+            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetMineAsync(User.GetAccountId())));
+
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetById(Guid id)
             => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByIdAsync(id)));
