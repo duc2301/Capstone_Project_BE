@@ -874,17 +874,8 @@ namespace Application.Services
             var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
                 ?? throw new ApiExceptionResponse("File folder not found.", 404);
 
-            var permittedParticipantIds = (await _unitOfWork.Repository<FolderPermission>().FindAsync(
-                    fp => fp.FolderId == folder.Id
-                       && fp.Status == PermissionStatus.Active
-                       && fp.CanView
-                       && fp.ProjectParticipantId != null))
-                .Select(fp => fp.ProjectParticipantId!.Value)
-                .ToHashSet();
-            if (permittedParticipantIds.Count == 0) return new HashSet<Guid>();
-
             return (await _unitOfWork.Repository<ProjectParticipant>().FindAsync(
-                    p => permittedParticipantIds.Contains(p.Id)
+                    p => p.ProjectId == folder.ProjectId
                       && p.Status == ProjectParticipantStatus.Active))
                 .Select(p => p.GroupId)
                 .ToHashSet();
