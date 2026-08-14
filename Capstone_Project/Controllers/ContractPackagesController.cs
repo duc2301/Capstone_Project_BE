@@ -12,6 +12,8 @@ namespace Capstone_Project.Controllers
     [Microsoft.AspNetCore.Authorization.Authorize]
     public class ContractPackagesController : ControllerBase
     {
+        private const string RetrievedMessage = "Retrieved successfully";
+
         private readonly IContractPackageService _service;
 
         public ContractPackagesController(IContractPackageService service)
@@ -21,19 +23,19 @@ namespace Capstone_Project.Controllers
 
         [HttpGet]
         public async Task<IActionResult> GetAll()
-            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAllAsync()));
+            => Ok(ApiResponse.Success(RetrievedMessage, await _service.GetAllAsync()));
 
         [HttpGet("mine")]
         public async Task<IActionResult> GetMine()
-            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetMineAsync(User.GetAccountId())));
+            => Ok(ApiResponse.Success(RetrievedMessage, await _service.GetMineAsync(User.GetAccountId())));
 
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetById(Guid id)
-            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByIdAsync(id)));
+            => Ok(ApiResponse.Success(RetrievedMessage, await _service.GetByIdAsync(id)));
 
         [HttpGet("project/{projectId:guid}")]
         public async Task<IActionResult> GetByProjectId(Guid projectId)
-            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByProjectIdAsync(projectId)));
+            => Ok(ApiResponse.Success(RetrievedMessage, await _service.GetByProjectIdAsync(projectId)));
 
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateContractPackageDTO dto)

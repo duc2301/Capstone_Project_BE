@@ -16,6 +16,8 @@ namespace Application.Services
 {
     public class ContractPackageService : IContractPackageService
     {
+        private const string ProjectInclude = "Project";
+
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly IAuditLogService _auditLog;
@@ -29,7 +31,7 @@ namespace Application.Services
 
         public async Task<IEnumerable<ContractPackageResponseDTO>> GetAllAsync()
         {
-            var packages = await _unitOfWork.Repository<ContractPackage>().GetAllAsync("Project");
+            var packages = await _unitOfWork.Repository<ContractPackage>().GetAllAsync(ProjectInclude);
             var result = _mapper.Map<List<ContractPackageResponseDTO>>(packages);
             await AttachAssignmentsAsync(result);
             return result;
@@ -55,7 +57,7 @@ namespace Application.Services
             if (projectIds.Count == 0) return new List<ContractPackageResponseDTO>();
 
             var packages = await _unitOfWork.Repository<ContractPackage>()
-                .FindAsync(p => projectIds.Contains(p.ProjectId), "Project");
+                .FindAsync(p => projectIds.Contains(p.ProjectId), ProjectInclude);
             var result = _mapper.Map<List<ContractPackageResponseDTO>>(packages);
             await AttachAssignmentsAsync(result);
             return result;
@@ -63,7 +65,7 @@ namespace Application.Services
 
         public async Task<IEnumerable<ContractPackageResponseDTO>> GetByProjectIdAsync(Guid projectId)
         {
-            var packages = await _unitOfWork.Repository<ContractPackage>().FindAsync(p => p.ProjectId == projectId, "Project");
+            var packages = await _unitOfWork.Repository<ContractPackage>().FindAsync(p => p.ProjectId == projectId, ProjectInclude);
             var result = _mapper.Map<List<ContractPackageResponseDTO>>(packages);
             await AttachAssignmentsAsync(result);
             return result;
@@ -71,7 +73,7 @@ namespace Application.Services
 
         public async Task<ContractPackageResponseDTO?> GetByIdAsync(Guid id)
         {
-            var entity = (await _unitOfWork.Repository<ContractPackage>().FindAsync(cp => cp.Id == id, "Project")).FirstOrDefault();
+            var entity = (await _unitOfWork.Repository<ContractPackage>().FindAsync(cp => cp.Id == id, ProjectInclude)).FirstOrDefault();
             if (entity == null) return null;
 
             var result = _mapper.Map<ContractPackageResponseDTO>(entity);
