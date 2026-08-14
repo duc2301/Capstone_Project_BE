@@ -8,12 +8,16 @@ using AutoMapper;
 using Domain.Entities;
 using Domain.Enum.Audit;
 using Domain.Enum.ContractPackage;
+using Domain.Enum.Group;
+using Domain.Enum.Project;
 using Application.DTOs.ResponseDTOs.Folder;
 
 namespace Application.Services
 {
     public class ContractPackageService : IContractPackageService
     {
+        private const string ProjectInclude = "Project";
+
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly IAuditLogService _auditLog;
@@ -26,97 +30,107 @@ namespace Application.Services
         }
 
         public async Task<IEnumerable<ContractPackageResponseDTO>> GetAllAsync()
-            => _mapper.Map<IEnumerable<ContractPackageResponseDTO>>(
-                await _unitOfWork.Repository<ContractPackage>().GetAllAsync("Project"));
+        {
+            var packages = await _unitOfWork.Repository<ContractPackage>().GetAllAsync(ProjectInclude);
+            var result = _mapper.Map<List<ContractPackageResponseDTO>>(packages);
+            await AttachAssignmentsAsync(result);
+            return result;
+        }
+
+        public async Task<IEnumerable<ContractPackageResponseDTO>> GetMineAsync(Guid accountId)
+        {
+            var myGroupIds = (await _unitOfWork.Repository<GroupMember>()
+                    .FindAsync(gm => gm.AccountId == accountId && gm.Status == GroupMemberStatus.Active))
+                .Select(gm => gm.GroupId)
+                .ToHashSet();
+
+            var participantProjectIds = (await _unitOfWork.Repository<ProjectParticipant>()
+                    .FindAsync(pp => myGroupIds.Contains(pp.GroupId) && pp.Status == ProjectParticipantStatus.Active))
+                .Select(pp => pp.ProjectId)
+                .ToHashSet();
+
+            var projectIds = (await _unitOfWork.Repository<Project>()
+                    .FindAsync(p => participantProjectIds.Contains(p.Id) || p.ManagerAccountId == accountId))
+                .Select(p => p.Id)
+                .ToHashSet();
+
+            if (projectIds.Count == 0) return new List<ContractPackageResponseDTO>();
+
+            var packages = await _unitOfWork.Repository<ContractPackage>()
+                .FindAsync(p => projectIds.Contains(p.ProjectId), ProjectInclude);
+            var result = _mapper.Map<List<ContractPackageResponseDTO>>(packages);
+            await AttachAssignmentsAsync(result);
+            return result;
+        }
 
         public async Task<IEnumerable<ContractPackageResponseDTO>> GetByProjectIdAsync(Guid projectId)
         {
-            var packages = await _unitOfWork.Repository<ContractPackage>().FindAsync(p => p.ProjectId == projectId, "Project");
+            var packages = await _unitOfWork.Repository<ContractPackage>().FindAsync(p => p.ProjectId == projectId, ProjectInclude);
             var result = _mapper.Map<List<ContractPackageResponseDTO>>(packages);
-
-            if (result.Any())
-            {
-                var packageIds = result.Select(p => p.Id).ToList();
-                var assignments = await _unitOfWork.Repository<PackageAssignment>().FindAsync(a => packageIds.Contains(a.ContractPackageId));
-                if (assignments.Any())
-                {
-                    var orgIds = assignments.Select(a => a.OrganizationId).Distinct().ToList();
-                    var orgs = await _unitOfWork.Repository<Organization>().FindAsync(o => orgIds.Contains(o.Id));
-                    var accIds = assignments.Where(a => a.RepresentativeAccountId.HasValue).Select(a => a.RepresentativeAccountId.Value).Distinct().ToList();
-                    var accounts = await _unitOfWork.Repository<Account>().FindAsync(a => accIds.Contains(a.Id));
-
-                    foreach (var r in result)
-                    {
-                        var pkgAssignments = assignments.Where(a => a.ContractPackageId == r.Id).ToList();
-                        foreach (var a in pkgAssignments)
-                        {
-                            var org = orgs.FirstOrDefault(o => o.Id == a.OrganizationId);
-                            var acc = a.RepresentativeAccountId.HasValue ? accounts.FirstOrDefault(x => x.Id == a.RepresentativeAccountId.Value) : null;
-                            r.Assignments.Add(new PackageAssignmentResponseDTO
-                            {
-                                Id = a.Id,
-                                ContractPackageId = a.ContractPackageId,
-                                OrganizationId = a.OrganizationId,
-                                OrganizationName = org?.DisplayName ?? org?.LegalName,
-                                OrganizationCode = org?.TaxCode,
-                                Role = a.Role,
-                                RepresentativeAccountId = a.RepresentativeAccountId,
-                                RepresentativeName = acc?.UserName,
-                                RepresentativeEmail = acc?.Email,
-                                ContractNumber = a.ContractNumber,
-                                ContractSignDate = a.ContractSignDate,
-                                Position = a.Position
-                            });
-                        }
-                    }
-                }
-            }
+            await AttachAssignmentsAsync(result);
             return result;
         }
 
         public async Task<ContractPackageResponseDTO?> GetByIdAsync(Guid id)
         {
-            var entity = (await _unitOfWork.Repository<ContractPackage>().FindAsync(cp => cp.Id == id, "Project")).FirstOrDefault();
+            var entity = (await _unitOfWork.Repository<ContractPackage>().FindAsync(cp => cp.Id == id, ProjectInclude)).FirstOrDefault();
             if (entity == null) return null;
 
             var result = _mapper.Map<ContractPackageResponseDTO>(entity);
+            await AttachAssignmentsAsync(new List<ContractPackageResponseDTO> { result });
+            return result;
+        }
 
-            var assignments = await _unitOfWork.Repository<PackageAssignment>().FindAsync(x => x.ContractPackageId == id);
-            if (assignments.Any())
+        private async Task AttachAssignmentsAsync(List<ContractPackageResponseDTO> packages)
+        {
+            if (packages.Count == 0) return;
+
+            var packageIds = packages.Select(p => p.Id).ToList();
+            var assignments = (await _unitOfWork.Repository<PackageAssignment>()
+                .FindAsync(a => packageIds.Contains(a.ContractPackageId))).ToList();
+            if (assignments.Count == 0) return;
+
+            var orgIds = assignments.Select(a => a.OrganizationId).Distinct().ToList();
+            var orgs = await _unitOfWork.Repository<Organization>().FindAsync(o => orgIds.Contains(o.Id));
+
+            var accountIds = assignments
+                .Where(a => a.RepresentativeAccountId.HasValue)
+                .Select(a => a.RepresentativeAccountId.Value)
+                .Distinct()
+                .ToList();
+            var accounts = await _unitOfWork.Repository<Account>().FindAsync(a => accountIds.Contains(a.Id));
+
+            var assignmentsByPackage = assignments.ToLookup(a => a.ContractPackageId);
+
+            foreach (var package in packages)
             {
-                var orgIds = assignments.Select(a => a.OrganizationId).Distinct().ToList();
-                var orgs = await _unitOfWork.Repository<Organization>().FindAsync(o => orgIds.Contains(o.Id));
-                
-                var accIds = assignments.Where(a => a.RepresentativeAccountId.HasValue).Select(a => a.RepresentativeAccountId.Value).Distinct().ToList();
-                var accounts = await _unitOfWork.Repository<Account>().FindAsync(a => accIds.Contains(a.Id));
-
-                foreach (var a in assignments)
+                foreach (var assignment in assignmentsByPackage[package.Id])
                 {
-                    var org = orgs.FirstOrDefault(o => o.Id == a.OrganizationId);
-                    var acc = a.RepresentativeAccountId.HasValue ? accounts.FirstOrDefault(x => x.Id == a.RepresentativeAccountId.Value) : null;
-                    
-                    result.Assignments.Add(new PackageAssignmentResponseDTO
+                    var org = orgs.FirstOrDefault(o => o.Id == assignment.OrganizationId);
+                    var account = assignment.RepresentativeAccountId.HasValue
+                        ? accounts.FirstOrDefault(x => x.Id == assignment.RepresentativeAccountId.Value)
+                        : null;
+
+                    package.Assignments.Add(new PackageAssignmentResponseDTO
                     {
-                        Id = a.Id,
-                        ContractPackageId = a.ContractPackageId,
-                        OrganizationId = a.OrganizationId,
+                        Id = assignment.Id,
+                        ContractPackageId = assignment.ContractPackageId,
+                        OrganizationId = assignment.OrganizationId,
                         OrganizationName = org?.DisplayName ?? org?.LegalName,
                         OrganizationCode = org?.TaxCode,
-                        Role = a.Role,
-                        ContractNumber = a.ContractNumber,
-                        RepresentativeAccountId = a.RepresentativeAccountId,
-                        RepresentativeName = acc != null ? acc.UserName : null,
-                        RepresentativeEmail = acc?.Email,
+                        Role = assignment.Role,
+                        ContractNumber = assignment.ContractNumber,
+                        RepresentativeAccountId = assignment.RepresentativeAccountId,
+                        RepresentativeName = account?.UserName,
+                        RepresentativeEmail = account?.Email,
                         RepresentativePhone = null,
-                        Position = a.Position,
-                        VatCode = a.VatCode,
-                        ContractSignDate = a.ContractSignDate,
-                        CreatedAt = a.CreatedAt
+                        Position = assignment.Position,
+                        VatCode = assignment.VatCode,
+                        ContractSignDate = assignment.ContractSignDate,
+                        CreatedAt = assignment.CreatedAt
                     });
                 }
             }
-
-            return result;
         }
 
         public async Task<ContractPackageResponseDTO> CreateAsync(CreateContractPackageDTO dto, Guid actorId)

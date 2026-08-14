@@ -9,6 +9,11 @@
 # Local session notes — không commit
 session-notes.md
 
+seed_data_new.sql
+seed_data_no_projects.sql
+seed_loi_rules.sql
+seed_permission_folder.sql
+
 
 
 # User-specific files

@@ -6,6 +6,7 @@ namespace Application.Interfaces.IServices
     public interface IContractPackageService
     {
         Task<IEnumerable<ContractPackageResponseDTO>> GetAllAsync();
+        Task<IEnumerable<ContractPackageResponseDTO>> GetMineAsync(Guid accountId);
         Task<IEnumerable<ContractPackageResponseDTO>> GetByProjectIdAsync(Guid projectId);
         Task<ContractPackageResponseDTO?> GetByIdAsync(Guid id);
         Task<ContractPackageResponseDTO> CreateAsync(CreateContractPackageDTO dto, Guid actorId);
