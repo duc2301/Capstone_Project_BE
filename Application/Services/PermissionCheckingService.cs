@@ -59,6 +59,9 @@ namespace Application.Services
             // FilePermission override đang từ chối, nên kiểm tra trước khi rơi vào ACL nhóm.
             if (await _permissionCheckingRepository.HasActiveFileViewGrantAsync(fileItemId, accountId))
                 return;
+            // Grant xem sinh ra từ issue được giao — cũng là đường Allow cộng thêm, độc lập ACL nhóm.
+            if (await _permissionCheckingRepository.HasActiveIssueFileViewGrantAsync(fileItemId, accountId))
+                return;
             await CheckFileAsync(fileItemId, accountId, fp => fp.CanView, fp => fp.CanView, "View");
         }
 
@@ -87,6 +90,7 @@ namespace Application.Services
 
         public async Task<bool> HasViewFileAsync(Guid fileItemId, Guid accountId)
             => await _permissionCheckingRepository.HasActiveFileViewGrantAsync(fileItemId, accountId)
+               || await _permissionCheckingRepository.HasActiveIssueFileViewGrantAsync(fileItemId, accountId)
                || await EvaluateFileAsync(fileItemId, accountId, fp => fp.CanView, fp => fp.CanView) == FileEval.Allowed;
 
         // ===== Project-scoped =====
