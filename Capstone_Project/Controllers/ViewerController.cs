@@ -20,25 +20,5 @@ namespace Capstone_Project.Controllers
         [Authorize]
         public async Task<IActionResult> GetToken(CancellationToken ct)
             => Ok(ApiResponse.Success("OK", await _viewer.GetViewerTokenAsync(ct)));
-
-        [HttpPost("models")]
-        [Authorize]
-        [Consumes("multipart/form-data")]
-        [RequestSizeLimit(524_288_000)]                                   
-        [RequestFormLimits(MultipartBodyLengthLimit = 524_288_000)]
-        public async Task<IActionResult> Upload(IFormFile file, CancellationToken ct)
-        {
-            if (file == null || file.Length == 0)
-                return BadRequest(ApiResponse.Fail("Tệp trống."));
-
-            using var stream = file.OpenReadStream();
-            var result = await _viewer.UploadAndTranslateAsync(stream, file.FileName, file.Length, ct);
-            return Ok(ApiResponse.Success("OK", result));
-        }
-
-        [HttpGet("models/{urn}/status")]
-        [Authorize]
-        public async Task<IActionResult> Status(string urn, CancellationToken ct)
-            => Ok(ApiResponse.Success("OK", await _viewer.GetStatusAsync(urn, ct)));
     }
 }

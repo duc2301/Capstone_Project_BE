@@ -45,9 +45,12 @@ namespace Infrastructure.Adapters.Viewer
             await EnsureBucketAsync(ct);
             var objectId = await SignedUploadAsync(objectKey, content, contentLength, ct);
             var urn = ToBase64Url(objectId);
-            await StartTranslationAsync(urn, ct);
+            await StartTranslationAsync(urn, force: false, ct);
             return new UploadModelResponseDTO { Urn = urn, FileName = safeFileName };
         }
+
+        public Task RetranslateAsync(string urn, CancellationToken ct = default) =>
+            StartTranslationAsync(urn, force: true, ct);
 
         public async Task<TranslationStatusResponseDTO> GetStatusAsync(string urn, CancellationToken ct = default)
         {
@@ -58,7 +61,7 @@ namespace Infrastructure.Adapters.Viewer
 
             using var res = await _http.SendAsync(req, ct);
             if (res.StatusCode == HttpStatusCode.NotFound)
-                return new TranslationStatusResponseDTO { Status = "pending", Progress = "0% complete" };
+                return new TranslationStatusResponseDTO { Status = TranslationStatuses.NotFound, Progress = "0% complete" };
 
             await EnsureSuccessAsync(res, "Không lấy được manifest dịch.", ct);
 
@@ -181,12 +184,12 @@ namespace Infrastructure.Adapters.Viewer
             }
         }
 
-        private async Task StartTranslationAsync(string urn, CancellationToken ct)
+        private async Task StartTranslationAsync(string urn, bool force, CancellationToken ct)
         {
             var (token, _) = await GetTokenAsync(InternalScope, ct);
             using var req = new HttpRequestMessage(HttpMethod.Post, "/modelderivative/v2/designdata/job");
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            req.Headers.Add("x-ads-force", "true");
+            if (force) req.Headers.Add("x-ads-force", "true");
 
             // SVF (classic): derivative tải bằng bearer token 2-legged -> hợp với token /viewer/token của mình.
             // (SVF2/streaming dùng CDN + cơ chế auth khác, hay fail "Failed to fetch" ở viewer tùy biến.)
@@ -198,7 +201,7 @@ namespace Infrastructure.Adapters.Viewer
             req.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
 
             using var res = await _http.SendAsync(req, ct);
-            await EnsureSuccessAsync(res, "Khởi tạo job dịch SVF2 thất bại.", ct);
+            await EnsureSuccessAsync(res, "Khởi tạo job dịch SVF thất bại.", ct);
         }
 
         private static string ToBase64Url(string objectId) =>

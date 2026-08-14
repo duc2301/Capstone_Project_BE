@@ -4,6 +4,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Application.Options;
+using Application.Services.Ai;
 using Domain.Entities;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -40,10 +41,13 @@ namespace Infrastructure.Adapters.Ai
         public async Task<ContentAnalysisResult?> AnalyzeContentAsync(Guid fileItemId, CancellationToken ct = default)
         {
             var extractedFile = await _fileReader.LoadTextAsync(fileItemId, ct);
-            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(extractedFile?.Item.FolderId);
-            var project = await _unitOfWork.Repository<Project>().GetByIdAsync(folder?.ProjectId);
+            // Kiểm null TRƯỚC khi deref: bản cũ đọc extractedFile?.Item.FolderId ở trên rồi mới
+            // throw ở dưới — `?.` chỉ che extractedFile, `.Item` vẫn deref thẳng.
             if (extractedFile == null)
                 throw new ApiExceptionResponse("File not found or could not be read");
+
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(extractedFile.Item.FolderId);
+            var project = folder is null ? null : await _unitOfWork.Repository<Project>().GetByIdAsync(folder.ProjectId);
 
             var content = extractedFile.Text;
             if (string.IsNullOrWhiteSpace(content))
@@ -52,11 +56,22 @@ namespace Infrastructure.Adapters.Ai
                 // người dùng chỉ thấy file không có cảnh báo mà không có lỗi nào.
                 _logger.LogWarning("Không trích được chữ từ file {FileItemId} ({Format}) — bỏ qua phân tích nội dung",
                     fileItemId, extractedFile.Version.Format);
-                return null;
+                return null;   // null = CHƯA phân tích được, KHÁC hẳn "đã phân tích và thấy ổn"
             }
 
-            //const int MaxContentChars = 6000;
-            //var sample = content.Length > MaxContentChars ? content[..MaxContentChars] : content;
+            // Chặn TRƯỚC khi gọi model: không đủ chữ thì vừa không tóm tắt được vừa không phán
+            // đoán được. Để model tự xoay sở là mời nó lấy tên/mô tả dự án trong prompt viết thay.
+            if (!ContentSignalPolicy.HasEnoughSignal(content))
+            {
+                var chars = content.Trim().Length;
+                _logger.LogInformation("File {FileItemId} chỉ có {Chars} ký tự — gắn cờ, không gọi model", fileItemId, chars);
+                return new ContentAnalysisResult
+                {
+                    Summary = null,
+                    Suspicious = true,
+                    Reason = $"Tệp gần như không có nội dung văn bản ({chars} ký tự) — không đủ cơ sở để tóm tắt hay đối chiếu với tên tệp."
+                };
+            }
 
             try
             {
@@ -68,21 +83,14 @@ namespace Infrastructure.Adapters.Ai
                 // để parse BEP cho nhanh, dùng chung sẽ làm cờ "nghi ngờ" kém hẳn đi.
                 var payload = new GenerateRequest(
                     _options.Value.CheckModel ?? _options.Value.ChatModel,
-                    AnalyzeContentPrompt(project.ProjectName, project.ProjectDescription, folder?.Name, content),
+                    AnalyzeContentPrompt(extractedFile.Item.Name, project?.ProjectName,
+                                         project?.ProjectDescription, folder?.Name, Sample(content)),
                     Stream: false,
                     Think: false,
-                    Format: new
-                    {
-                        type = "object",
-                        properties = new
-                        {
-                            summary = new { type = "string" },
-                            suspicious = new { type = "boolean" },
-                            reason = new { type = "string" }
-                        },
-                        required = new[] { "summary", "suspicious" }
-                    },
-                    Options: new GenerateOptions(0.3, 500, _options.Value.NumCtx, _options.Value.NumGpu));
+                    Format: AnalyzeSchema,
+                    // 0.0 chứ không 0.3: kiểm duyệt cần TÁI LẬP — cùng một file phải ra cùng một cờ,
+                    // chứ không phải mỗi lần upload lại một kết quả khác.
+                    Options: new GenerateOptions(0.0, 600, _options.Value.NumCtx, _options.Value.NumGpu));
 
                 var response = await client.PostAsync(url,
                     new StringContent(JsonSerializer.Serialize(payload, JsonOpts), Encoding.UTF8, "application/json"),
@@ -95,9 +103,32 @@ namespace Infrastructure.Adapters.Ai
                 }
 
                 var envelope = await response.Content.ReadFromJsonAsync<GenerateResponse>(JsonOpts, ct);
+
+                // Hết ngân sách token giữa chừng -> JSON vỡ hoặc thiếu trường. CallBepAsync có
+                // check này, nhánh phân tích nội dung thì trước giờ không.
+                if (envelope?.DoneReason == "length")
+                {
+                    _logger.LogWarning("Ollama analyze bị cắt do hết token cho file {FileItemId}", fileItemId);
+                    return null;
+                }
+
                 var parsed = JsonSerializer.Deserialize<AnalysisJson>(envelope?.Response ?? "", JsonOpts);
                 if (parsed is null)
                     return null;
+
+                // KIỂM CHỨNG BẰNG CODE, không tin lời model: các cụm nó bảo "trích nguyên văn"
+                // phải THẬT SỰ nằm trong file. Không cụm nào khớp = nó sinh từ ngữ cảnh prompt
+                // (tên/mô tả dự án) chứ không từ nội dung -> vứt tóm tắt và bật cờ.
+                if (!QuotesAreGrounded(parsed.Evidence, content))
+                {
+                    _logger.LogWarning("File {FileItemId}: dẫn chứng của model không có trong nội dung — loại tóm tắt", fileItemId);
+                    return new ContentAnalysisResult
+                    {
+                        Summary = null,
+                        Suspicious = true,
+                        Reason = "Không đối chiếu được nội dung tệp với kết quả phân tích của AI — cần người kiểm tra."
+                    };
+                }
 
                 var summary = parsed.Summary?.Trim();
                 return new ContentAnalysisResult
@@ -112,6 +143,43 @@ namespace Infrastructure.Adapters.Ai
                 _logger.LogWarning(ex, "Phân tích nội dung AI thất bại cho file {FileItemId}", fileItemId);
                 return null;
             }
+        }
+
+        // num_ctx=17000 token ≈ 35-40k ký tự tiếng Việt. Vượt ngưỡng, Ollama cắt ÂM THẦM đuôi
+        // prompt và model vẫn trả JSON hợp lệ -> không có cách nào biết đã mất chữ. Tóm tắt không
+        // cần đọc hết: lấy đầu (loại tài liệu, tiêu đề) + đuôi (kết luận, phụ lục).
+        private const int HeadChars = 9000;
+        private const int TailChars = 3000;
+
+        private static string Sample(string content) =>
+            content.Length <= HeadChars + TailChars
+                ? content
+                : content[..HeadChars] + "\n[...lược bớt phần giữa...]\n" + content[^TailChars..];
+
+        // Chỉ cần MỘT cụm khớp là đủ chứng minh model có đọc file; đòi khớp hết sẽ rụng oan vì
+        // text trích xuất hay dính chữ và model chuẩn hoá lại khoảng trắng khi copy.
+        private static bool QuotesAreGrounded(IReadOnlyList<string>? quotes, string content)
+        {
+            if (quotes is null || quotes.Count == 0) return false;
+
+            var haystack = Squash(content);
+            foreach (var q in quotes)
+            {
+                if (string.IsNullOrWhiteSpace(q)) continue;
+                var needle = Squash(q);
+                // Cụm quá ngắn thì khớp ngẫu nhiên, không chứng minh được gì.
+                if (needle.Length >= 8 && haystack.Contains(needle, StringComparison.Ordinal)) return true;
+            }
+            return false;
+        }
+
+        // Bỏ mọi thứ không phải chữ/số để dẫn chứng vẫn khớp khi model tự sửa khoảng trắng, dấu câu.
+        private static string Squash(string s)
+        {
+            var sb = new StringBuilder(s.Length);
+            foreach (var ch in s.ToLowerInvariant())
+                if (char.IsLetterOrDigit(ch)) sb.Append(ch);
+            return sb.ToString();
         }
 
         public async Task<BepParseResultDTO> ParseBepAsync(Stream content, string format, CancellationToken ct = default)
@@ -816,17 +884,51 @@ namespace Infrastructure.Adapters.Ai
             required = new[] { "groups", "packages" }
         };
 
-        private static string AnalyzeContentPrompt(string projectName, string projectDescription, string? folderName, string content) =>
-            "Bạn phân tích tài liệu xây dựng: Tóm tắt nội dung VÀ kiểm tra nội dung có đúng loại/chủ đề liên quan không.\n" +
-            $"Tên dự án: {projectName}\n" +
-            $"Mô tả dự án: {projectDescription}\n" +
-            $"Tên thư mục chứa nội dung: {folderName}\n" +
-            "Trích nội dung (có thể lỗi khoảng cách/định dạng do trích xuất PDF — BỎ QUA các lỗi đó, KHÔNG vì lỗi trích xuất mà coi là nghi ngờ):\n" +
-            $"{content}\n\n" +
-            "Trả 3 trường:\n" +
-            "1) summary (TIẾNG VIỆT, 1-3 câu, ~40 từ): loại tài liệu + chủ đề chính; bỏ mở đầu rườm rà ('Đây là', 'File này là'). KHÔNG bịa, KHÔNG nhận xét chất lượng.\n" +
-            "2) suspicious (boolean): true CHỈ KHI nội dung RÕ RÀNG không liên quan tới tên tệp / không phải tài liệu xây dựng - dự án (vd tên nói 'bản vẽ kết cấu' nhưng nội dung là truyện, hoá đơn cá nhân, nội dung rác, thông tin từ các lĩnh vực không liên quan như tuyển dụng, học tập). KHOAN DUNG: chỉ báo khi lệch trắng trợn; nghi ngờ nhẹ hoặc chỉ khác định dạng -> false. Xét LOẠI + CHỦ ĐỀ, cùng công ty/dự án chưa đủ để coi là khớp.\n" +
-            "3) reason (TIẾNG VIỆT, 1 câu): CHỈ khi suspicious=true, nêu vì sao lệch; suspicious=false thì để trống.\n" +
+        // Thứ tự property = thứ tự SINH của structured output. Cố ý đặt evidence/suspicious TRƯỚC
+        // summary: bản cũ sinh summary trước nên model tự khoá mình vào một kết luận, rồi buộc phải
+        // chọn suspicious sao cho NHẤT QUÁN với cái tóm tắt vừa bịa -> cờ nghi ngờ không bao giờ bật.
+        // summary KHÔNG nằm trong required: bắt buộc phải có = ép model bịa khi tệp rỗng nghĩa.
+        private static readonly object AnalyzeSchema = new
+        {
+            type = "object",
+            properties = new
+            {
+                evidence = new { type = "array", items = new { type = "string" } },
+                contentTopic = new { type = "string" },
+                suspicious = new { type = "boolean" },
+                reason = new { type = "string" },
+                summary = new { type = "string" }
+            },
+            required = new[] { "evidence", "contentTopic", "suspicious" }
+        };
+
+        private static string AnalyzeContentPrompt(string fileName, string? projectName,
+                                                   string? projectDescription, string? folderName, string content) =>
+            "Bạn kiểm tra một tệp vừa được tải lên hệ thống quản lý tài liệu xây dựng (CDE).\n" +
+            "NGUYÊN TẮC BẮT BUỘC: mọi câu trả lời phải dựa DUY NHẤT vào phần NỘI DUNG TỆP bên dưới. " +
+            "Phần bối cảnh dự án chỉ dùng để ĐỐI CHIẾU, TUYỆT ĐỐI không được dùng làm nguồn cho tóm tắt. " +
+            "Nội dung tệp không nói gì thì tóm tắt phải để TRỐNG — không được suy ra từ tên dự án, mô tả dự án hay tên thư mục.\n\n" +
+
+            // Nội dung đặt TRƯỚC bối cảnh: bản cũ đặt tên/mô tả dự án ngay trên content, nên khi
+            // content nghèo chữ thì thứ gần nhất model bám vào để sinh tóm tắt là mô tả dự án.
+            "===== NỘI DUNG TỆP (nguồn duy nhất) =====\n" +
+            $"{content}\n" +
+            "===== HẾT NỘI DUNG TỆP =====\n\n" +
+
+            "BỐI CẢNH (chỉ để đối chiếu, KHÔNG phải nội dung tệp):\n" +
+            $"- Tên tệp: {fileName}\n" +
+            $"- Thư mục: {folderName}\n" +
+            $"- Dự án: {projectName}\n" +
+            $"- Mô tả dự án: {projectDescription}\n\n" +
+
+            "Text được trích tự động từ PDF/DOCX nên có thể dính chữ, mất dấu cách, vỡ bảng — ĐÓ LÀ LỖI TRÍCH XUẤT, không phải dấu hiệu nghi ngờ.\n\n" +
+
+            "Trả JSON theo ĐÚNG thứ tự các trường sau:\n" +
+            "1) evidence: 2-4 cụm từ TRÍCH NGUYÊN VĂN từ NỘI DUNG TỆP (copy y hệt, không sửa, không dịch, mỗi cụm 3-10 từ). Đây là bằng chứng bạn đã thực sự đọc tệp. Tệp không đủ chữ -> mảng rỗng.\n" +
+            "2) contentTopic: chủ đề THỰC TẾ của nội dung tệp, 5-15 từ, chỉ dựa trên evidence ở trên.\n" +
+            "3) suspicious (boolean): true khi contentTopic KHÔNG phải tài liệu phục vụ dự án xây dựng/BIM (văn bản vu vơ, ghi chú cá nhân, nội dung thử nghiệm, truyện, hoá đơn, nội dung rác, lĩnh vực không liên quan như tuyển dụng/học tập), HOẶC lệch trắng trợn so với Tên tệp. Lỗi trích xuất, khác định dạng, nghi ngờ nhẹ -> false.\n" +
+            "4) reason (TIẾNG VIỆT, 1 câu): CHỈ khi suspicious=true, nêu vì sao nghi ngờ; suspicious=false thì để trống.\n" +
+            "5) summary (TIẾNG VIỆT, 1-3 câu, ~40 từ): loại tài liệu + chủ đề chính, CHỈ từ nội dung tệp. Bỏ mở đầu rườm rà ('Đây là', 'File này là'). KHÔNG nhận xét chất lượng. Nội dung tệp không đủ để tóm tắt -> để TRỐNG, tuyệt đối không lấy tên/mô tả dự án ra viết thay.\n" +
             "Chỉ trả JSON đúng schema, không kèm chữ nào khác.";
 
         private static readonly JsonSerializerOptions JsonOpts = new()
@@ -839,10 +941,13 @@ namespace Infrastructure.Adapters.Ai
         };
 
 
+        // Thứ tự các tham số phản chiếu thứ tự trong AnalyzeSchema — evidence trước, summary sau cùng.
         private record AnalysisJson(
-            [property: JsonPropertyName("summary")] string? Summary,
+            [property: JsonPropertyName("evidence")] List<string>? Evidence,
+            [property: JsonPropertyName("contentTopic")] string? ContentTopic,
             [property: JsonPropertyName("suspicious")] bool Suspicious,
-            [property: JsonPropertyName("reason")] string? Reason);
+            [property: JsonPropertyName("reason")] string? Reason,
+            [property: JsonPropertyName("summary")] string? Summary);
 
         private record GenerateRequest(string Model, string Prompt, bool Stream, bool Think, object Format, GenerateOptions Options);
         private record GenerateOptions(
