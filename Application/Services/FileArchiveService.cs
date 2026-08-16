@@ -1,4 +1,5 @@
 using Application.ExceptionMiddleware;
+using Application.Interfaces.IBackgroundServices;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
@@ -13,6 +14,8 @@ namespace Application.Services
     /// Niêm phong lưu trữ (Published → Archived). Tách khỏi luồng phê duyệt:
     /// chỉ PM/Admin chủ động chốt bản Published chính thức vào vùng Archived, bấm được nhiều lần.
     /// Mỗi lần niêm phong tạo/cộng dồn 1 bản lưu (mirror) chỉ-đọc trỏ cùng blob với bản Published gốc.
+    /// Bản lưu được ingest vào chỉ mục ngữ nghĩa để khi bản Published bị rút về WIP, tìm kiếm vẫn
+    /// rơi về được bản chính thức gần nhất (xem DocumentSearchRepository.SearchByVectorAsync).
     /// </summary>
     public class FileArchiveService : IFileArchiveService
     {
@@ -20,17 +23,20 @@ namespace Application.Services
         private readonly IFileZoneResolverService _zoneResolver;
         private readonly IFileVersionService _fileVersionService;
         private readonly IAuditLogService _auditLog;
+        private readonly IIngestBackgroundService _ingestQueue;
 
         public FileArchiveService(
             IUnitOfWork unitOfWork,
             IFileZoneResolverService zoneResolver,
             IFileVersionService fileVersionService,
-            IAuditLogService auditLog)
+            IAuditLogService auditLog,
+            IIngestBackgroundService ingestQueue)
         {
             _unitOfWork = unitOfWork;
             _zoneResolver = zoneResolver;
             _fileVersionService = fileVersionService;
             _auditLog = auditLog;
+            _ingestQueue = ingestQueue;
         }
 
         public async Task<Guid> SealToArchiveAsync(Guid fileItemId, Guid actor, string actorRole)
@@ -110,6 +116,11 @@ namespace Application.Services
                 projectId: folder.ProjectId, folderId: archivedFolder.Id);
 
             await _unitOfWork.CommitAsync();
+
+            // 8) Ingest bản lưu ra chỉ mục ngữ nghĩa: enqueue SAU commit (mirror.CurrentVersionId đã set ở bước 7)
+            //    để worker đọc được version vừa append. Cùng cách làm với ApprovalService khi duyệt lên Published.
+            _ingestQueue.Enqueue(mirror.Id);
+
             return mirror.Id;
         }
     }
