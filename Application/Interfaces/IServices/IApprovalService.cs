@@ -15,11 +15,11 @@ namespace Application.Interfaces.IServices
         // Gửi file để chờ Team Leader phê duyệt.
         Task<ApprovalRequestResponseDTO> SubmitAsync(Guid fileItemId, SubmitApprovalRequestDTO? dto, Guid actorId);
 
-        // Tất cả yêu cầu phê duyệt mà người dùng được phép xem.
-        Task<IEnumerable<ApprovalRequestResponseDTO>> GetAllAsync(Guid actorId);
+        // Tất cả yêu cầu phê duyệt mà người dùng được phép xem, có phân trang.
+        Task<ApprovalRequestPageDTO> GetAllAsync(Guid actorId, int page, int pageSize);
 
-        // Danh sách yêu cầu đang chờ duyệt của Team Leader hiện tại.
-        Task<IEnumerable<ApprovalRequestResponseDTO>> GetPendingAsync(Guid actorId);
+        // Danh sách yêu cầu đang chờ duyệt của Team Leader hiện tại, có phân trang.
+        Task<ApprovalRequestPageDTO> GetPendingAsync(Guid actorId, int page, int pageSize);
 
         // Chi tiết một yêu cầu phê duyệt.
         Task<ApprovalRequestResponseDTO> GetByIdAsync(Guid id, Guid actorId);
