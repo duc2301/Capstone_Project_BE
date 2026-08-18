@@ -24,7 +24,7 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IFileZoneResolverService _zoneResolver;
         private readonly ILogger<ApprovalService> _logger;
-        private readonly IIngestBackgroundService _documentIngestBackgroundService;
+        private readonly IDocumentIndexSyncService _indexSync;
         private readonly IFileVersionService _fileVersionService;
         private readonly INotificationService _notification;
         private readonly IApprovalRealtimeNotifier _approvalRealtime;
@@ -34,7 +34,7 @@ namespace Application.Services
             IUnitOfWork unitOfWork,
             IFileZoneResolverService zoneResolver,
             ILogger<ApprovalService> logger,
-            IIngestBackgroundService documentIngestBackgroundService,
+            IDocumentIndexSyncService indexSync,
             IFileVersionService fileVersionService,
             INotificationService notification,
             IApprovalRealtimeNotifier approvalRealtime,
@@ -43,7 +43,7 @@ namespace Application.Services
             _unitOfWork = unitOfWork;
             _zoneResolver = zoneResolver;
             _logger = logger;
-            _documentIngestBackgroundService = documentIngestBackgroundService;
+            _indexSync = indexSync;
             _fileVersionService = fileVersionService;
             _notification = notification;
             _approvalRealtime = approvalRealtime;
@@ -240,8 +240,7 @@ namespace Application.Services
 
             await _unitOfWork.CommitAsync();
 
-            if (request.TargetZone == CdeArea.Published)
-                _documentIngestBackgroundService.Enqueue(fileItem.Id);
+            await _indexSync.RequestIndexAsync(fileItem.Id);
 
             var result = await BuildResponseAsync(request, fileItem);
 

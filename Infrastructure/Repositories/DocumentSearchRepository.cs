@@ -22,7 +22,9 @@ namespace Infrastructure.Repositories
             _context = context;
         }
 
-        public async Task<IReadOnlyList<DocumentSearchHit>> SearchByVectorAsync(Guid projectId, Vector queryEmbedding, int k, CancellationToken ct = default)
+        public async Task<IReadOnlyList<DocumentSearchHit>> SearchByVectorAsync(
+            Guid projectId, Vector queryEmbedding, int k,
+            IReadOnlyCollection<Guid>? viewableFolderIds, CancellationToken ct = default)
         {
             var files = _context.Set<FileItem>().AsNoTracking();
             var q = from c in _context.Set<DocumentChildChunk>().AsNoTracking()
@@ -34,6 +36,13 @@ namespace Infrastructure.Repositories
                                && !files.Any(src => src.Id == f.SourceFileItemId
                                                  && src.Folder.Area == CdeArea.Published)))
                     select new { c, f };
+
+            // Lọc theo quyền xem thư mục. Chỉ áp lên thư mục CHỨA KẾT QUẢ — cố ý KHÔNG áp lên truy vấn
+            // con `src.Folder.Area == Published` ở trên: đó là kiểm tra trạng thái (bản Published còn tồn
+            // tại hay không), không phải kiểm tra đọc được hay không. Lẫn hai thứ này sẽ làm cờ
+            // IsUnderRevision báo sai cho người không nhìn thấy thư mục Published của nhóm khác.
+            if (viewableFolderIds is not null)
+                q = q.Where(x => viewableFolderIds.Contains(x.f.FolderId));
 
             return await q
                 .OrderBy(x => x.c.Embedding!.CosineDistance(queryEmbedding))
