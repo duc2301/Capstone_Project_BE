@@ -154,6 +154,7 @@ namespace Infrastructure.Configurations
             services.AddScoped<IMarkupRepository, MarkupRepository>();
             services.AddScoped<IFileViewRepository, FileViewRepository>();
             services.AddScoped<IFileLinkRepository, FileLinkRepository>();
+            services.AddScoped<IFileDeletionRepository, FileDeletionRepository>();
             services.AddScoped<ILoiRuleAdminService, Application.Services.Loi.LoiRuleAdminService>();
             services.AddScoped<ILoiRuleImportService, Application.Services.Loi.LoiRuleImportService>();
             services.AddSingleton<IFileTextExtractor, FileTextExtractorService>();

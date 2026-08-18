@@ -1,27 +1,30 @@
 using Application.DTOs.ResponseDTOs.FileItem;
 using Application.ExceptionMiddleware;
+using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
 using Domain.Enum.Audit;
 using Domain.Enum.Cde;
 using Domain.Enum.File;
-using Domain.Enum.Issue;
 
 namespace Application.Services
 {
     public class FileDeletionService : IFileDeletionService
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IFileDeletionRepository _files;
         private readonly IFileStorageService _storage;
         private readonly IAuditLogService _auditLog;
 
         public FileDeletionService(
             IUnitOfWork unitOfWork,
+            IFileDeletionRepository files,
             IFileStorageService storage,
             IAuditLogService auditLog)
         {
             _unitOfWork = unitOfWork;
+            _files = files;
             _storage = storage;
             _auditLog = auditLog;
         }
@@ -29,9 +32,9 @@ namespace Application.Services
         public async Task<DeleteFileResultDTO> DeleteFlaggedAsync(
             Guid fileItemId, Guid actorId, bool isSystemAdmin, CancellationToken ct = default)
         {
-            var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+            var fileItem = await _files.GetFileItemForUpdateAsync(fileItemId, ct)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
-            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
+            var folder = await _files.GetFolderAsync(fileItem.FolderId, ct)
                 ?? throw new ApiExceptionResponse("File folder not found.", 404);
 
             if (folder.Area != CdeArea.Wip)
@@ -47,10 +50,10 @@ namespace Application.Services
             if (current.Warnning != true)
                 throw new ApiExceptionResponse("Chỉ xoá được phiên bản bị AI cảnh báo nội dung.", 400);
 
-            await RequireDeletePermissionAsync(folder.ProjectId, current, actorId, isSystemAdmin);
-            await RequireNoOpenIssueAsync(fileItemId);
-            await RequireNoPendingApprovalAsync(fileItemId);
-            await RequireNoReturnRequestAsync(fileItemId);
+            await RequireDeletePermissionAsync(folder.ProjectId, current, actorId, isSystemAdmin, ct);
+            await RequireNoOpenIssueAsync(fileItemId, ct);
+            await RequireNoPendingApprovalAsync(fileItemId, ct);
+            await RequireNoReturnRequestAsync(fileItemId, ct);
 
             var history = await _unitOfWork.FileVersionRepository.GetHistoryAsync(fileItemId);
             var previous = history
@@ -62,12 +65,12 @@ namespace Application.Services
             var storagePaths = new List<string>();
             CollectStoragePath(storagePaths, current);
 
-            await DeleteVersionDependenciesAsync(current.Id);
+            await DeleteVersionDependenciesAsync(current.Id, ct);
 
             if (previous == null)
             {
-                await RequireNoApprovalHistoryAsync(fileItemId);
-                await DeleteFileItemDependenciesAsync(fileItem);
+                await RequireNoApprovalHistoryAsync(fileItemId, ct);
+                await DeleteFileItemDependenciesAsync(fileItem, ct);
                 _unitOfWork.Repository<FileVersionState>().Delete(current);
 
                 fileItem.CurrentVersionId = null;
@@ -90,7 +93,7 @@ namespace Application.Services
                 };
             }
 
-            var restored = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(previous.Id)
+            var restored = await _files.GetVersionForUpdateAsync(previous.Id, ct)
                 ?? throw new ApiExceptionResponse("Previous version not found.", 404);
 
             _unitOfWork.Repository<FileVersionState>().Delete(current);
@@ -123,68 +126,56 @@ namespace Application.Services
         }
 
         private async Task RequireDeletePermissionAsync(
-            Guid projectId, FileVersionState version, Guid actorId, bool isSystemAdmin)
+            Guid projectId, FileVersionState version, Guid actorId, bool isSystemAdmin, CancellationToken ct)
         {
             if (isSystemAdmin) return;
             if (version.UploadedByAccountId == actorId) return;
 
-            var project = await _unitOfWork.Repository<Project>().GetByIdAsync(projectId);
-            if (project?.ManagerAccountId == actorId) return;
+            var managerAccountId = await _files.GetProjectManagerIdAsync(projectId, ct);
+            if (managerAccountId == actorId) return;
 
             throw new ApiExceptionResponse(
                 "Chỉ người tải lên, quản lý dự án hoặc quản trị hệ thống được xoá tệp này.", 403);
         }
 
-        private async Task RequireNoOpenIssueAsync(Guid fileItemId)
+        private async Task RequireNoOpenIssueAsync(Guid fileItemId, CancellationToken ct)
         {
-            var openIssues = (await _unitOfWork.Repository<Issue>().FindAsync(
-                    i => i.LinkedFileItemId == fileItemId && i.Status != IssueStatus.Closed))
-                .Count();
+            var openIssues = await _files.CountOpenIssuesAsync(fileItemId, ct);
             if (openIssues > 0)
                 throw new ApiExceptionResponse(
                     $"Tệp còn {openIssues} vấn đề chưa đóng. Đóng hết rồi mới xoá được.", 409);
         }
 
-        private async Task RequireNoPendingApprovalAsync(Guid fileItemId)
+        private async Task RequireNoPendingApprovalAsync(Guid fileItemId, CancellationToken ct)
         {
-            var pending = (await _unitOfWork.Repository<ApprovalRequest>().FindAsync(
-                    a => a.FileItemId == fileItemId && a.Status == ApprovalRequestStatus.Pending))
-                .Any();
-            if (pending)
+            if (await _files.HasPendingApprovalAsync(fileItemId, ct))
                 throw new ApiExceptionResponse("Tệp đang có phiếu duyệt chờ xử lý nên không xoá được.", 409);
         }
 
-        private async Task RequireNoApprovalHistoryAsync(Guid fileItemId)
+        private async Task RequireNoApprovalHistoryAsync(Guid fileItemId, CancellationToken ct)
         {
-            var hasApproval = (await _unitOfWork.Repository<ApprovalRequest>()
-                .FindAsync(a => a.FileItemId == fileItemId)).Any();
-            if (hasApproval)
+            if (await _files.HasAnyApprovalAsync(fileItemId, ct))
                 throw new ApiExceptionResponse(
                     "Tệp đã từng qua phiếu duyệt nên không xoá khỏi hệ thống được.", 409);
         }
 
-        private async Task RequireNoReturnRequestAsync(Guid fileItemId)
+        private async Task RequireNoReturnRequestAsync(Guid fileItemId, CancellationToken ct)
         {
-            var hasReturnRequest = (await _unitOfWork.Repository<ZoneReturnRequest>()
-                .FindAsync(r => r.FileItemId == fileItemId)).Any();
-            if (hasReturnRequest)
+            if (await _files.HasReturnRequestAsync(fileItemId, ct))
                 throw new ApiExceptionResponse(
                     "Tệp có yêu cầu trả về vùng WIP nên không xoá được.", 409);
         }
 
-        private async Task DeleteVersionDependenciesAsync(Guid versionId)
+        private async Task DeleteVersionDependenciesAsync(Guid versionId, CancellationToken ct)
         {
-            var loiChecks = await _unitOfWork.Repository<FileVersionLoiCheck>()
-                .FindAsync(c => c.FileVersionId == versionId);
+            var loiChecks = await _files.GetLoiChecksForDeleteAsync(versionId, ct);
             foreach (var check in loiChecks)
                 _unitOfWork.Repository<FileVersionLoiCheck>().Delete(check);
 
-            var markupSets = (await _unitOfWork.Repository<MarkupSet>()
-                .FindAsync(s => s.FileVersionId == versionId)).ToList();
-            var setIds = markupSets.Select(s => s.Id).ToHashSet();
+            var markupSets = await _files.GetMarkupSetsForDeleteAsync(versionId, ct);
+            var setIds = markupSets.Select(s => s.Id).ToList();
 
-            var notes = await _unitOfWork.Repository<FileNote>()
-                .FindAsync(n => n.FileVersionId == versionId || setIds.Contains(n.MarkupSetId));
+            var notes = await _files.GetNotesForDeleteAsync(versionId, setIds, ct);
             foreach (var note in notes)
                 _unitOfWork.Repository<FileNote>().Delete(note);
 
@@ -192,43 +183,36 @@ namespace Application.Services
                 _unitOfWork.Repository<MarkupSet>().Delete(set);
         }
 
-        private async Task DeleteFileItemDependenciesAsync(FileItem fileItem)
+        private async Task DeleteFileItemDependenciesAsync(FileItem fileItem, CancellationToken ct)
         {
-            var closedIssues = (await _unitOfWork.Repository<Issue>()
-                .FindAsync(i => i.LinkedFileItemId == fileItem.Id)).ToList();
-            foreach (var issue in closedIssues)
+            var linkedIssues = await _files.GetLinkedIssuesForUpdateAsync(fileItem.Id, ct);
+            foreach (var issue in linkedIssues)
             {
                 issue.LinkedFileItemId = null;
                 _unitOfWork.Repository<Issue>().Update(issue);
             }
 
-            var links = (await _unitOfWork.Repository<FileLink>()
-                .FindAsync(l => l.FileItemId == fileItem.Id || l.LinkedFileItemId == fileItem.Id)).ToList();
+            var links = await _files.GetLinksForDeleteAsync(fileItem.Id, ct);
             foreach (var link in links)
                 _unitOfWork.Repository<FileLink>().Delete(link);
 
-            var permissions = await _unitOfWork.Repository<FilePermission>()
-                .FindAsync(p => p.FileItemId == fileItem.Id);
+            var permissions = await _files.GetFilePermissionsForDeleteAsync(fileItem.Id, ct);
             foreach (var permission in permissions)
                 _unitOfWork.Repository<FilePermission>().Delete(permission);
 
-            var namingMetadata = await _unitOfWork.Repository<FileNamingMetadata>()
-                .FindAsync(m => m.FileItemId == fileItem.Id);
+            var namingMetadata = await _files.GetNamingMetadataForDeleteAsync(fileItem.Id, ct);
             foreach (var metadata in namingMetadata)
                 _unitOfWork.Repository<FileNamingMetadata>().Delete(metadata);
 
-            var signaturePositions = await _unitOfWork.Repository<FileSignaturePosition>()
-                .FindAsync(p => p.FileItemId == fileItem.Id);
+            var signaturePositions = await _files.GetSignaturePositionsForDeleteAsync(fileItem.Id, ct);
             foreach (var position in signaturePositions)
                 _unitOfWork.Repository<FileSignaturePosition>().Delete(position);
 
-            var viewGrants = await _unitOfWork.Repository<FileViewGrant>()
-                .FindAsync(g => g.FileItemId == fileItem.Id);
+            var viewGrants = await _files.GetViewGrantsForDeleteAsync(fileItem.Id, ct);
             foreach (var grant in viewGrants)
                 _unitOfWork.Repository<FileViewGrant>().Delete(grant);
 
-            var documents = await _unitOfWork.Repository<Document>()
-                .FindAsync(d => d.FileItemId == fileItem.Id);
+            var documents = await _files.GetDocumentsForDeleteAsync(fileItem.Id, ct);
             foreach (var document in documents)
                 _unitOfWork.Repository<Document>().Delete(document);
         }
