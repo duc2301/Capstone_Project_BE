@@ -22,8 +22,8 @@ namespace Capstone_Project.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAll()
-            => Ok(ApiResponse.Success(RetrievedMessage, await _service.GetAllAsync()));
+        public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+            => Ok(ApiResponse.Success(RetrievedMessage, await _service.GetAllAsync(page, pageSize)));
 
         [HttpGet("mine")]
         public async Task<IActionResult> GetMine()

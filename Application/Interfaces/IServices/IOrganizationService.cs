@@ -6,7 +6,7 @@ namespace Application.Interfaces.IServices
 {
     public interface IOrganizationService
     {
-        Task<IEnumerable<OrganizationResponseDTO>> GetAllAsync();
+        Task<OrganizationPageDTO> GetAllAsync(int page, int pageSize);
         Task<OrganizationResponseDTO?> GetByIdAsync(Guid id);
         Task<IEnumerable<ProjectResponseDTO>> GetProjectsByOrganizationAsync(Guid id);
         Task<OrganizationResponseDTO> CreateAsync(CreateOrganizationDTO dto);
