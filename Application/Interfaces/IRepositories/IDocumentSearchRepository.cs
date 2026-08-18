@@ -9,8 +9,14 @@ namespace Application.Interfaces.IRepositories
 {
     public interface IDocumentSearchRepository
     {
+        /// <param name="viewableFolderIds">
+        /// Tập thư mục người tìm được phép xem. <c>null</c> = không giới hạn (Admin hệ thống / PM / ProjectAdmin).
+        /// Lọc quyền nằm ngay trong mệnh đề where của truy vấn vector để "tệp nào được phép trích dẫn"
+        /// chỉ có đúng một nơi định nghĩa.
+        /// </param>
         Task<IReadOnlyList<DocumentSearchHit>> SearchByVectorAsync(
-           Guid projectId, Vector queryEmbedding, int k, CancellationToken ct = default);
+           Guid projectId, Vector queryEmbedding, int k,
+           IReadOnlyCollection<Guid>? viewableFolderIds, CancellationToken ct = default);
 
         public record DocumentSearchHit(
         Guid FileItemId,

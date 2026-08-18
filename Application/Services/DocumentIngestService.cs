@@ -40,7 +40,7 @@ namespace Application.Services
             if (folder == null)
                 throw new ApiExceptionResponse("Folder not found", 404);
             
-            if (folder.Area is not (CdeArea.Published or CdeArea.Archived))
+            if (!folder.Area.IsOfficialArea())
             {
                 throw new ApiExceptionResponse("Chỉ ingest file ở Published hoặc Archived", 400);
             }
