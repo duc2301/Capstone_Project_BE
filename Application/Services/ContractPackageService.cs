@@ -1,3 +1,4 @@
+using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.ContractPackage;
 using Application.DTOs.ResponseDTOs.ContractPackage;
 using Application.ExceptionMiddleware;
@@ -29,12 +30,23 @@ namespace Application.Services
             _auditLog = auditLog;
         }
 
-        public async Task<IEnumerable<ContractPackageResponseDTO>> GetAllAsync()
+        private const int DefaultPackagePageSize = 20;
+        private const int MaxPackagePageSize = 500;
+
+        public async Task<PagedResult<ContractPackageResponseDTO>> GetAllAsync(int page, int pageSize)
         {
-            var packages = await _unitOfWork.Repository<ContractPackage>().GetAllAsync(ProjectInclude);
-            var result = _mapper.Map<List<ContractPackageResponseDTO>>(packages);
+            var packages = (await _unitOfWork.Repository<ContractPackage>().GetAllAsync(ProjectInclude))
+                .OrderByDescending(p => p.CreatedAt)
+                .ToList();
+
+            var safePage = page < 1 ? 1 : page;
+            var safeSize = pageSize < 1 || pageSize > MaxPackagePageSize ? DefaultPackagePageSize : pageSize;
+            var pagePackages = packages.Skip((safePage - 1) * safeSize).Take(safeSize).ToList();
+
+            var result = _mapper.Map<List<ContractPackageResponseDTO>>(pagePackages);
             await AttachAssignmentsAsync(result);
-            return result;
+
+            return new PagedResult<ContractPackageResponseDTO>(result, packages.Count, safePage, safeSize);
         }
 
         public async Task<IEnumerable<ContractPackageResponseDTO>> GetMineAsync(Guid accountId)
