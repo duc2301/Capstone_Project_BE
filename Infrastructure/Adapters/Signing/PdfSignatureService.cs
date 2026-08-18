@@ -220,9 +220,10 @@ namespace Infrastructure.Adapters.Signing
                 var now = DateTime.UtcNow;
 
                 // Bản đã ký = version thay thế (WorkingVersion +1) qua FileVersionService,
-                // kèm metadata chữ ký — không tự ghi bảng version nữa.
-                var versionResult = await _fileVersionService.GetNextUploadVersionAsync(
-                    fileItem.FolderId, fileItem.Name,
+                // kèm metadata chữ ký — không tự ghi bảng version nữa. Dùng AppendSignedVersionAsync
+                // chứ không phải đường upload: nội dung không đổi nên mô tả/cảnh báo AI phải đi theo.
+                var versionResult = await _fileVersionService.AppendSignedVersionAsync(
+                    fileItem.Id, fileItem.Name,
                     new FileVersionDataDTO
                     {
                         StoragePath = stored.RelativePath,

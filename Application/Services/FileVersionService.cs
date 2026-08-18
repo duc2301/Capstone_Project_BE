@@ -187,6 +187,28 @@ namespace Application.Services
             return current == null ? null : ToResult(current);
         }
 
+        // Ký số: đánh số như "upload thay thế" (WorkingVersion +1) vì file vật lý là bản PDF mới,
+        // NHƯNG nội dung tài liệu không đổi — chỉ đổi định dạng + đóng dấu chữ ký. Nên kết quả phân tích
+        // AI của bản được ký được giữ lại; các bước sau (publish, niêm phong) tự mang tiếp qua CopyContentFrom.
+        public async Task<FileVersionResult> AppendSignedVersionAsync(Guid fileItemId, string fileName, FileVersionDataDTO signedData)
+        {
+            var current = await RequireCurrentStateAsync(fileItemId);
+
+            if (current.Stage == VersionStage.Published)
+                throw new InvalidOperationException(
+                    "Published documents cannot receive signed replacements. Return the document to WIP first.");
+
+            var snapshot = BuildUploadSnapshot(fileItemId, fileName, signedData, current,
+                VersionStage.Working, current.WorkingRevision, current.WorkingVersion + 1, current.PublishedRevision);
+
+            snapshot.Description = current.Description;
+            snapshot.Warnning = current.Warnning;
+            snapshot.WarnningMessage = current.WarnningMessage;
+
+            await PersistSnapshotAsync(snapshot, current);
+            return ToResult(snapshot);
+        }
+
         // Niêm phong lưu trữ: append 1 dòng version cho FILE BẢN LƯU, copy nội dung + số hiệu bản Published gốc.
         // Không nhân bản blob (trỏ cùng StoragePath) — dòng Published gốc bất biến (append-only) nên an toàn.
         public async Task<FileVersionResult> AppendArchivedVersionAsync(Guid archivedFileItemId, FileVersionState sourcePublished)
