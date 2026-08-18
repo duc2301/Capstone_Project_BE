@@ -1,3 +1,4 @@
+using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Organization;
 using Application.DTOs.ResponseDTOs.Organization;
 using Application.DTOs.ResponseDTOs.Project;
@@ -23,41 +24,38 @@ namespace Application.Services
             _projectService = projectService;
         }
 
-        public async Task<IEnumerable<OrganizationResponseDTO>> GetAllAsync()
-        {
-            var entities = (await _unitOfWork.Repository<Organization>().GetAllAsync()).ToList();
-            var jvMembers = (await _unitOfWork.Repository<JointVentureMember>().GetAllAsync()).ToList();
-            var allProjects = (await _unitOfWork.Repository<Project>().GetAllAsync()).ToList();
-            var allParticipants = (await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync()).ToList();
-            var allGroups = (await _unitOfWork.Repository<Group>().GetAllAsync()).ToList();
-            var allAccounts = (await _unitOfWork.Repository<Account>().GetAllAsync()).ToList();
-            var allGroupMembers = (await _unitOfWork.Repository<GroupMember>().GetAllAsync()).ToList();
+        private const int DefaultOrganizationPageSize = 20;
+        private const int MaxOrganizationPageSize = 500;
 
-            var result = _mapper.Map<List<OrganizationResponseDTO>>(entities);
+        public async Task<PagedResult<OrganizationResponseDTO>> GetAllAsync(int page, int pageSize)
+        {
+            var entities = (await _unitOfWork.Repository<Organization>().GetAllAsync())
+                .OrderByDescending(o => o.CreatedAt)
+                .ToList();
+
+            var safePage = page < 1 ? 1 : page;
+            var safeSize = pageSize < 1 || pageSize > MaxOrganizationPageSize ? DefaultOrganizationPageSize : pageSize;
+            var pageEntities = entities.Skip((safePage - 1) * safeSize).Take(safeSize).ToList();
+
+            var result = _mapper.Map<List<OrganizationResponseDTO>>(pageEntities);
+            var orgIds = result.Select(dto => dto.Id).ToList();
+
+            var jvMembersById = (await _unitOfWork.Repository<JointVentureMember>()
+                    .FindAsync(j => orgIds.Contains(j.JointVentureId)))
+                .GroupBy(j => j.JointVentureId)
+                .ToDictionary(g => g.Key, g => g.Select(j => j.MemberOrganizationId).ToList());
+
+            var counts = await ComputeParticipatingProjectsCountsAsync(orgIds);
+
             foreach (var dto in result)
             {
-                if (dto.IsJointVenture)
-                {
-                    dto.JointVentureMemberIds = jvMembers
-                        .Where(j => j.JointVentureId == dto.Id)
-                        .Select(j => j.MemberOrganizationId)
-                        .ToList();
-                }
+                if (dto.IsJointVenture && jvMembersById.TryGetValue(dto.Id, out var memberIds))
+                    dto.JointVentureMemberIds = memberIds;
 
-                var orgGroups = allGroups.Where(g => g.OrganizationId == dto.Id).Select(g => g.Id).ToList();
-                
-                var orgAccountIds = allAccounts.Where(a => a.OrganizationId == dto.Id).Select(a => a.Id).ToList();
-                var groupIdsWithOrgMembers = allGroupMembers.Where(gm => orgAccountIds.Contains(gm.AccountId)).Select(gm => gm.GroupId).ToList();
-                
-                var allGroupIds = orgGroups.Union(groupIdsWithOrgMembers).Distinct().ToList();
-
-                var participatingProjectIds = allParticipants.Where(p => allGroupIds.Contains(p.GroupId)).Select(p => p.ProjectId);
-                var ownedProjectIds = allProjects.Where(p => p.OwnerOrganizationId == dto.Id).Select(p => p.Id);
-                var managedProjectIds = allProjects.Where(p => p.ManagerAccountId != null && orgAccountIds.Contains(p.ManagerAccountId.Value)).Select(p => p.Id);
-                
-                dto.ParticipatingProjectsCount = participatingProjectIds.Union(ownedProjectIds).Union(managedProjectIds).Distinct().Count();
+                dto.ParticipatingProjectsCount = counts.GetValueOrDefault(dto.Id);
             }
-            return result;
+
+            return new PagedResult<OrganizationResponseDTO>(result, entities.Count, safePage, safeSize);
         }
 
         public async Task<OrganizationResponseDTO?> GetByIdAsync(Guid id)
@@ -72,30 +70,76 @@ namespace Application.Services
                 dto.JointVentureMemberIds = jvMembers.Select(j => j.MemberOrganizationId).ToList();
             }
 
-            var allProjects = await _unitOfWork.Repository<Project>().FindAsync(p => p.OwnerOrganizationId == id);
-            var ownedProjectIds = allProjects.Select(p => p.Id);
-
-            var orgGroups = await _unitOfWork.Repository<Group>().FindAsync(g => g.OrganizationId == id);
-            var orgGroupIds = orgGroups.Select(g => g.Id).ToList();
-
-            var allParticipants = await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync(); 
-            
-            var accountsInOrg = await _unitOfWork.Repository<Account>().FindAsync(a => a.OrganizationId == id);
-            var accountIds = accountsInOrg.Select(a => a.Id).ToList();
-            
-            var groupMembers = await _unitOfWork.Repository<GroupMember>().GetAllAsync();
-            var groupIdsWithOrgMembers = groupMembers.Where(gm => accountIds.Contains(gm.AccountId)).Select(gm => gm.GroupId).ToList();
-            
-            var allGroupIds = orgGroupIds.Union(groupIdsWithOrgMembers).Distinct().ToList();
-
-            var participatingProjectIds = allParticipants.Where(p => allGroupIds.Contains(p.GroupId)).Select(p => p.ProjectId);
-            
-            var allProjectsManagedByMembers = await _unitOfWork.Repository<Project>().FindAsync(p => p.ManagerAccountId != null && accountIds.Contains(p.ManagerAccountId.Value));
-            var managedProjectIds = allProjectsManagedByMembers.Select(p => p.Id);
-
-            dto.ParticipatingProjectsCount = participatingProjectIds.Union(ownedProjectIds).Union(managedProjectIds).Distinct().Count();
+            var counts = await ComputeParticipatingProjectsCountsAsync(new[] { id });
+            dto.ParticipatingProjectsCount = counts.GetValueOrDefault(id);
 
             return dto;
+        }
+
+        /// <summary>
+        /// Đếm số project mà mỗi tổ chức (trong orgIds) đang tham gia/sở hữu/quản lý: project của nhóm
+        /// thuộc tổ chức hoặc nhóm có thành viên thuộc tổ chức (participant), project tổ chức sở hữu
+        /// (OwnerOrganizationId), hoặc project do thành viên tổ chức làm PM (ManagerAccountId). Chỉ query
+        /// đúng phạm vi orgIds thay vì kéo nguyên bảng Group/Account/GroupMember/ProjectParticipant/Project.
+        /// </summary>
+        private async Task<Dictionary<Guid, int>> ComputeParticipatingProjectsCountsAsync(IReadOnlyCollection<Guid> orgIds)
+        {
+            if (orgIds.Count == 0) return new Dictionary<Guid, int>();
+
+            var orgGroups = (await _unitOfWork.Repository<Group>()
+                    .FindAsync(g => g.OrganizationId.HasValue && orgIds.Contains(g.OrganizationId.Value)))
+                .ToList();
+            var orgAccounts = (await _unitOfWork.Repository<Account>()
+                    .FindAsync(a => a.OrganizationId.HasValue && orgIds.Contains(a.OrganizationId.Value)))
+                .ToList();
+            var accountIds = orgAccounts.Select(a => a.Id).ToHashSet();
+
+            var groupIdsByOrg = orgGroups
+                .GroupBy(g => g.OrganizationId!.Value)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.Id).ToHashSet());
+
+            if (accountIds.Count > 0)
+            {
+                var groupMembers = await _unitOfWork.Repository<GroupMember>()
+                    .FindAsync(gm => accountIds.Contains(gm.AccountId));
+                var orgIdByAccount = orgAccounts.ToDictionary(a => a.Id, a => a.OrganizationId!.Value);
+
+                foreach (var member in groupMembers)
+                {
+                    if (!orgIdByAccount.TryGetValue(member.AccountId, out var orgId)) continue;
+                    if (!groupIdsByOrg.TryGetValue(orgId, out var set))
+                        groupIdsByOrg[orgId] = set = new HashSet<Guid>();
+                    set.Add(member.GroupId);
+                }
+            }
+
+            var allGroupIds = groupIdsByOrg.Values.SelectMany(set => set).ToHashSet();
+
+            var participants = allGroupIds.Count == 0
+                ? new List<ProjectParticipant>()
+                : (await _unitOfWork.Repository<ProjectParticipant>().FindAsync(p => allGroupIds.Contains(p.GroupId))).ToList();
+
+            var ownedOrManagedProjects = (await _unitOfWork.Repository<Project>()
+                    .FindAsync(p => (p.OwnerOrganizationId.HasValue && orgIds.Contains(p.OwnerOrganizationId.Value))
+                                    || (p.ManagerAccountId.HasValue && accountIds.Contains(p.ManagerAccountId.Value))))
+                .ToList();
+
+            var result = new Dictionary<Guid, int>();
+            foreach (var orgId in orgIds)
+            {
+                var groupIds = groupIdsByOrg.TryGetValue(orgId, out var gset) ? gset : new HashSet<Guid>();
+                var participatingProjectIds = participants.Where(p => groupIds.Contains(p.GroupId)).Select(p => p.ProjectId);
+
+                var orgAccountIdSet = orgAccounts.Where(a => a.OrganizationId == orgId).Select(a => a.Id).ToHashSet();
+                var ownedProjectIds = ownedOrManagedProjects.Where(p => p.OwnerOrganizationId == orgId).Select(p => p.Id);
+                var managedProjectIds = ownedOrManagedProjects
+                    .Where(p => p.ManagerAccountId.HasValue && orgAccountIdSet.Contains(p.ManagerAccountId.Value))
+                    .Select(p => p.Id);
+
+                result[orgId] = participatingProjectIds.Union(ownedProjectIds).Union(managedProjectIds).Distinct().Count();
+            }
+
+            return result;
         }
 
         public async Task<IEnumerable<ProjectResponseDTO>> GetProjectsByOrganizationAsync(Guid id)
@@ -104,24 +148,30 @@ namespace Application.Services
             if (org == null) throw new ApiExceptionResponse("Không tìm thấy tổ chức", 404);
 
             var ownedProjects = await _unitOfWork.Repository<Project>().FindAsync(p => p.OwnerOrganizationId == id);
-            
+
             var orgGroups = await _unitOfWork.Repository<Group>().FindAsync(g => g.OrganizationId == id);
             var orgGroupIds = orgGroups.Select(g => g.Id).ToList();
-            
+
             var accountsInOrg = await _unitOfWork.Repository<Account>().FindAsync(a => a.OrganizationId == id);
             var accountIds = accountsInOrg.Select(a => a.Id).ToList();
-            
-            var groupMembers = await _unitOfWork.Repository<GroupMember>().GetAllAsync();
-            var groupIdsWithOrgMembers = groupMembers.Where(gm => accountIds.Contains(gm.AccountId)).Select(gm => gm.GroupId).ToList();
-            
+
+            var groupMembers = accountIds.Count == 0
+                ? new List<GroupMember>()
+                : (await _unitOfWork.Repository<GroupMember>().FindAsync(gm => accountIds.Contains(gm.AccountId))).ToList();
+            var groupIdsWithOrgMembers = groupMembers.Select(gm => gm.GroupId);
+
             var allGroupIds = orgGroupIds.Union(groupIdsWithOrgMembers).Distinct().ToList();
-            
-            var allParticipants = await _unitOfWork.Repository<ProjectParticipant>().GetAllAsync();
-            var participatingProjectIds = allParticipants.Where(p => allGroupIds.Contains(p.GroupId)).Select(p => p.ProjectId).ToList();
-            
-            var allProjectsManagedByMembers = await _unitOfWork.Repository<Project>().FindAsync(p => p.ManagerAccountId != null && accountIds.Contains(p.ManagerAccountId.Value));
+
+            var allParticipants = allGroupIds.Count == 0
+                ? new List<ProjectParticipant>()
+                : (await _unitOfWork.Repository<ProjectParticipant>().FindAsync(p => allGroupIds.Contains(p.GroupId))).ToList();
+            var participatingProjectIds = allParticipants.Select(p => p.ProjectId).ToList();
+
+            var allProjectsManagedByMembers = accountIds.Count == 0
+                ? new List<Project>()
+                : (await _unitOfWork.Repository<Project>().FindAsync(p => p.ManagerAccountId != null && accountIds.Contains(p.ManagerAccountId.Value))).ToList();
             var managedProjectIds = allProjectsManagedByMembers.Select(p => p.Id).ToList();
-            
+
             var allProjectIds = participatingProjectIds.Union(ownedProjects.Select(p => p.Id)).Union(managedProjectIds).Distinct().ToList();
 
             return await _projectService.GetByIdsAsync(allProjectIds);

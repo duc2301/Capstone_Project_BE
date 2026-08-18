@@ -19,8 +19,8 @@ namespace Capstone_Project.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAll()
-            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAllAsync()));
+        public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+            => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetAllAsync(page, pageSize)));
 
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetById(Guid id)

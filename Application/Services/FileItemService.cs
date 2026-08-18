@@ -165,8 +165,15 @@ namespace Application.Services
             var versionsById = (await _unitOfWork.Repository<FileVersionState>()
                     .FindAsync(v => fileIds.Contains(v.FileItemId)))
                 .ToDictionary(v => v.Id);
-            var accounts = (await _unitOfWork.Repository<Account>().GetAllAsync())
-                .ToDictionary(a => a.Id);
+            var authorIds = files
+                .Where(f => f.CreatedByAccountId.HasValue)
+                .Select(f => f.CreatedByAccountId!.Value)
+                .Distinct()
+                .ToList();
+            var accounts = authorIds.Count == 0
+                ? new Dictionary<Guid, Account>()
+                : (await _unitOfWork.Repository<Account>().FindAsync(a => authorIds.Contains(a.Id)))
+                    .ToDictionary(a => a.Id);
             var returnRequestsByFileId = (await _unitOfWork.Repository<ZoneReturnRequest>().FindAsync(
                     r => fileIds.Contains(r.FileItemId)
                          && (r.Status == ZoneReturnRequestStatus.Pending
