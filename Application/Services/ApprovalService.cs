@@ -1,3 +1,4 @@
+using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Approval;
 using Application.DTOs.ResponseDTOs.Approval;
 using Application.ExceptionMiddleware;
@@ -24,7 +25,7 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IFileZoneResolverService _zoneResolver;
         private readonly ILogger<ApprovalService> _logger;
-        private readonly IIngestBackgroundService _documentIngestBackgroundService;
+        private readonly IDocumentIndexSyncService _indexSync;
         private readonly IFileVersionService _fileVersionService;
         private readonly INotificationService _notification;
         private readonly IApprovalRealtimeNotifier _approvalRealtime;
@@ -34,7 +35,7 @@ namespace Application.Services
             IUnitOfWork unitOfWork,
             IFileZoneResolverService zoneResolver,
             ILogger<ApprovalService> logger,
-            IIngestBackgroundService documentIngestBackgroundService,
+            IDocumentIndexSyncService indexSync,
             IFileVersionService fileVersionService,
             INotificationService notification,
             IApprovalRealtimeNotifier approvalRealtime,
@@ -43,7 +44,7 @@ namespace Application.Services
             _unitOfWork = unitOfWork;
             _zoneResolver = zoneResolver;
             _logger = logger;
-            _documentIngestBackgroundService = documentIngestBackgroundService;
+            _indexSync = indexSync;
             _fileVersionService = fileVersionService;
             _notification = notification;
             _approvalRealtime = approvalRealtime;
@@ -159,29 +160,32 @@ namespace Application.Services
             return result;
         }
 
+        private const int DefaultPageSize = 20;
+        private const int MaxPageSize = 100;
+
         /// <summary>
         /// Lấy tất cả approval request mà actor có quyền xem.
         /// </summary>
-        public async Task<IEnumerable<ApprovalRequestResponseDTO>> GetAllAsync(Guid actor)
+        public async Task<PagedResult<ApprovalRequestResponseDTO>> GetAllAsync(Guid actorId, int page, int pageSize)
         {
             var requests = (await _unitOfWork.Repository<ApprovalRequest>().GetAllAsync())
                 .OrderByDescending(a => a.CreatedAt)
                 .ToList();
 
-            return await FilterVisibleRequestsAsync(requests, actor);
+            return await BuildPagedResponseAsync(requests, actorId, page, pageSize);
         }
 
         /// <summary>
         /// Lấy các approval request đang Pending mà actor có quyền xem.
         /// </summary>
-        public async Task<IEnumerable<ApprovalRequestResponseDTO>> GetPendingAsync(Guid actor)
+        public async Task<PagedResult<ApprovalRequestResponseDTO>> GetPendingAsync(Guid actorId, int page, int pageSize)
         {
             var pendingRequests = (await _unitOfWork.Repository<ApprovalRequest>().FindAsync(
                     a => a.Status == ApprovalRequestStatus.Pending))
                 .OrderByDescending(a => a.CreatedAt)
                 .ToList();
 
-            return await FilterVisibleRequestsAsync(pendingRequests, actor);
+            return await BuildPagedResponseAsync(pendingRequests, actorId, page, pageSize);
         }
 
         /// <summary>
@@ -240,8 +244,7 @@ namespace Application.Services
 
             await _unitOfWork.CommitAsync();
 
-            if (request.TargetZone == CdeArea.Published)
-                _documentIngestBackgroundService.Enqueue(fileItem.Id);
+            await _indexSync.RequestIndexAsync(fileItem.Id);
 
             var result = await BuildResponseAsync(request, fileItem);
 
@@ -1016,25 +1019,20 @@ namespace Application.Services
 
         #region Tạo response
 
-        /// <summary>Lọc danh sách request chỉ giữ lại những request actor có quyền xem.</summary>
-        private async Task<IEnumerable<ApprovalRequestResponseDTO>> FilterVisibleRequestsAsync(
+        private async Task<PagedResult<ApprovalRequestResponseDTO>> BuildPagedResponseAsync(
             IEnumerable<ApprovalRequest> requests,
-            Guid actor)
+            Guid actor,
+            int page,
+            int pageSize)
         {
-            var result = new List<ApprovalRequestResponseDTO>();
-            var accounts = await GetAccountsByIdAsync();
-            var groups = await GetGroupsByIdAsync();
-
+            var visible = new List<(ApprovalRequest Request, FileItem FileItem)>();
             foreach (var request in requests)
             {
                 try
                 {
                     var fileItem = await GetFileItemAsync(request.FileItemId);
                     if (await CanViewRequestAsync(actor, request, fileItem))
-                    {
-                        var folder = await GetFolderAsync(fileItem.FolderId);
-                        result.Add(await BuildResponseAsync(request, fileItem, accounts, groups, folder));
-                    }
+                        visible.Add((request, fileItem));
                 }
                 catch (ApiExceptionResponse ex) when (ex.StatusCode == 404)
                 {
@@ -1046,15 +1044,27 @@ namespace Application.Services
                 }
             }
 
-            return result;
+            var safePage = page < 1 ? 1 : page;
+            var safeSize = pageSize < 1 || pageSize > MaxPageSize ? DefaultPageSize : pageSize;
+            var pageItems = visible.Skip((safePage - 1) * safeSize).Take(safeSize).ToList();
+
+            var (accounts, groups) = await BuildLookupsForAsync(pageItems);
+
+            var items = new List<ApprovalRequestResponseDTO>();
+            foreach (var (request, fileItem) in pageItems)
+            {
+                var folder = await GetFolderAsync(fileItem.FolderId);
+                items.Add(await BuildResponseAsync(request, fileItem, accounts, groups, folder));
+            }
+
+            return new PagedResult<ApprovalRequestResponseDTO>(items, visible.Count, safePage, safeSize);
         }
 
         private async Task<ApprovalRequestResponseDTO> BuildResponseAsync(ApprovalRequest request, FileItem? fileItem = null)
         {
             fileItem ??= await GetFileItemAsync(request.FileItemId);
             var folder = await GetFolderAsync(fileItem.FolderId);
-            var accounts = await GetAccountsByIdAsync();
-            var groups = await GetGroupsByIdAsync();
+            var (accounts, groups) = await BuildLookupsForAsync(new[] { (request, fileItem) });
             return await BuildResponseAsync(request, fileItem, accounts, groups, folder);
         }
 
@@ -1141,11 +1151,51 @@ namespace Application.Services
             };
         }
 
-        private async Task<Dictionary<Guid, Account>> GetAccountsByIdAsync()
-            => (await _unitOfWork.Repository<Account>().GetAllAsync()).ToDictionary(a => a.Id);
+        private async Task<(Dictionary<Guid, Account> Accounts, Dictionary<Guid, Group> Groups)> BuildLookupsForAsync(
+            IReadOnlyCollection<(ApprovalRequest Request, FileItem FileItem)> items)
+        {
+            var accountIds = new HashSet<Guid>();
+            var groupIds = new HashSet<Guid>();
 
-        private async Task<Dictionary<Guid, Group>> GetGroupsByIdAsync()
-            => (await _unitOfWork.Repository<Group>().GetAllAsync()).ToDictionary(g => g.Id);
+            foreach (var (request, fileItem) in items)
+            {
+                accountIds.Add(request.RequestedBy);
+                if (request.ApproverId.HasValue)
+                    accountIds.Add(request.ApproverId.Value);
+
+                var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
+                        s => s.ApprovalRequestId == request.Id))
+                    .ToList();
+                foreach (var signer in signers)
+                {
+                    if (signer.SignerAccountId.HasValue)
+                        accountIds.Add(signer.SignerAccountId.Value);
+                    if (signer.SignerGroupId.HasValue)
+                        groupIds.Add(signer.SignerGroupId.Value);
+                }
+
+                if (request.Status == ApprovalRequestStatus.Pending)
+                {
+                    var folder = await GetFolderAsync(fileItem.FolderId);
+                    var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, folder, requireApprovePermission: true);
+                    var leaderIds = await GetActiveTeamLeaderAccountIdsAsync(teamGroupIds);
+                    foreach (var id in leaderIds)
+                        accountIds.Add(id);
+                }
+            }
+
+            var accounts = accountIds.Count == 0
+                ? new Dictionary<Guid, Account>()
+                : (await _unitOfWork.Repository<Account>().FindAsync(a => accountIds.Contains(a.Id)))
+                    .ToDictionary(a => a.Id);
+
+            var groups = groupIds.Count == 0
+                ? new Dictionary<Guid, Group>()
+                : (await _unitOfWork.Repository<Group>().FindAsync(g => groupIds.Contains(g.Id)))
+                    .ToDictionary(g => g.Id);
+
+            return (accounts, groups);
+        }
 
         #endregion
     }

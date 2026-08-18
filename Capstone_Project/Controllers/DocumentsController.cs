@@ -45,7 +45,9 @@ namespace Capstone_Project.Controllers
                     throw new ApiExceptionResponse("Bạn không thuộc dự án này.", 403);
             }
 
-            var results = await _search.SearchAsync(projectId, query, ct);
+            // Lọc theo quyền xem thư mục nằm trong SearchAsync — check ở đây chỉ để trả 403 rõ ràng
+            // cho người ngoài dự án thay vì một danh sách rỗng khó hiểu.
+            var results = await _search.SearchAsync(projectId, query, accountId, ct);
             return Ok(ApiResponse.Success("Tìm kiếm thành công", results));
         }
     }

@@ -13,12 +13,14 @@ namespace Application.Services
         private readonly IEmbeddingService _embeddingService;
         private readonly IDocumentSearchRepository _searchSematicRepo;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IPermissionCheckingService _permission;
 
-        public SemanticSearchService(IEmbeddingService embeddingService, IDocumentSearchRepository searchSematicRepo, IUnitOfWork unitOfWork)
+        public SemanticSearchService(IEmbeddingService embeddingService, IDocumentSearchRepository searchSematicRepo, IUnitOfWork unitOfWork, IPermissionCheckingService permission)
         {
             _embeddingService = embeddingService;
             _searchSematicRepo = searchSematicRepo;
             _unitOfWork = unitOfWork;
+            _permission = permission;
         }
 
         private const int CandidateK = 40;      
@@ -26,13 +28,27 @@ namespace Application.Services
         private const double MaxDistance = 0.4;
 
         public async Task<IReadOnlyList<FileSearchResultDTO>> SearchAsync(
-            Guid projectId, string query, CancellationToken ct = default)
+            Guid projectId, string query, Guid actorId, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(query))
                 throw new ApiExceptionResponse("Câu tìm kiếm rỗng", 400);
 
+            // Admin hệ thống / PM / ProjectAdmin tra cứu toàn dự án; còn lại chỉ trong thư mục được cấp quyền xem.
+            // Cùng cặp đôi đang dùng ở AuditLogService.GetMyInProjectAsync — mặc định từ chối.
+            IReadOnlyCollection<Guid>? viewableFolderIds = null;
+            if (!await _permission.HasProjectFullAccessAsync(projectId, actorId))
+            {
+                var viewable = await _permission.GetViewableFolderIdsAsync(projectId, actorId);
+
+                // Không được xem thư mục nào -> không có gì để trả, và khỏi tốn một lượt embed qua Ollama.
+                if (viewable.Count == 0)
+                    return Array.Empty<FileSearchResultDTO>();
+
+                viewableFolderIds = viewable;
+            }
+
             var qVec = new Vector(await _embeddingService.EmbedAsync(BuildQuery(query), ct));
-            var hits = await _searchSematicRepo.SearchByVectorAsync(projectId, qVec, CandidateK, ct);
+            var hits = await _searchSematicRepo.SearchByVectorAsync(projectId, qVec, CandidateK, viewableFolderIds, ct);
 
             var results = hits
                 .Where(h => h.Distance <= MaxDistance)

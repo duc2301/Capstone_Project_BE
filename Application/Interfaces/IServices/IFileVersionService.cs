@@ -38,6 +38,11 @@ namespace Application.Interfaces.IServices
         // Toàn bộ lịch sử version (mới nhất trước), kèm snapshot dữ liệu file của từng version.
         Task<List<FileVersionHistoryItemDTO>> GetVersionHistoryAsync(Guid fileItemId);
 
+        // Ký số xong: append bản đã ký (PDF đóng dấu chữ ký) theo luật "upload thay thế" (WorkingVersion +1).
+        // KHÔNG phải upload: nội dung tài liệu không đổi, chỉ đổi định dạng + đóng dấu -> kết quả phân tích
+        // AI (mô tả, cảnh báo) của bản được ký đi theo sang dòng state mới.
+        Task<FileVersionResult> AppendSignedVersionAsync(Guid fileItemId, string fileName, FileVersionDataDTO signedData);
+
         // Niêm phong lưu trữ: append 1 dòng version cho FILE BẢN LƯU (trong Archived), copy nội dung +
         // số hiệu (C{PubRev}) từ bản Published gốc. Cộng dồn qua từng lần niêm phong (giữ cả C01, C02...).
         Task<FileVersionResult> AppendArchivedVersionAsync(Guid archivedFileItemId, FileVersionState sourcePublished);

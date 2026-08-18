@@ -18,17 +18,23 @@ namespace Application.Services
         private readonly IFileZoneResolverService _zoneResolver;
         private readonly IFileVersionService _fileVersionService;
         private readonly IAuditLogService _auditLog;
+        private readonly IFileArchiveService _fileArchive;
+        private readonly IDocumentIndexSyncService _indexSync;
 
         public ZoneReturnRequestService(
             IUnitOfWork unitOfWork,
             IFileZoneResolverService zoneResolver,
             IFileVersionService fileVersionService,
-            IAuditLogService auditLog)
+            IAuditLogService auditLog,
+            IFileArchiveService fileArchive,
+            IDocumentIndexSyncService indexSync)
         {
             _unitOfWork = unitOfWork;
             _zoneResolver = zoneResolver;
             _fileVersionService = fileVersionService;
             _auditLog = auditLog;
+            _fileArchive = fileArchive;
+            _indexSync = indexSync;
         }
 
         public async Task<ApiResponse> CreateAsync(Guid fileItemId, CreateZoneReturnRequestDTO dto, Guid actorId)
@@ -150,6 +156,12 @@ namespace Application.Services
                 projectFolders,
                 "Target WIP folder not found.");
 
+            // Niêm phong TRƯỚC khi rút file khỏi Published: sau khi re-parent thì folder không còn ở
+            // Published (SealForZoneReturnAsync bỏ qua) và CurrentVersionId cũng đã bị đổi sang bản WIP
+            // ở dưới. Không chốt lại ở đây thì bản chính thức biến mất khỏi tra cứu ngữ nghĩa.
+            // Trả từ Shared, hoặc bản này đã niêm phong rồi -> trả null, luồng trả vùng chạy tiếp bình thường.
+            var archivedMirrorId = await _fileArchive.SealForZoneReturnAsync(fileItem.Id, actorId);
+
             var now = DateTime.UtcNow;
             fileItem.FolderId = wipFolder.Id;
             fileItem.Status = FileItemStatus.Draft;
@@ -195,6 +207,11 @@ namespace Application.Services
                 projectId: currentFolder.ProjectId, folderId: currentFolder.Id);
 
             await _unitOfWork.CommitAsync();
+
+            // Bản lưu vừa niêm phong cần vào chỉ mục để tìm kiếm rơi về được bản chính thức gần nhất
+            // trong lúc bản gốc đang được sửa ở WIP (nhãn IsUnderRevision phía FE).
+            if (archivedMirrorId.HasValue)
+                await _indexSync.RequestIndexAsync(archivedMirrorId.Value);
 
             return ApiResponse.Success("Return request approved", new ZoneReturnDecisionResponseDTO
             {

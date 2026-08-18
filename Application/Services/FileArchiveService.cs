@@ -13,6 +13,8 @@ namespace Application.Services
     /// Niêm phong lưu trữ (Published → Archived). Tách khỏi luồng phê duyệt:
     /// chỉ PM/Admin chủ động chốt bản Published chính thức vào vùng Archived, bấm được nhiều lần.
     /// Mỗi lần niêm phong tạo/cộng dồn 1 bản lưu (mirror) chỉ-đọc trỏ cùng blob với bản Published gốc.
+    /// Bản lưu được ingest vào chỉ mục ngữ nghĩa để khi bản Published bị rút về WIP, tìm kiếm vẫn
+    /// rơi về được bản chính thức gần nhất (xem DocumentSearchRepository.SearchByVectorAsync).
     /// </summary>
     public class FileArchiveService : IFileArchiveService
     {
@@ -20,25 +22,25 @@ namespace Application.Services
         private readonly IFileZoneResolverService _zoneResolver;
         private readonly IFileVersionService _fileVersionService;
         private readonly IAuditLogService _auditLog;
+        private readonly IDocumentIndexSyncService _indexSync;
 
         public FileArchiveService(
             IUnitOfWork unitOfWork,
             IFileZoneResolverService zoneResolver,
             IFileVersionService fileVersionService,
-            IAuditLogService auditLog)
+            IAuditLogService auditLog,
+            IDocumentIndexSyncService indexSync)
         {
             _unitOfWork = unitOfWork;
             _zoneResolver = zoneResolver;
             _fileVersionService = fileVersionService;
             _auditLog = auditLog;
+            _indexSync = indexSync;
         }
 
         public async Task<Guid> SealToArchiveAsync(Guid fileItemId, Guid actor, string actorRole)
         {
-            var file = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
-                ?? throw new ApiExceptionResponse("File not found.", 404);
-            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(file.FolderId)
-                ?? throw new ApiExceptionResponse("File folder not found.", 404);
+            var (file, folder) = await LoadFileAndFolderAsync(fileItemId);
 
             // 1) Chỉ niêm phong file ĐANG Ở PUBLISHED.
             if (folder.Area != CdeArea.Published)
@@ -58,19 +60,60 @@ namespace Application.Services
                 throw new ApiExceptionResponse("File đang chờ duyệt, không thể niêm phong.", 409);
 
             // 4) Lấy bản Published hiện hành để niêm phong.
-            var currentPub = file.CurrentVersionId.HasValue
-                ? await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(file.CurrentVersionId.Value)
-                : null;
-            if (currentPub is null || currentPub.Stage != VersionStage.Published)
+            var currentPub = await GetCurrentPublishedVersionAsync(file);
+            if (currentPub is null)
                 throw new ApiExceptionResponse("File chưa có bản Published để niêm phong.", 400);
 
-            // 5) Resolve folder Archived tương ứng (mirror theo nhóm) — dùng lại zoneResolver như luồng move cũ.
+            var mirrorId = await SealCoreAsync(file, folder, currentPub, actor, automatic: false);
+            if (mirrorId is null)
+                throw new ApiExceptionResponse("Phiên bản chính thức này đã được niêm phong lưu trữ.", 409);
+
+            await _unitOfWork.CommitAsync();
+
+            // Ingest bản lưu ra chỉ mục ngữ nghĩa: xin index SAU commit (mirror.CurrentVersionId đã set trong
+            // SealCoreAsync) để worker đọc được version vừa append.
+            await _indexSync.RequestIndexAsync(mirrorId.Value);
+
+            return mirrorId.Value;
+        }
+
+        public async Task<Guid?> SealForZoneReturnAsync(Guid fileItemId, Guid actorId)
+        {
+            var (file, folder) = await LoadFileAndFolderAsync(fileItemId);
+
+            // Trả về WIP từ Shared: chưa từng có bản chính thức nên không có gì để niêm phong.
+            if (folder.Area != CdeArea.Published)
+                return null;
+
+            // Không kiểm quyền PM/Admin: người bấm là Team Leader duyệt yêu cầu trả vùng, và việc niêm
+            // phong ở đây là hệ quả hệ thống chứ không phải một hành động chủ động của họ.
+            // Cũng không chặn theo ApprovalRequest treo: mục tiêu là không đánh mất bản chính thức,
+            // chặn ở đây chỉ khiến cả luồng trả vùng hỏng theo.
+            var currentPub = await GetCurrentPublishedVersionAsync(file);
+            if (currentPub is null)
+                return null;
+
+            // KHÔNG commit — caller gộp chung một transaction với việc trả vùng.
+            return await SealCoreAsync(file, folder, currentPub, actorId, automatic: true);
+        }
+
+        // ---------- nội bộ ----------
+
+        /// <summary>
+        /// Lõi niêm phong: resolve folder Archived, tạo/tìm bản lưu, append version, ghi audit.
+        /// KHÔNG commit và KHÔNG xin index — hai việc đó thuộc về caller vì ranh giới transaction
+        /// mỗi luồng một khác. Trả null khi bản Published này đã được niêm phong rồi (idempotent).
+        /// </summary>
+        private async Task<Guid?> SealCoreAsync(
+            FileItem file, Folder folder, FileVersionState currentPub, Guid actor, bool automatic)
+        {
+            // Resolve folder Archived tương ứng (mirror theo nhóm) — dùng lại zoneResolver như luồng move cũ.
             var projectFolders = await _zoneResolver.GetProjectFoldersAsync(folder.ProjectId);
             var teamGroupIds = await _zoneResolver.ResolveFileTeamGroupIdsAsync(file, folder, projectFolders);
             var archivedFolder = await _zoneResolver.ResolveTargetFolderAsync(
                 folder, CdeArea.Archived, teamGroupIds, projectFolders, "Archived folder not found.");
 
-            // 6) Tìm bản lưu đã có (cộng dồn) hay tạo mới.
+            // Tìm bản lưu đã có (cộng dồn) hay tạo mới.
             var mirror = (await _unitOfWork.Repository<FileItem>().FindAsync(
                     f => f.SourceFileItemId == file.Id)).FirstOrDefault();
 
@@ -79,7 +122,7 @@ namespace Application.Services
                 // Idempotency: bản Published hiện tại đã được niêm phong rồi thì không nhân đôi.
                 var mirrorCurrent = await _unitOfWork.FileVersionRepository.GetCurrentStateAsync(mirror.Id);
                 if (mirrorCurrent != null && mirrorCurrent.PublishedRevision == currentPub.PublishedRevision)
-                    throw new ApiExceptionResponse("Phiên bản chính thức này đã được niêm phong lưu trữ.", 409);
+                    return null;
             }
             else
             {
@@ -97,7 +140,7 @@ namespace Application.Services
                 await _unitOfWork.Repository<FileItem>().CreateAsync(mirror);
             }
 
-            // 7) Append 1 dòng version copy nội dung + số hiệu từ bản Published gốc.
+            // Append 1 dòng version copy nội dung + số hiệu từ bản Published gốc.
             var result = await _fileVersionService.AppendArchivedVersionAsync(mirror.Id, currentPub);
             mirror.CurrentVersionId = result.VersionStateId;
             // Mô tả/cảnh báo của bản lưu do AppendArchivedVersionAsync copy sẵn từ version Published gốc (per-version).
@@ -106,11 +149,31 @@ namespace Application.Services
             // folderId = folder Archived đích -> log hiện đúng ở view của người xem vùng lưu trữ.
             await _auditLog.LogAsync(
                 LogScope.Project, AuditAction.Archive, nameof(FileItem), mirror.Id.ToString(), actor,
-                detail: $"Niêm phong lưu trữ '{file.Name}' ({currentPub.DisplayVersion})",
+                detail: automatic
+                    ? $"Tự động niêm phong lưu trữ '{file.Name}' ({currentPub.DisplayVersion}) trước khi trả về WIP"
+                    : $"Niêm phong lưu trữ '{file.Name}' ({currentPub.DisplayVersion})",
                 projectId: folder.ProjectId, folderId: archivedFolder.Id);
 
-            await _unitOfWork.CommitAsync();
             return mirror.Id;
+        }
+
+        private async Task<(FileItem File, Folder Folder)> LoadFileAndFolderAsync(Guid fileItemId)
+        {
+            var file = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+                ?? throw new ApiExceptionResponse("File not found.", 404);
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(file.FolderId)
+                ?? throw new ApiExceptionResponse("File folder not found.", 404);
+
+            return (file, folder);
+        }
+
+        private async Task<FileVersionState?> GetCurrentPublishedVersionAsync(FileItem file)
+        {
+            if (!file.CurrentVersionId.HasValue)
+                return null;
+
+            var current = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(file.CurrentVersionId.Value);
+            return current?.Stage == VersionStage.Published ? current : null;
         }
     }
 }
