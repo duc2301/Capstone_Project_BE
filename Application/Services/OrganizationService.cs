@@ -1,3 +1,4 @@
+using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Organization;
 using Application.DTOs.ResponseDTOs.Organization;
 using Application.DTOs.ResponseDTOs.Project;
@@ -26,7 +27,7 @@ namespace Application.Services
         private const int DefaultOrganizationPageSize = 20;
         private const int MaxOrganizationPageSize = 500;
 
-        public async Task<OrganizationPageDTO> GetAllAsync(int page, int pageSize)
+        public async Task<PagedResult<OrganizationResponseDTO>> GetAllAsync(int page, int pageSize)
         {
             var entities = (await _unitOfWork.Repository<Organization>().GetAllAsync())
                 .OrderByDescending(o => o.CreatedAt)
@@ -54,13 +55,7 @@ namespace Application.Services
                 dto.ParticipatingProjectsCount = counts.GetValueOrDefault(dto.Id);
             }
 
-            return new OrganizationPageDTO
-            {
-                Items = result,
-                Total = entities.Count,
-                Page = safePage,
-                PageSize = safeSize
-            };
+            return new PagedResult<OrganizationResponseDTO>(result, entities.Count, safePage, safeSize);
         }
 
         public async Task<OrganizationResponseDTO?> GetByIdAsync(Guid id)

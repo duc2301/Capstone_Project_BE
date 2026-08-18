@@ -1,3 +1,4 @@
+using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Approval;
 using Application.DTOs.ResponseDTOs.Approval;
 using Application.ExceptionMiddleware;
@@ -165,26 +166,26 @@ namespace Application.Services
         /// <summary>
         /// Lấy tất cả approval request mà actor có quyền xem.
         /// </summary>
-        public async Task<ApprovalRequestPageDTO> GetAllAsync(Guid actor, int page, int pageSize)
+        public async Task<PagedResult<ApprovalRequestResponseDTO>> GetAllAsync(Guid actorId, int page, int pageSize)
         {
             var requests = (await _unitOfWork.Repository<ApprovalRequest>().GetAllAsync())
                 .OrderByDescending(a => a.CreatedAt)
                 .ToList();
 
-            return await BuildPagedResponseAsync(requests, actor, page, pageSize);
+            return await BuildPagedResponseAsync(requests, actorId, page, pageSize);
         }
 
         /// <summary>
         /// Lấy các approval request đang Pending mà actor có quyền xem.
         /// </summary>
-        public async Task<ApprovalRequestPageDTO> GetPendingAsync(Guid actor, int page, int pageSize)
+        public async Task<PagedResult<ApprovalRequestResponseDTO>> GetPendingAsync(Guid actorId, int page, int pageSize)
         {
             var pendingRequests = (await _unitOfWork.Repository<ApprovalRequest>().FindAsync(
                     a => a.Status == ApprovalRequestStatus.Pending))
                 .OrderByDescending(a => a.CreatedAt)
                 .ToList();
 
-            return await BuildPagedResponseAsync(pendingRequests, actor, page, pageSize);
+            return await BuildPagedResponseAsync(pendingRequests, actorId, page, pageSize);
         }
 
         /// <summary>
@@ -1019,7 +1020,7 @@ namespace Application.Services
 
         #region Tạo response
 
-        private async Task<ApprovalRequestPageDTO> BuildPagedResponseAsync(
+        private async Task<PagedResult<ApprovalRequestResponseDTO>> BuildPagedResponseAsync(
             IEnumerable<ApprovalRequest> requests,
             Guid actor,
             int page,
@@ -1057,13 +1058,7 @@ namespace Application.Services
                 items.Add(await BuildResponseAsync(request, fileItem, accounts, groups, folder));
             }
 
-            return new ApprovalRequestPageDTO
-            {
-                Items = items,
-                Total = visible.Count,
-                Page = safePage,
-                PageSize = safeSize
-            };
+            return new PagedResult<ApprovalRequestResponseDTO>(items, visible.Count, safePage, safeSize);
         }
 
         private async Task<ApprovalRequestResponseDTO> BuildResponseAsync(ApprovalRequest request, FileItem? fileItem = null)

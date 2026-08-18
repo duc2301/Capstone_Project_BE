@@ -1,3 +1,4 @@
+using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.ContractPackage;
 using Application.DTOs.ResponseDTOs.ContractPackage;
 using Application.ExceptionMiddleware;
@@ -32,7 +33,7 @@ namespace Application.Services
         private const int DefaultPackagePageSize = 20;
         private const int MaxPackagePageSize = 500;
 
-        public async Task<ContractPackagePageDTO> GetAllAsync(int page, int pageSize)
+        public async Task<PagedResult<ContractPackageResponseDTO>> GetAllAsync(int page, int pageSize)
         {
             var packages = (await _unitOfWork.Repository<ContractPackage>().GetAllAsync(ProjectInclude))
                 .OrderByDescending(p => p.CreatedAt)
@@ -45,13 +46,7 @@ namespace Application.Services
             var result = _mapper.Map<List<ContractPackageResponseDTO>>(pagePackages);
             await AttachAssignmentsAsync(result);
 
-            return new ContractPackagePageDTO
-            {
-                Items = result,
-                Total = packages.Count,
-                Page = safePage,
-                PageSize = safeSize
-            };
+            return new PagedResult<ContractPackageResponseDTO>(result, packages.Count, safePage, safeSize);
         }
 
         public async Task<IEnumerable<ContractPackageResponseDTO>> GetMineAsync(Guid accountId)

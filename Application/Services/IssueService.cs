@@ -1,4 +1,5 @@
 ﻿using Application.DTOs.RequestDTOs.Issue;
+using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.ResponseDTOs.Common;
 using Application.DTOs.ResponseDTOs.Issue;
 using Application.ExceptionMiddleware;
@@ -134,7 +135,7 @@ namespace Application.Services
 
         private sealed record VisibleProjectIssue(Issue Issue, string? ProjectName);
 
-        public async Task<ProjectIssueListPageDTO> GetByProjectAsync(
+        public async Task<PagedResult<ProjectIssueListItemDTO>> GetByProjectAsync(
             Guid projectId, Guid accountId, int page, int pageSize)
         {
             if (!await _folderTreeRepository.ProjectExistsAsync(projectId))
@@ -144,11 +145,11 @@ namespace Application.Services
             return await PageProjectIssuesAsync(visible, fileById, folderNameById, page, pageSize);
         }
 
-        public async Task<ProjectIssueListPageDTO> GetForMyProjectsAsync(Guid accountId, int page, int pageSize)
+        public async Task<PagedResult<ProjectIssueListItemDTO>> GetForMyProjectsAsync(Guid accountId, int page, int pageSize)
         {
             var myProjects = await _projectFlow.GetMyProjectsAsync(accountId);
             if (myProjects.Count == 0)
-                return new ProjectIssueListPageDTO { Items = new(), Total = 0, Page = 1, PageSize = pageSize };
+                return new PagedResult<ProjectIssueListItemDTO>(new List<ProjectIssueListItemDTO>(), 0, 1, pageSize);
 
             var allVisible = new List<VisibleProjectIssue>();
             var fileById = new Dictionary<Guid, FileItem>();
@@ -215,7 +216,7 @@ namespace Application.Services
             return (visible, fileById, folderNameById);
         }
 
-        private async Task<ProjectIssueListPageDTO> PageProjectIssuesAsync(
+        private async Task<PagedResult<ProjectIssueListItemDTO>> PageProjectIssuesAsync(
             List<VisibleProjectIssue> visible,
             IReadOnlyDictionary<Guid, FileItem> fileById,
             IReadOnlyDictionary<Guid, string> folderNameById,
@@ -226,13 +227,8 @@ namespace Application.Services
             var safeSize = pageSize < 1 || pageSize > MaxIssuePageSize ? DefaultIssuePageSize : pageSize;
             var pageItems = visible.Skip((safePage - 1) * safeSize).Take(safeSize).ToList();
 
-            return new ProjectIssueListPageDTO
-            {
-                Items = await BuildProjectIssueDtosAsync(pageItems, fileById, folderNameById),
-                Total = visible.Count,
-                Page = safePage,
-                PageSize = safeSize
-            };
+            var items = await BuildProjectIssueDtosAsync(pageItems, fileById, folderNameById);
+            return new PagedResult<ProjectIssueListItemDTO>(items, visible.Count, safePage, safeSize);
         }
 
         private async Task<List<ProjectIssueListItemDTO>> BuildProjectIssueDtosAsync(
@@ -613,7 +609,7 @@ namespace Application.Services
             return await BuildAttachmentDtoAsync(attachment);
         }
 
-        public async Task<ProjectIssueListPageDTO> GetAssignedToMeAsync(Guid accountId, int page, int pageSize)
+        public async Task<PagedResult<ProjectIssueListItemDTO>> GetAssignedToMeAsync(Guid accountId, int page, int pageSize)
         {
             var issues = (await _unitOfWork.Repository<Issue>().FindAsync(
                     i => i.AssignedToAccountId == accountId && i.Status != IssueStatus.Closed))
@@ -624,7 +620,7 @@ namespace Application.Services
             var safeSize = pageSize < 1 || pageSize > MaxIssuePageSize ? DefaultIssuePageSize : pageSize;
 
             if (issues.Count == 0)
-                return new ProjectIssueListPageDTO { Items = new(), Total = 0, Page = safePage, PageSize = safeSize };
+                return new PagedResult<ProjectIssueListItemDTO>(new List<ProjectIssueListItemDTO>(), 0, safePage, safeSize);
 
             var pageIssues = issues.Skip((safePage - 1) * safeSize).Take(safeSize).ToList();
 
@@ -684,13 +680,7 @@ namespace Application.Services
                 };
             }).ToList();
 
-            return new ProjectIssueListPageDTO
-            {
-                Items = items,
-                Total = issues.Count,
-                Page = safePage,
-                PageSize = safeSize
-            };
+            return new PagedResult<ProjectIssueListItemDTO>(items, issues.Count, safePage, safeSize);
         }
 
         public async Task<IEnumerable<Guid>> GetOpenIssueFileIdsForAccountAsync(

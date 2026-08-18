@@ -1,3 +1,4 @@
+using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Approval;
 using Application.DTOs.ResponseDTOs.Approval;
 
@@ -16,10 +17,10 @@ namespace Application.Interfaces.IServices
         Task<ApprovalRequestResponseDTO> SubmitAsync(Guid fileItemId, SubmitApprovalRequestDTO? dto, Guid actorId);
 
         // Tất cả yêu cầu phê duyệt mà người dùng được phép xem, có phân trang.
-        Task<ApprovalRequestPageDTO> GetAllAsync(Guid actorId, int page, int pageSize);
+        Task<PagedResult<ApprovalRequestResponseDTO>> GetAllAsync(Guid actorId, int page, int pageSize);
 
         // Danh sách yêu cầu đang chờ duyệt của Team Leader hiện tại, có phân trang.
-        Task<ApprovalRequestPageDTO> GetPendingAsync(Guid actorId, int page, int pageSize);
+        Task<PagedResult<ApprovalRequestResponseDTO>> GetPendingAsync(Guid actorId, int page, int pageSize);
 
         // Chi tiết một yêu cầu phê duyệt.
         Task<ApprovalRequestResponseDTO> GetByIdAsync(Guid id, Guid actorId);
