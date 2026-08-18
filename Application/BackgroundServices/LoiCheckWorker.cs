@@ -1,7 +1,7 @@
 using Application.Interfaces.IBackgroundServices;
+using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
-using Domain.Entities;
 using Domain.Enum.Loi;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -65,10 +65,9 @@ namespace Application.BackgroundServices
             {
                 using var scope = _scopeFactory.CreateScope();
                 var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+                var checks = scope.ServiceProvider.GetRequiredService<ILoiCheckRepository>();
 
-                var unfinished = (await uow.Repository<FileVersionLoiCheck>()
-                    .FindAsync(c => c.Status == LoiCheckStatus.Pending
-                                 || c.Status == LoiCheckStatus.Processing)).ToList();
+                var unfinished = await checks.GetUnfinishedChecksForUpdateAsync(ct);
 
                 foreach (var c in unfinished)
                     if (c.Status == LoiCheckStatus.Processing)

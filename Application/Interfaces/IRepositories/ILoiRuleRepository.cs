@@ -38,5 +38,17 @@ namespace Application.Interfaces.IRepositories
         Task<int> CountProjectsInheritingDefaultAsync(CancellationToken ct = default);
 
         Task<bool> ParamNameExistsAsync(string paramNameNormalized, CancellationToken ct = default);
+
+        Task<bool> RequirementParamExistsAsync(string paramNameNormalized, CancellationToken ct = default);
+
+        Task<Project?> GetProjectAsync(Guid projectId, CancellationToken ct = default);
+
+        Task<IReadOnlyList<LoiFieldAlias>> GetAliasesForProjectAsync(
+            Guid projectId, CancellationToken ct = default);
+
+        Task<LoiFieldAlias?> FindAliasAsync(
+            string aliasNormalized, Guid projectId, CancellationToken ct = default);
+
+        Task<LoiFieldAlias?> GetAliasForUpdateAsync(Guid aliasId, CancellationToken ct = default);
     }
 }

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
@@ -13,17 +14,20 @@ namespace Application.Services.Loi
         private const int MaxErrorLength = 500;
 
         private readonly IUnitOfWork _uow;
+        private readonly ILoiCheckRepository _checks;
         private readonly IIfcLoiExtractor _extractor;
         private readonly IFileStorageService _storage;
         private readonly ILogger<LoiConformanceService> _logger;
 
         public LoiConformanceService(
             IUnitOfWork uow,
+            ILoiCheckRepository checks,
             IIfcLoiExtractor extractor,
             IFileStorageService storage,
             ILogger<LoiConformanceService> logger)
         {
             _uow = uow;
+            _checks = checks;
             _extractor = extractor;
             _storage = storage;
             _logger = logger;
@@ -31,15 +35,14 @@ namespace Application.Services.Loi
 
         public async Task CheckAndSaveAsync(Guid fileVersionId, CancellationToken ct = default)
         {
-            var version = await _uow.Repository<FileVersionState>().GetByIdAsync(fileVersionId);
+            var version = await _checks.GetVersionAsync(fileVersionId, ct);
             if (version is null || version.StoragePath is null)
             {
                 _logger.LogWarning("Bỏ qua đối chiếu thông tin phi hình học: FileVersion {Id} không tồn tại hoặc chưa có nội dung.", fileVersionId);
                 return;
             }
 
-            var check = (await _uow.Repository<FileVersionLoiCheck>()
-                .FindAsync(c => c.FileVersionId == fileVersionId)).FirstOrDefault();
+            var check = await _checks.GetCheckByFileVersionForUpdateAsync(fileVersionId, ct);
             var now = DateTime.UtcNow;
             if (check is null)
             {
@@ -54,24 +57,22 @@ namespace Application.Services.Loi
 
             try
             {
-                var projectId = await GetProjectIdAsync(version.FileItemId);
-                var ruleSetId = await ResolveRuleSetIdAsync(projectId);
+                var projectId = await _checks.GetProjectIdByFileItemAsync(version.FileItemId, ct);
+                var ruleSetId = await ResolveRuleSetIdAsync(projectId, ct);
 
                 var requirements = ruleSetId is null
-                    ? new List<LoiRequirement>()
-                    : (await _uow.Repository<LoiRequirement>().FindAsync(r => r.RuleSetId == ruleSetId.Value)).ToList();
+                    ? (IReadOnlyList<LoiRequirement>)Array.Empty<LoiRequirement>()
+                    : await _checks.GetRequirementsAsync(ruleSetId.Value, ct);
 
-                var aliases = (await _uow.Repository<LoiFieldAlias>()
-                        .FindAsync(a => a.ProjectId == null || a.ProjectId == projectId))
-                    .ToList();
+                var aliases = await _checks.GetAliasesForProjectAsync(projectId, ct);
 
                 IfcLoiModel model;
                 await using (var stream = await _storage.OpenReadAsync(version.StoragePath!, ct))
                     model = await _extractor.ExtractAsync(stream, ct);
 
                 var components = ruleSetId is null
-                    ? new List<LoiComponent>()
-                    : (await _uow.Repository<LoiComponent>().FindAsync(c => c.RuleSetId == ruleSetId.Value)).ToList();
+                    ? (IReadOnlyList<LoiComponent>)Array.Empty<LoiComponent>()
+                    : await _checks.GetComponentsAsync(ruleSetId.Value, ct);
 
                 var result = LoiEvaluator.Evaluate(model, requirements, aliases, components, check.TargetStage);
 
@@ -107,29 +108,20 @@ namespace Application.Services.Loi
             }
         }
 
-        private async Task<Guid?> ResolveRuleSetIdAsync(Guid? projectId)
+        private async Task<Guid?> ResolveRuleSetIdAsync(Guid? projectId, CancellationToken ct)
         {
             if (projectId.HasValue)
             {
-                var project = await _uow.Repository<Project>().GetByIdAsync(projectId.Value);
-                if (project?.LoiRuleSetId is not null)
-                    return project.LoiRuleSetId;
+                var projectRuleSetId = await _checks.GetProjectRuleSetIdAsync(projectId.Value, ct);
+                if (projectRuleSetId is not null)
+                    return projectRuleSetId;
             }
 
-            var fallback = (await _uow.Repository<LoiRuleSet>().FindAsync(s => s.IsDefault)).FirstOrDefault();
-            if (fallback is null)
+            var fallbackId = await _checks.GetDefaultRuleSetIdAsync(ct);
+            if (fallbackId is null)
                 _logger.LogWarning("Chưa có bộ luật thông tin phi hình học mặc định — kết quả đối chiếu sẽ rỗng.");
 
-            return fallback?.Id;
-        }
-
-        private async Task<Guid?> GetProjectIdAsync(Guid fileItemId)
-        {
-            var fileItem = await _uow.Repository<FileItem>().GetByIdAsync(fileItemId);
-            if (fileItem is null) return null;
-
-            var folder = await _uow.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
-            return folder?.ProjectId;
+            return fallbackId;
         }
 
         private async Task SaveStatusAsync(Guid fileVersionId)
