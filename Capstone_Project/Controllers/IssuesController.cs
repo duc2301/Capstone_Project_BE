@@ -27,19 +27,19 @@ namespace Capstone_Project.Controllers
                 await _service.GetByFileItemAsync(fileItemId, User.GetAccountId())));
 
         [HttpGet("assigned-to-me")]
-        public async Task<IActionResult> GetAssignedToMe()
+        public async Task<IActionResult> GetAssignedToMe([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
             => Ok(ApiResponse.Success("Retrieved successfully",
-                await _service.GetAssignedToMeAsync(User.GetAccountId())));
+                await _service.GetAssignedToMeAsync(User.GetAccountId(), page, pageSize)));
 
         [HttpGet("my-projects")]
-        public async Task<IActionResult> GetForMyProjects()
+        public async Task<IActionResult> GetForMyProjects([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
             => Ok(ApiResponse.Success("Issues retrieved",
-                await _service.GetForMyProjectsAsync(User.GetAccountId())));
+                await _service.GetForMyProjectsAsync(User.GetAccountId(), page, pageSize)));
 
         [HttpGet("by-project/{projectId:guid}")]
-        public async Task<IActionResult> GetByProject(Guid projectId)
+        public async Task<IActionResult> GetByProject(Guid projectId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
             => Ok(ApiResponse.Success("Retrieved successfully",
-                await _service.GetByProjectAsync(projectId, User.GetAccountId())));
+                await _service.GetByProjectAsync(projectId, User.GetAccountId(), page, pageSize)));
 
 
         [HttpPost("open-file-ids")]

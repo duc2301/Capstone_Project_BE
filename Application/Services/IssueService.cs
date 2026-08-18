@@ -129,32 +129,50 @@ namespace Application.Services
             }
         }
 
-        public async Task<IEnumerable<ProjectIssueListItemDTO>> GetByProjectAsync(
-            Guid projectId, Guid accountId)
+        private const int DefaultIssuePageSize = 20;
+        private const int MaxIssuePageSize = 500;
+
+        private sealed record VisibleProjectIssue(Issue Issue, string? ProjectName);
+
+        public async Task<ProjectIssueListPageDTO> GetByProjectAsync(
+            Guid projectId, Guid accountId, int page, int pageSize)
         {
             if (!await _folderTreeRepository.ProjectExistsAsync(projectId))
                 throw new ApiExceptionResponse("Project not found.", 404);
 
-            return await BuildProjectIssuesAsync(projectId, null, accountId);
+            var (visible, fileById, folderNameById) = await ResolveVisibleProjectIssuesAsync(projectId, null, accountId);
+            return await PageProjectIssuesAsync(visible, fileById, folderNameById, page, pageSize);
         }
 
-        public async Task<IEnumerable<ProjectIssueListItemDTO>> GetForMyProjectsAsync(Guid accountId)
+        public async Task<ProjectIssueListPageDTO> GetForMyProjectsAsync(Guid accountId, int page, int pageSize)
         {
             var myProjects = await _projectFlow.GetMyProjectsAsync(accountId);
-            if (myProjects.Count == 0) return Array.Empty<ProjectIssueListItemDTO>();
+            if (myProjects.Count == 0)
+                return new ProjectIssueListPageDTO { Items = new(), Total = 0, Page = 1, PageSize = pageSize };
 
-            var all = new List<ProjectIssueListItemDTO>();
+            var allVisible = new List<VisibleProjectIssue>();
+            var fileById = new Dictionary<Guid, FileItem>();
+            var folderNameById = new Dictionary<Guid, string>();
+
             foreach (var project in myProjects)
-                all.AddRange(await BuildProjectIssuesAsync(project.Id, project.ProjectName, accountId));
+            {
+                var (visible, projectFileById, projectFolderNameById) =
+                    await ResolveVisibleProjectIssuesAsync(project.Id, project.ProjectName, accountId);
+                allVisible.AddRange(visible);
+                foreach (var kv in projectFileById) fileById[kv.Key] = kv.Value;
+                foreach (var kv in projectFolderNameById) folderNameById[kv.Key] = kv.Value;
+            }
 
-            return all.OrderByDescending(i => i.CreatedAt).ToList();
+            var ordered = allVisible.OrderByDescending(v => v.Issue.CreatedAt).ToList();
+            return await PageProjectIssuesAsync(ordered, fileById, folderNameById, page, pageSize);
         }
 
-        private async Task<List<ProjectIssueListItemDTO>> BuildProjectIssuesAsync(
-            Guid projectId, string? projectName, Guid accountId)
+        private async Task<(List<VisibleProjectIssue> Visible, Dictionary<Guid, FileItem> FileById, Dictionary<Guid, string> FolderNameById)>
+            ResolveVisibleProjectIssuesAsync(Guid projectId, string? projectName, Guid accountId)
         {
             var issues = (await _unitOfWork.Repository<Issue>().FindAsync(i => i.ProjectId == projectId)).ToList();
-            if (issues.Count == 0) return new List<ProjectIssueListItemDTO>();
+            if (issues.Count == 0)
+                return (new List<VisibleProjectIssue>(), new Dictionary<Guid, FileItem>(), new Dictionary<Guid, string>());
 
             var fileIds = issues.Where(i => i.LinkedFileItemId.HasValue)
                 .Select(i => i.LinkedFileItemId!.Value).ToHashSet();
@@ -190,11 +208,42 @@ namespace Application.Services
                 return hasFullAccess && !isWip;
             }
 
-            var visible = issues.Where(CanSee).ToList();
-            if (visible.Count == 0) return new List<ProjectIssueListItemDTO>();
+            var visible = issues.Where(CanSee)
+                .Select(i => new VisibleProjectIssue(i, projectName))
+                .ToList();
 
-            var accountIds = visible
-                .SelectMany(i => new[] { i.RaisedByAccountId, i.AssignedToAccountId })
+            return (visible, fileById, folderNameById);
+        }
+
+        private async Task<ProjectIssueListPageDTO> PageProjectIssuesAsync(
+            List<VisibleProjectIssue> visible,
+            IReadOnlyDictionary<Guid, FileItem> fileById,
+            IReadOnlyDictionary<Guid, string> folderNameById,
+            int page,
+            int pageSize)
+        {
+            var safePage = page < 1 ? 1 : page;
+            var safeSize = pageSize < 1 || pageSize > MaxIssuePageSize ? DefaultIssuePageSize : pageSize;
+            var pageItems = visible.Skip((safePage - 1) * safeSize).Take(safeSize).ToList();
+
+            return new ProjectIssueListPageDTO
+            {
+                Items = await BuildProjectIssueDtosAsync(pageItems, fileById, folderNameById),
+                Total = visible.Count,
+                Page = safePage,
+                PageSize = safeSize
+            };
+        }
+
+        private async Task<List<ProjectIssueListItemDTO>> BuildProjectIssueDtosAsync(
+            IReadOnlyCollection<VisibleProjectIssue> pageIssues,
+            IReadOnlyDictionary<Guid, FileItem> fileById,
+            IReadOnlyDictionary<Guid, string> folderNameById)
+        {
+            if (pageIssues.Count == 0) return new List<ProjectIssueListItemDTO>();
+
+            var accountIds = pageIssues
+                .SelectMany(v => new[] { v.Issue.RaisedByAccountId, v.Issue.AssignedToAccountId })
                 .Where(id => id.HasValue).Select(id => id!.Value).ToHashSet();
             var accountNames = accountIds.Count == 0
                 ? new Dictionary<Guid, string>()
@@ -204,9 +253,9 @@ namespace Application.Services
             string? NameOf(Guid? id)
                 => id.HasValue && accountNames.TryGetValue(id.Value, out var name) ? name : null;
 
-            var assignedGroupIds = visible
-                .Where(i => i.AssignedToGroupId.HasValue)
-                .Select(i => i.AssignedToGroupId!.Value)
+            var assignedGroupIds = pageIssues
+                .Where(v => v.Issue.AssignedToGroupId.HasValue)
+                .Select(v => v.Issue.AssignedToGroupId!.Value)
                 .ToHashSet();
             var groupNames = assignedGroupIds.Count == 0
                 ? new Dictionary<Guid, string>()
@@ -216,39 +265,39 @@ namespace Application.Services
             string? GroupNameOf(Guid? id)
                 => id.HasValue && groupNames.TryGetValue(id.Value, out var name) ? name : null;
 
-            return visible
-                .OrderByDescending(i => i.CreatedAt)
-                .Select(i =>
+            return pageIssues.Select(v =>
+            {
+                var i = v.Issue;
+                var folderId = i.LinkedFileItemId.HasValue && fileById.TryGetValue(i.LinkedFileItemId.Value, out var file)
+                    ? file.FolderId
+                    : (Guid?)null;
+                return new ProjectIssueListItemDTO
                 {
-                    var folderId = FolderOf(i);
-                    return new ProjectIssueListItemDTO
-                    {
-                        Id = i.Id,
-                        ProjectId = i.ProjectId,
-                        ProjectName = projectName,
-                        Type = i.Type,
-                        Title = i.Title,
-                        Description = i.Description,
-                        Status = i.Status,
-                        Priority = i.Priority,
-                        RaisedByAccountId = i.RaisedByAccountId,
-                        RaisedByName = NameOf(i.RaisedByAccountId),
-                        AssignedToAccountId = i.AssignedToAccountId,
-                        AssignedToName = NameOf(i.AssignedToAccountId),
-                        AssignedToGroupId = i.AssignedToGroupId,
-                        AssignedToGroupName = GroupNameOf(i.AssignedToGroupId),
-                        DueDate = i.DueDate,
-                        CreatedAt = i.CreatedAt,
-                        UpdatedAt = i.UpdatedAt,
-                        LinkedFileItemId = i.LinkedFileItemId,
-                        LinkedFileName = i.LinkedFileItemId.HasValue
-                            && fileById.TryGetValue(i.LinkedFileItemId.Value, out var f) ? f.Name : null,
-                        LinkedFolderId = folderId,
-                        LinkedFolderName = folderId.HasValue
-                            && folderNameById.TryGetValue(folderId.Value, out var n) ? n : null,
-                    };
-                })
-                .ToList();
+                    Id = i.Id,
+                    ProjectId = i.ProjectId,
+                    ProjectName = v.ProjectName,
+                    Type = i.Type,
+                    Title = i.Title,
+                    Description = i.Description,
+                    Status = i.Status,
+                    Priority = i.Priority,
+                    RaisedByAccountId = i.RaisedByAccountId,
+                    RaisedByName = NameOf(i.RaisedByAccountId),
+                    AssignedToAccountId = i.AssignedToAccountId,
+                    AssignedToName = NameOf(i.AssignedToAccountId),
+                    AssignedToGroupId = i.AssignedToGroupId,
+                    AssignedToGroupName = GroupNameOf(i.AssignedToGroupId),
+                    DueDate = i.DueDate,
+                    CreatedAt = i.CreatedAt,
+                    UpdatedAt = i.UpdatedAt,
+                    LinkedFileItemId = i.LinkedFileItemId,
+                    LinkedFileName = i.LinkedFileItemId.HasValue
+                        && fileById.TryGetValue(i.LinkedFileItemId.Value, out var f) ? f.Name : null,
+                    LinkedFolderId = folderId,
+                    LinkedFolderName = folderId.HasValue
+                        && folderNameById.TryGetValue(folderId.Value, out var n) ? n : null,
+                };
+            }).ToList();
         }
 
         public async Task<IssueResponseDTO?> GetByIdAsync(Guid id, Guid accountId)
@@ -564,29 +613,36 @@ namespace Application.Services
             return await BuildAttachmentDtoAsync(attachment);
         }
 
-        public async Task<IEnumerable<ProjectIssueListItemDTO>> GetAssignedToMeAsync(Guid accountId)
+        public async Task<ProjectIssueListPageDTO> GetAssignedToMeAsync(Guid accountId, int page, int pageSize)
         {
             var issues = (await _unitOfWork.Repository<Issue>().FindAsync(
                     i => i.AssignedToAccountId == accountId && i.Status != IssueStatus.Closed))
                 .OrderByDescending(i => i.CreatedAt)
                 .ToList();
-            if (issues.Count == 0) return Array.Empty<ProjectIssueListItemDTO>();
 
-            var fileIds = issues.Where(i => i.LinkedFileItemId.HasValue)
+            var safePage = page < 1 ? 1 : page;
+            var safeSize = pageSize < 1 || pageSize > MaxIssuePageSize ? DefaultIssuePageSize : pageSize;
+
+            if (issues.Count == 0)
+                return new ProjectIssueListPageDTO { Items = new(), Total = 0, Page = safePage, PageSize = safeSize };
+
+            var pageIssues = issues.Skip((safePage - 1) * safeSize).Take(safeSize).ToList();
+
+            var fileIds = pageIssues.Where(i => i.LinkedFileItemId.HasValue)
                 .Select(i => i.LinkedFileItemId!.Value).ToHashSet();
             var fileById = fileIds.Count == 0
                 ? new Dictionary<Guid, FileItem>()
                 : (await _unitOfWork.Repository<FileItem>().FindAsync(f => fileIds.Contains(f.Id)))
                     .ToDictionary(f => f.Id);
 
-            var raisedByIds = issues.Where(i => i.RaisedByAccountId.HasValue)
+            var raisedByIds = pageIssues.Where(i => i.RaisedByAccountId.HasValue)
                 .Select(i => i.RaisedByAccountId!.Value).ToHashSet();
             var raisedByNames = raisedByIds.Count == 0
                 ? new Dictionary<Guid, string>()
                 : (await _unitOfWork.Repository<Account>().FindAsync(a => raisedByIds.Contains(a.Id)))
                     .ToDictionary(a => a.Id, a => a.UserName);
 
-            var folderIds = issues.Select(i =>
+            var folderIds = pageIssues.Select(i =>
                     i.LinkedFileItemId.HasValue && fileById.TryGetValue(i.LinkedFileItemId.Value, out var f)
                         ? f.FolderId
                         : (Guid?)null)
@@ -596,7 +652,7 @@ namespace Application.Services
                 : (await _unitOfWork.Repository<Folder>().FindAsync(f => folderIds.Contains(f.Id)))
                     .ToDictionary(f => f.Id, f => f.Name);
 
-            return issues.Select(i =>
+            var items = pageIssues.Select(i =>
             {
                 var folderId = i.LinkedFileItemId.HasValue
                         && fileById.TryGetValue(i.LinkedFileItemId.Value, out var file)
@@ -627,6 +683,14 @@ namespace Application.Services
                         && folderNameById.TryGetValue(folderId.Value, out var folderName) ? folderName : null,
                 };
             }).ToList();
+
+            return new ProjectIssueListPageDTO
+            {
+                Items = items,
+                Total = issues.Count,
+                Page = safePage,
+                PageSize = safeSize
+            };
         }
 
         public async Task<IEnumerable<Guid>> GetOpenIssueFileIdsForAccountAsync(
