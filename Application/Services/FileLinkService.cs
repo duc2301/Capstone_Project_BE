@@ -1,24 +1,27 @@
 using Application.DTOs.ResponseDTOs.FileItem;
 using Application.ExceptionMiddleware;
+using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
-using Domain.Enum.Cde;
 
 namespace Application.Services
 {
     public class FileLinkService : IFileLinkService
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IFileLinkRepository _links;
         private readonly IPermissionCheckingService _permission;
         private readonly IFileZoneResolverService _zoneResolver;
 
         public FileLinkService(
             IUnitOfWork unitOfWork,
+            IFileLinkRepository links,
             IPermissionCheckingService permission,
             IFileZoneResolverService zoneResolver)
         {
             _unitOfWork = unitOfWork;
+            _links = links;
             _permission = permission;
             _zoneResolver = zoneResolver;
         }
@@ -46,9 +49,7 @@ namespace Application.Services
 
             var linkByOtherId = links.ToDictionary(l => OtherEndOf(l, fileItemId));
 
-            var relatedFiles = (await _unitOfWork.Repository<FileItem>()
-                    .FindAsync(f => linkByOtherId.Keys.Contains(f.Id)))
-                .ToList();
+            var relatedFiles = (await _links.GetFileItemsByIdsAsync(linkByOtherId.Keys)).ToList();
             if (relatedFiles.Count == 0) return new List<RelatedFileDTO>();
 
             var visibleFolderIds = await ResolveViewableFolderIdsAsync(sourceFolder.ProjectId, actorId);
@@ -102,10 +103,7 @@ namespace Application.Services
             var scopeFolderIds = await ResolveScopeFolderIdsAsync(folder, actorId);
             if (scopeFolderIds.Count == 0) return Enumerable.Empty<LinkableFileDTO>();
 
-            var candidates = (await _unitOfWork.Repository<FileItem>()
-                    .FindAsync(f => scopeFolderIds.Contains(f.FolderId)))
-                .Where(f => !excludeFileItemId.HasValue || f.Id != excludeFileItemId.Value)
-                .ToList();
+            var candidates = await _links.GetFileItemsInFoldersAsync(scopeFolderIds, excludeFileItemId, ct);
             if (candidates.Count == 0) return Enumerable.Empty<LinkableFileDTO>();
 
             var linkedIds = excludeFileItemId.HasValue
@@ -181,9 +179,7 @@ namespace Application.Services
             await RequireCanModifyLinksAsync(sourceFolder, actorId);
 
             var (first, second) = NormalizePair(fileItemId, linkedFileItemId);
-            var link = (await _unitOfWork.Repository<FileLink>()
-                    .FindAsync(l => l.FileItemId == first && l.LinkedFileItemId == second))
-                .FirstOrDefault()
+            var link = await _links.FindLinkPairForUpdateAsync(first, second, ct)
                 ?? throw new ApiExceptionResponse("File link not found.", 404);
 
             _unitOfWork.Repository<FileLink>().Delete(link);
@@ -227,9 +223,7 @@ namespace Application.Services
         {
             var scopeFolderIds = await ResolveScopeFolderIdsAsync(sourceFolder, actorId);
 
-            var targets = (await _unitOfWork.Repository<FileItem>()
-                    .FindAsync(f => targetIds.Contains(f.Id)))
-                .ToList();
+            var targets = (await _links.GetFileItemsByIdsAsync(targetIds)).ToList();
 
             var missing = targetIds.Except(targets.Select(f => f.Id)).ToList();
             if (missing.Count > 0)
@@ -244,10 +238,8 @@ namespace Application.Services
             return targets;
         }
 
-        private async Task<List<FileLink>> GetLinksOfAsync(Guid fileItemId)
-            => (await _unitOfWork.Repository<FileLink>()
-                    .FindAsync(l => l.FileItemId == fileItemId || l.LinkedFileItemId == fileItemId))
-                .ToList();
+        private async Task<IReadOnlyList<FileLink>> GetLinksOfAsync(Guid fileItemId)
+            => await _links.GetLinksOfFileAsync(fileItemId);
 
         private static Guid OtherEndOf(FileLink link, Guid fileItemId)
             => link.FileItemId == fileItemId ? link.LinkedFileItemId : link.FileItemId;
@@ -282,9 +274,7 @@ namespace Application.Services
             if (!await _permission.HasProjectFullAccessAsync(projectId, actorId))
                 return viewableFolderIds;
 
-            var nonWipFolderIds = (await _unitOfWork.Repository<Folder>()
-                    .FindAsync(f => f.ProjectId == projectId && f.Area != CdeArea.Wip))
-                .Select(f => f.Id);
+            var nonWipFolderIds = await _links.GetNonWipFolderIdsAsync(projectId);
             viewableFolderIds.UnionWith(nonWipFolderIds);
 
             return viewableFolderIds;
@@ -326,26 +316,19 @@ namespace Application.Services
                     "Bạn cần quyền Sửa hoặc Cập nhật trên thư mục này để thay đổi tệp liên quan.", 403);
         }
 
-        private async Task<Dictionary<Guid, Folder>> GetFoldersByIdAsync(IEnumerable<Guid> folderIds)
-        {
-            var ids = folderIds.Distinct().ToList();
-            return (await _unitOfWork.Repository<Folder>().FindAsync(f => ids.Contains(f.Id)))
-                .ToDictionary(f => f.Id);
-        }
+        private async Task<IReadOnlyDictionary<Guid, Folder>> GetFoldersByIdAsync(IEnumerable<Guid> folderIds)
+            => await _links.GetFoldersByIdsAsync(folderIds);
 
         // Hệ versioning mới: version hiện hành nằm ở dòng FileVersionState mà CurrentVersionId trỏ tới.
-        private async Task<Dictionary<Guid, FileVersionState>> GetCurrentVersionsByIdAsync(
+        private async Task<IReadOnlyDictionary<Guid, FileVersionState>> GetCurrentVersionsByIdAsync(
             IReadOnlyCollection<FileItem> files)
         {
             var versionIds = files
                 .Where(f => f.CurrentVersionId.HasValue)
                 .Select(f => f.CurrentVersionId!.Value)
-                .Distinct()
                 .ToList();
-            if (versionIds.Count == 0) return new Dictionary<Guid, FileVersionState>();
 
-            return (await _unitOfWork.Repository<FileVersionState>().FindAsync(v => versionIds.Contains(v.Id)))
-                .ToDictionary(v => v.Id);
+            return await _links.GetVersionsByIdsAsync(versionIds);
         }
 
         private static FileVersionState? ResolveCurrentVersion(
@@ -354,21 +337,15 @@ namespace Application.Services
                 ? version
                 : null;
 
-        private async Task<Dictionary<Guid, string>> GetAccountNamesAsync(IEnumerable<Guid> accountIds)
-        {
-            var ids = accountIds.Distinct().ToList();
-            if (ids.Count == 0) return new Dictionary<Guid, string>();
-
-            return (await _unitOfWork.Repository<Account>().FindAsync(a => ids.Contains(a.Id)))
-                .ToDictionary(a => a.Id, a => a.UserName);
-        }
+        private async Task<IReadOnlyDictionary<Guid, string>> GetAccountNamesAsync(IEnumerable<Guid> accountIds)
+            => await _links.GetAccountNamesAsync(accountIds);
 
         private async Task<FileItem> GetFileItemAsync(Guid fileItemId)
-            => await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+            => await _links.GetFileItemAsync(fileItemId)
                ?? throw new ApiExceptionResponse("File not found.", 404);
 
         private async Task<Folder> GetFolderAsync(Guid folderId)
-            => await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
+            => await _links.GetFolderAsync(folderId)
                ?? throw new ApiExceptionResponse("Folder not found.", 404);
     }
 }
