@@ -2,6 +2,7 @@ using System.Text.Json;
 using Application.DTOs.ResponseDTOs.Loi;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IBackgroundServices;
+using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
@@ -14,12 +15,18 @@ namespace Application.Services.Loi
         private const string IfcFormat = "ifc";
 
         private readonly IUnitOfWork _uow;
+        private readonly ILoiCheckRepository _checks;
         private readonly ILoiCheckQueue _queue;
         private readonly IPermissionCheckingService _permission;
 
-        public LoiCheckService(IUnitOfWork uow, ILoiCheckQueue queue, IPermissionCheckingService permission)
+        public LoiCheckService(
+            IUnitOfWork uow,
+            ILoiCheckRepository checks,
+            ILoiCheckQueue queue,
+            IPermissionCheckingService permission)
         {
             _uow = uow;
+            _checks = checks;
             _queue = queue;
             _permission = permission;
         }
@@ -27,11 +34,10 @@ namespace Application.Services.Loi
         public async Task<LoiCheckResponseDTO?> GetByFileItemAsync(
             Guid fileItemId, Guid actor, bool isSystemAdmin, CancellationToken ct = default)
         {
-            var fileItem = await RequireViewableFileAsync(fileItemId, actor, isSystemAdmin);
+            var fileItem = await RequireViewableFileAsync(fileItemId, actor, isSystemAdmin, ct);
             if (fileItem.CurrentVersionId is null) return null;
 
-            var check = (await _uow.Repository<FileVersionLoiCheck>()
-                .FindAsync(c => c.FileVersionId == fileItem.CurrentVersionId)).FirstOrDefault();
+            var check = await _checks.GetCheckByFileVersionAsync(fileItem.CurrentVersionId.Value, ct);
             return check is null ? null : Map(check);
         }
 
@@ -41,18 +47,17 @@ namespace Application.Services.Loi
             if (!System.Enum.IsDefined(targetStage))
                 throw new ApiExceptionResponse("Giai đoạn thiết kế không hợp lệ.", 400);
 
-            var fileItem = await RequireViewableFileAsync(fileItemId, actor, isSystemAdmin);
+            var fileItem = await RequireViewableFileAsync(fileItemId, actor, isSystemAdmin, ct);
             if (fileItem.CurrentVersionId is null)
                 throw new ApiExceptionResponse("File has no content version.", 404);
 
-            var version = await _uow.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
+            var version = await _checks.GetVersionAsync(fileItem.CurrentVersionId.Value, ct)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
             if (!string.Equals(version.Format, IfcFormat, StringComparison.OrdinalIgnoreCase))
                 throw new ApiExceptionResponse("Chỉ đối chiếu thông tin phi hình học cho file .ifc.", 400);
 
             var now = DateTime.UtcNow;
-            var check = (await _uow.Repository<FileVersionLoiCheck>()
-                .FindAsync(c => c.FileVersionId == version.Id)).FirstOrDefault();
+            var check = await _checks.GetCheckByFileVersionForUpdateAsync(version.Id, ct);
             if (check is null)
             {
                 check = new FileVersionLoiCheck { Id = Guid.NewGuid(), FileVersionId = version.Id, CreatedAt = now };
@@ -74,9 +79,10 @@ namespace Application.Services.Loi
             return Map(check);
         }
 
-        private async Task<FileItem> RequireViewableFileAsync(Guid fileItemId, Guid actor, bool isSystemAdmin)
+        private async Task<FileItem> RequireViewableFileAsync(
+            Guid fileItemId, Guid actor, bool isSystemAdmin, CancellationToken ct)
         {
-            var fileItem = await _uow.Repository<FileItem>().GetByIdAsync(fileItemId)
+            var fileItem = await _checks.GetFileItemAsync(fileItemId, ct)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
             if (!isSystemAdmin)
