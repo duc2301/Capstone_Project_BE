@@ -150,12 +150,14 @@ namespace Infrastructure.Repositories
         public async Task<IReadOnlyList<Guid>> GetNoteAuthorIdsBySetAsync(
             Guid setId, CancellationToken ct = default)
         {
-            return await _context.FileNotes
+            var authorIds = await _context.FileNotes
                 .AsNoTracking()
                 .Where(n => n.MarkupSetId == setId && n.AuthorAccountId != null)
-                .Select(n => n.AuthorAccountId!.Value)
+                .Select(n => n.AuthorAccountId)
                 .Distinct()
                 .ToListAsync(ct);
+
+            return authorIds.OfType<Guid>().ToList();
         }
 
         public async Task<string?> GetAccountNameAsync(Guid accountId, CancellationToken ct = default)
