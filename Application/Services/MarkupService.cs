@@ -1,6 +1,7 @@
 using Application.DTOs.RequestDTOs.Markup;
 using Application.DTOs.ResponseDTOs.Markup;
 using Application.ExceptionMiddleware;
+using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
@@ -12,6 +13,7 @@ namespace Application.Services
     public class MarkupService : IMarkupService
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IMarkupRepository _markups;
         private readonly IPermissionCheckingService _permission;
         private readonly IMarkupBroadcaster _broadcaster;
         private readonly INotificationService _notification;
@@ -20,6 +22,7 @@ namespace Application.Services
 
         public MarkupService(
             IUnitOfWork unitOfWork,
+            IMarkupRepository markups,
             IPermissionCheckingService permission,
             IMarkupBroadcaster broadcaster,
             INotificationService notification,
@@ -27,6 +30,7 @@ namespace Application.Services
             IIssueActivityService issueActivity)
         {
             _unitOfWork = unitOfWork;
+            _markups = markups;
             _permission = permission;
             _broadcaster = broadcaster;
             _notification = notification;
@@ -43,7 +47,7 @@ namespace Application.Services
             var versionId = dto.FileVersionId ?? fileItem.CurrentVersionId
                 ?? throw new ApiExceptionResponse("File has no content version to markup.", 400);
 
-            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(versionId)
+            var version = await _markups.GetVersionAsync(versionId, ct)
                 ?? throw new ApiExceptionResponse("File version not found.", 404);
             if (version.FileItemId != fileItem.Id)
                 throw new ApiExceptionResponse("Version does not belong to this file.", 400);
@@ -77,25 +81,18 @@ namespace Application.Services
             var fileItem = await GetFileItemAsync(fileItemId);
             await RequireCanAccessFileAsync(fileItem, actorId);
 
-            var sets = (await _unitOfWork.Repository<MarkupSet>().FindAsync(s => s.FileItemId == fileItemId))
-                .OrderByDescending(s => s.CreatedAt)
-                .ToList();
+            var sets = await _markups.GetSetsByFileAsync(fileItemId, ct);
 
-            return await BuildSetSummariesAsync(sets);
+            return await BuildSetSummariesAsync(sets, ct);
         }
 
         public async Task<IEnumerable<MarkupSetResponseDTO>> GetSetsByIssueAsync(
             Guid issueId, Guid actorId, CancellationToken ct = default)
         {
-            var sets = (await _unitOfWork.Repository<MarkupSet>()
-                    .FindAsync(s => s.IssueId == issueId))
-                .OrderByDescending(s => s.CreatedAt)
-                .ToList();
+            var sets = await _markups.GetSetsByIssueAsync(issueId, ct);
             if (sets.Count == 0) return Enumerable.Empty<MarkupSetResponseDTO>();
 
-            var fileItemIds = sets.Select(s => s.FileItemId).Distinct().ToList();
-            var fileItems = (await _unitOfWork.Repository<FileItem>().FindAsync(f => fileItemIds.Contains(f.Id)))
-                .ToDictionary(f => f.Id);
+            var fileItems = await _markups.GetFileItemsAsync(sets.Select(s => s.FileItemId), ct);
 
             var canViewFile = new Dictionary<Guid, bool>();
             var visible = new List<MarkupSet>();
@@ -110,7 +107,7 @@ namespace Application.Services
                 if (allowed) visible.Add(set);
             }
 
-            return await BuildSetSummariesAsync(visible);
+            return await BuildSetSummariesAsync(visible, ct);
         }
 
         public async Task<MarkupSetResponseDTO> GetSetDetailAsync(Guid setId, Guid actorId, CancellationToken ct = default)
@@ -119,13 +116,11 @@ namespace Application.Services
             var fileItem = await GetFileItemAsync(set.FileItemId);
             await RequireCanAccessFileAsync(fileItem, actorId);
 
-            var notes = (await _unitOfWork.Repository<FileNote>().FindAsync(n => n.MarkupSetId == set.Id))
-                .OrderBy(n => n.CreatedAt)
-                .ToList();
+            var notes = await _markups.GetNotesBySetAsync(set.Id, ct);
 
             var accounts = await LoadAccountNamesAsync(
-                notes.Select(n => n.AuthorAccountId).Append(set.CreatedByAccountId));
-            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(set.FileVersionId);
+                notes.Select(n => n.AuthorAccountId).Append(set.CreatedByAccountId), ct);
+            var version = await _markups.GetVersionAsync(set.FileVersionId, ct);
 
             var noteDtos = notes.Select(n => BuildNoteDto(n, NameOf(accounts, n.AuthorAccountId))).ToList();
             return BuildSetDto(
@@ -155,11 +150,11 @@ namespace Application.Services
         private async Task LogMarkupAsync(
             AuditAction action, MarkupSet set, FileItem fileItem, Guid actorId, string detail)
         {
-            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
+            var projectId = await _markups.GetProjectIdByFolderAsync(fileItem.FolderId);
             await _auditLog.LogAsync(
                 LogScope.Group, action, nameof(MarkupSet), set.Id.ToString(), actorId,
                 detail: detail,
-                projectId: folder?.ProjectId, folderId: fileItem.FolderId);
+                projectId: projectId, folderId: fileItem.FolderId);
         }
 
         public async Task<MarkupSetResponseDTO> LinkToIssueAsync(
@@ -253,15 +248,15 @@ namespace Application.Services
         }
 
         private async Task<FileItem> GetFileItemAsync(Guid fileItemId)
-            => await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+            => await _markups.GetFileItemAsync(fileItemId)
                ?? throw new ApiExceptionResponse("File not found.", 404);
 
         private async Task<MarkupSet> GetSetAsync(Guid setId)
-            => await _unitOfWork.Repository<MarkupSet>().GetByIdAsync(setId)
+            => await _markups.GetSetForUpdateAsync(setId)
                ?? throw new ApiExceptionResponse("Markup set not found.", 404);
 
         private async Task<FileNote> GetNoteAsync(Guid noteId)
-            => await _unitOfWork.Repository<FileNote>().GetByIdAsync(noteId)
+            => await _markups.GetNoteForUpdateAsync(noteId)
                ?? throw new ApiExceptionResponse("Markup note not found.", 404);
 
         // View markup = View the file (file-level override, else folder ACL). PM/system-admin bypass
@@ -284,15 +279,9 @@ namespace Application.Services
                 throw new ApiExceptionResponse("Bạn cần quyền Sửa trên thư mục này để sửa/xóa ghi chú của người khác.", 403);
         }
 
-        private async Task<Folder> GetFolderAsync(Guid folderId)
-            => await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId)
-               ?? throw new ApiExceptionResponse("File folder not found.", 404);
-
         private async Task NotifySetFollowersAsync(MarkupSet set, Guid actorId, string? actorName, string fileName)
         {
-            var noteAuthors = (await _unitOfWork.Repository<FileNote>().FindAsync(n => n.MarkupSetId == set.Id))
-                .Where(n => n.AuthorAccountId.HasValue)
-                .Select(n => n.AuthorAccountId!.Value);
+            var noteAuthors = await _markups.GetNoteAuthorIdsBySetAsync(set.Id);
 
             var followers = noteAuthors
                 .Append(set.CreatedByAccountId ?? Guid.Empty)
@@ -311,36 +300,30 @@ namespace Application.Services
 
         private async Task<MarkupSetResponseDTO> BuildSetDetailDtoAsync(MarkupSet set)
         {
-            var notes = (await _unitOfWork.Repository<FileNote>().FindAsync(n => n.MarkupSetId == set.Id)).ToList();
-            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(set.FileVersionId);
+            var counts = await _markups.GetNoteCountsBySetAsync(set.Id);
+            var version = await _markups.GetVersionAsync(set.FileVersionId);
             var createdByName = await GetAccountNameAsync(set.CreatedByAccountId);
             return BuildSetDto(
                 set, version?.WorkingVersion ?? 0, createdByName,
-                notes.Count, notes.Count(n => n.Status == FileNoteStatus.Open), new List<FileNoteResponseDTO>());
+                counts.Total, counts.Open, new List<FileNoteResponseDTO>());
         }
 
-        private async Task<List<MarkupSetResponseDTO>> BuildSetSummariesAsync(List<MarkupSet> sets)
+        private async Task<List<MarkupSetResponseDTO>> BuildSetSummariesAsync(
+            IReadOnlyList<MarkupSet> sets, CancellationToken ct = default)
         {
             if (sets.Count == 0) return new List<MarkupSetResponseDTO>();
 
-            var setIds = sets.Select(s => s.Id).ToList();
-            var notesBySet = (await _unitOfWork.Repository<FileNote>().FindAsync(n => setIds.Contains(n.MarkupSetId)))
-                .GroupBy(n => n.MarkupSetId)
-                .ToDictionary(g => g.Key, g => g.ToList());
-
-            var versionIds = sets.Select(s => s.FileVersionId).Distinct().ToList();
-            var versions = (await _unitOfWork.Repository<FileVersionState>().FindAsync(v => versionIds.Contains(v.Id)))
-                .ToDictionary(v => v.Id, v => v.WorkingVersion);
-
-            var accounts = await LoadAccountNamesAsync(sets.Select(s => s.CreatedByAccountId));
+            var countsBySet = await _markups.GetNoteCountsBySetsAsync(sets.Select(s => s.Id), ct);
+            var versions = await _markups.GetVersionNumbersAsync(sets.Select(s => s.FileVersionId), ct);
+            var accounts = await LoadAccountNamesAsync(sets.Select(s => s.CreatedByAccountId), ct);
 
             return sets.Select(set =>
             {
-                notesBySet.TryGetValue(set.Id, out var notes);
-                var count = notes?.Count ?? 0;
-                var open = notes?.Count(n => n.Status == FileNoteStatus.Open) ?? 0;
+                countsBySet.TryGetValue(set.Id, out var counts);
                 versions.TryGetValue(set.FileVersionId, out var versionNumber);
-                return BuildSetDto(set, versionNumber, NameOf(accounts, set.CreatedByAccountId), count, open, new List<FileNoteResponseDTO>());
+                return BuildSetDto(
+                    set, versionNumber, NameOf(accounts, set.CreatedByAccountId),
+                    counts?.Total ?? 0, counts?.Open ?? 0, new List<FileNoteResponseDTO>());
             }).ToList();
         }
 
@@ -389,17 +372,16 @@ namespace Application.Services
         private async Task<string?> GetAccountNameAsync(Guid? accountId)
         {
             if (!accountId.HasValue) return null;
-            var account = await _unitOfWork.Repository<Account>().GetByIdAsync(accountId.Value);
-            return account?.UserName;
+            return await _markups.GetAccountNameAsync(accountId.Value);
         }
 
-        private async Task<Dictionary<Guid, string>> LoadAccountNamesAsync(IEnumerable<Guid?> ids)
+        private async Task<IReadOnlyDictionary<Guid, string>> LoadAccountNamesAsync(
+            IEnumerable<Guid?> ids, CancellationToken ct = default)
         {
             var idSet = ids.Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
             if (idSet.Count == 0) return new Dictionary<Guid, string>();
 
-            return (await _unitOfWork.Repository<Account>().FindAsync(a => idSet.Contains(a.Id)))
-                .ToDictionary(a => a.Id, a => a.UserName);
+            return await _markups.GetAccountNamesAsync(idSet, ct);
         }
 
         private static string? NameOf(IReadOnlyDictionary<Guid, string> accounts, Guid? id)
