@@ -37,9 +37,11 @@ namespace Application.Services
         private readonly IFileVersionService _fileVersionService;
         private readonly IFileLinkService _fileLink;
         private readonly IAuditLogService _auditLog;
+        private readonly IDocumentIndexSyncService _indexSync;
 
-        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, IMapper mapper, INamingConventionService naming, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService, IFileLinkService fileLink, IAuditLogService auditLog, IPermissionCheckingService permission)
+        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, IMapper mapper, INamingConventionService naming, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService, IFileLinkService fileLink, IAuditLogService auditLog, IPermissionCheckingService permission, IDocumentIndexSyncService indexSync)
         {
+            _indexSync = indexSync;
             _auditLog = auditLog;
             _permission = permission;
             _unitOfWork = unitOfWork;
@@ -181,6 +183,11 @@ namespace Application.Services
                 _translationQueue.Enqueue(version.VersionStateId!.Value);
 
             _nameMatchContentBackgroundService.Enqueue(fileItem.Id);
+
+            // Upload thẳng vào thư mục hệ thống ở Published (Hồ sơ pháp lý / tài liệu gói thầu) không đi qua
+            // luồng phê duyệt -> đây là đường thứ ba tệp tới vùng chính thức, phải tự xin index.
+            // Upload vào WIP thì RequestIndexAsync tự bỏ qua.
+            await _indexSync.RequestIndexAsync(fileItem.Id, ct);
 
             return new FileUploadResultDTO
             {

@@ -111,6 +111,9 @@ namespace Infrastructure.Configurations
             services.AddScoped<IChunkContextEnricher, ChunkContextEnricher>();
             services.AddScoped<IDocumentSearchRepository, DocumentSearchRepository>();
             services.AddScoped<ISemanticSearchService, SemanticSearchService>();
+            // Điểm vào duy nhất để xin index + quét đối soát (lưới an toàn cho đường ghi quên gọi).
+            services.AddScoped<IDocumentIndexRepository, DocumentIndexRepository>();
+            services.AddScoped<IDocumentIndexSyncService, DocumentIndexSyncService>();
 
             // Profile self-service (GET/PUT/change-password trên chính user hiện tại)
             services.AddScoped<IProfileService, ProfileService>();
@@ -129,6 +132,7 @@ namespace Infrastructure.Configurations
             services.AddHostedService<Application.BackgroundServices.NotificationEmailDigestBackgroundService>();
             services.AddHostedService(sp => sp.GetRequiredService<IngestBackgroundService>());
             services.AddHostedService(sp => sp.GetRequiredService<NameMatchContentBackgroundService>());
+            services.AddHostedService<Application.BackgroundServices.IndexReconcileBackgroundService>();
 
             // Invitation flow: Manager mời account vô dự án -> accept tạo ProjectParticipant
             services.AddScoped<IInvitationService, InvitationService>();
