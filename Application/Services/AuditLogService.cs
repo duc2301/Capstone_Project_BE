@@ -16,6 +16,11 @@ namespace Application.Services
         private const string ProjectExportPrefix = "nhat-ky-du-an";
         private const string ExportExtension = "xlsx";
         private const int VietnamUtcOffsetHours = 7;
+
+        // Cửa sổ gộp mặc định cho LogThrottledAsync: mở lại cùng một tệp trong 15 phút
+        // được coi là cùng một lượt xem.
+        private static readonly TimeSpan DefaultThrottleWindow = TimeSpan.FromMinutes(15);
+
         private const string ExcelContentType =
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -88,6 +93,27 @@ namespace Application.Services
             await LogAsync(scope, action, entityType, entityId, actorId,
                            detail, projectId, folderId, groupId);
             await _unitOfWork.CommitAsync();
+        }
+
+        public async Task LogThrottledAsync(
+            LogScope scope,
+            AuditAction action,
+            string entityType,
+            string entityId,
+            Guid actorId,
+            string? detail = null,
+            Guid? projectId = null,
+            Guid? folderId = null,
+            Guid? groupId = null,
+            TimeSpan? window = null)
+        {
+            var since = DateTime.UtcNow - (window ?? DefaultThrottleWindow);
+
+            if (await _auditLogRepository.HasRecentAsync(action, entityType, entityId, actorId, since))
+                return;
+
+            await LogAndSaveAsync(scope, action, entityType, entityId, actorId,
+                                  detail, projectId, folderId, groupId);
         }
 
         // ===== ĐỌC =====

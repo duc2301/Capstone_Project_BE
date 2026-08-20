@@ -290,11 +290,33 @@ namespace Application.Services
             if (duplicate == null)
                 return;
 
+            // Ca hay gặp nhất: tài liệu đã rời WIP (sang Shared/Published, hoặc có bản niêm phong ở
+            // Archived) rồi có người tải lại đúng tên vào WIP. FindExistingDocumentAsync dò theo FOLDER
+            // nên không khớp, luồng rơi vào nhánh "tài liệu mới" và dừng ở đây. Nếu chỉ báo "đã tồn tại"
+            // thì người dùng không biết phải làm gì tiếp — nên nói rõ tài liệu đang ở đâu, bản nào,
+            // và đường đi tiếp theo tương ứng với từng khu vực.
             var duplicateFolder = await _unitOfWork.Repository<Folder>().GetByIdAsync(duplicate.FolderId);
             var zone = duplicateFolder != null ? FormatZone(duplicateFolder.Area) : "khu vực khác";
+
+            var current = await _unitOfWork.FileVersionRepository.GetCurrentStateAsync(duplicate.Id);
+            var revision = current is null ? string.Empty : $", phiên bản {current.DisplayVersion}";
+
+            var huongXuLy = duplicateFolder?.Area switch
+            {
+                CdeArea.Wip =>
+                    "Mở đúng thư mục đó rồi tải lên để tạo phiên bản mới cho tài liệu này.",
+                CdeArea.Shared or CdeArea.Published =>
+                    "Muốn cập nhật thì gửi yêu cầu trả tài liệu về WIP rồi tải lên ở thư mục đó. "
+                    + "Nếu đây là tài liệu KHÁC thì đặt tên khác để phân biệt.",
+                CdeArea.Archived =>
+                    "Đây là bản niêm phong lưu trữ nên không sửa được. "
+                    + "Nếu đây là tài liệu khác thì đặt tên khác để phân biệt.",
+                _ => "Nếu đây là tài liệu khác thì đặt tên khác để phân biệt."
+            };
+
             throw new InvalidOperationException(
-                $"Đã tồn tại file '{fileName}.{format}' trong dự án (khu vực {zone}). "
-                + "Tên file phải duy nhất trong dự án; chỉ được trùng tên nếu khác loại file (khác đuôi).");
+                $"Đã tồn tại tài liệu '{fileName}.{format}' trong dự án, đang ở khu vực {zone}{revision}. "
+                + huongXuLy);
         }
 
         private async Task<FileVersionState> RequireCurrentStateAsync(Guid fileItemId)

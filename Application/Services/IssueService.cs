@@ -399,7 +399,8 @@ namespace Application.Services
             {
                 await AddParticipantsAsync(entity.Id, new[] { entity.AssignedToAccountId.Value });
                 await GrantIssueFileViewAsync(
-                    entity.Id, entity.LinkedFileItemId!.Value, new[] { entity.AssignedToAccountId.Value });
+                    entity.Id, entity.LinkedFileItemId!.Value,
+                    new[] { entity.AssignedToAccountId.Value }, actorId);
                 if (entity.AssignedToAccountId.Value != actorId)
                 {
                     await _notification.NotifyAsync(
@@ -413,7 +414,7 @@ namespace Application.Services
             {
                 var memberIds = await GetActiveGroupMemberIdsAsync(entity.AssignedToGroupId.Value);
                 await AddParticipantsAsync(entity.Id, memberIds);
-                await GrantIssueFileViewAsync(entity.Id, entity.LinkedFileItemId!.Value, memberIds);
+                await GrantIssueFileViewAsync(entity.Id, entity.LinkedFileItemId!.Value, memberIds, actorId);
 
                 var recipientIds = memberIds.Where(id => id != actorId).ToList();
                 if (recipientIds.Count > 0)
@@ -476,7 +477,7 @@ namespace Application.Services
             await _unitOfWork.CommitAsync();
 
             // Issue đóng -> thu hồi grant xem file sinh ra từ issue này.
-            await RevokeIssueFileViewAsync(issue.Id);
+            await RevokeIssueFileViewAsync(issue.Id, actorId);
             var discussion = (await _unitOfWork.Repository<Discussion>().FindAsync(
                     d => d.ScopeType == DiscussionScopeType.Issue && d.ScopeId == issueId))
                 .FirstOrDefault();
@@ -771,7 +772,8 @@ namespace Application.Services
         // Cấp quyền xem file được liên kết cho danh sách account (người được giao / ẢNH CHỤP thành viên
         // nhóm được giao). Đường Allow cộng thêm, độc lập ACL nhóm. Upsert-and-reactivate theo
         // (IssueId, AccountId) để không vi phạm unique index nếu grant đã tồn tại.
-        private async Task GrantIssueFileViewAsync(Guid issueId, Guid fileItemId, IEnumerable<Guid> accountIds)
+        private async Task GrantIssueFileViewAsync(
+            Guid issueId, Guid fileItemId, IEnumerable<Guid> accountIds, Guid actorId)
         {
             var wanted = accountIds.Distinct().ToList();
             if (wanted.Count == 0) return;
@@ -807,12 +809,17 @@ namespace Application.Services
                 changed = true;
             }
 
+            // Ghi nhật ký chia sẻ TRƯỚC CommitAsync để log và grant cùng một transaction.
+            if (changed)
+                await LogShareAsync(AuditAction.Share, fileItemId, actorId, wanted.Count,
+                                    $"qua vấn đề #{issueId}");
+
             if (changed) await _unitOfWork.CommitAsync();
         }
 
         // Thu hồi toàn bộ grant sinh ra từ 1 issue (khi đóng issue). Vì grant nằm ở bảng riêng và khóa
         // theo IssueId nên không bao giờ chạm grant của luồng ký hay của issue khác trên cùng file.
-        private async Task RevokeIssueFileViewAsync(Guid issueId)
+        private async Task RevokeIssueFileViewAsync(Guid issueId, Guid actorId)
         {
             var grants = (await _unitOfWork.Repository<IssueFileViewGrant>()
                 .FindAsync(g => g.IssueId == issueId)).ToList();
@@ -820,7 +827,28 @@ namespace Application.Services
 
             foreach (var grant in grants)
                 _unitOfWork.Repository<IssueFileViewGrant>().Delete(grant);
+
+            await LogShareAsync(AuditAction.RevokeShare, grants[0].FileItemId, actorId, grants.Count,
+                                $"do đóng vấn đề #{issueId}");
+
             await _unitOfWork.CommitAsync();
+        }
+
+        // Nhật ký chia sẻ / thu hồi quyền xem tài liệu. Luôn kèm folderId vì bộ lọc quyền phía đọc
+        // chạy theo FolderId — thiếu thì ghi xong nhưng thành viên không xem được dòng log của mình.
+        private async Task LogShareAsync(
+            AuditAction action, Guid fileItemId, Guid actorId, int accountCount, string reason)
+        {
+            var file = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId);
+            if (file is null) return;
+
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(file.FolderId);
+            var verb = action == AuditAction.Share ? "Chia sẻ" : "Thu hồi";
+
+            await _auditLog.LogAsync(
+                LogScope.Project, action, nameof(FileItem), file.Id.ToString(), actorId,
+                detail: $"{verb} quyền xem '{file.Name}' của {accountCount} tài khoản ({reason})",
+                projectId: folder?.ProjectId, folderId: file.FolderId);
         }
 
         private async Task AddParticipantsAsync(Guid issueId, IEnumerable<Guid> accountIds)
