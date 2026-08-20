@@ -14,14 +14,23 @@ namespace Capstone_Project.Controllers
     [Route("api/projects")]
     public class ProjectsController : ControllerBase
     {
+        private const string BundleContentType = "application/zip";
+        private const int BundleBufferSize = 81_920;
+
         private readonly IProjectFlowService _projectFlow;
         private readonly IProjectService _projectService;
+        private readonly IProjectFileBundleService _bundle;
         private readonly IAIService _ai;
 
-        public ProjectsController(IProjectFlowService projectFlow, IProjectService projectService, IAIService ai)
+        public ProjectsController(
+            IProjectFlowService projectFlow,
+            IProjectService projectService,
+            IProjectFileBundleService bundle,
+            IAIService ai)
         {
             _projectFlow = projectFlow;
             _projectService = projectService;
+            _bundle = bundle;
             _ai = ai;
         }
 
@@ -144,5 +153,34 @@ namespace Capstone_Project.Controllers
             await _projectService.DeleteAsync(id, User.GetAccountId());
             return Ok(ApiResponse.Success("Project deleted"));
         }
+
+        [HttpGet("{id:guid}/files/bundle")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> DownloadFileBundle(Guid id, CancellationToken ct)
+        {
+            var fileName = await _bundle.ResolveBundleFileNameAsync(id, ct);
+            var buffer = CreateBundleBuffer();
+
+            try
+            {
+                await _bundle.WriteBundleAsync(id, User.GetAccountId(), buffer, ct);
+                buffer.Position = 0;
+            }
+            catch
+            {
+                await buffer.DisposeAsync();
+                throw;
+            }
+
+            return File(buffer, BundleContentType, fileName);
+        }
+
+        private static FileStream CreateBundleBuffer() => new(
+            Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()),
+            FileMode.CreateNew,
+            FileAccess.ReadWrite,
+            FileShare.None,
+            BundleBufferSize,
+            FileOptions.DeleteOnClose);
     }
 }

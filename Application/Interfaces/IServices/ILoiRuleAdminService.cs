@@ -1,4 +1,4 @@
-using Application.DTOs.RequestDTOs.Loi;
+﻿using Application.DTOs.RequestDTOs.Loi;
 using Application.DTOs.ResponseDTOs.Loi;
 using Domain.Enum.Loi;
 
@@ -6,15 +6,10 @@ namespace Application.Interfaces.IServices
 {
     public interface ILoiRuleAdminService
     {
-        Task<IReadOnlyList<LoiRuleSetDTO>> GetRuleSetsAsync(CancellationToken ct = default);
-
-        Task<LoiRuleSetDTO> CreateRuleSetAsync(CreateLoiRuleSetDTO dto, Guid actor, CancellationToken ct = default);
-
-        Task<LoiRuleSetDTO> UpdateRuleSetAsync(Guid ruleSetId, UpdateLoiRuleSetDTO dto, Guid actor, CancellationToken ct = default);
+        Task<LoiRuleSetDTO> UpdateRuleSetAsync(
+            Guid ruleSetId, UpdateLoiRuleSetDTO dto, Guid actor, CancellationToken ct = default);
 
         Task DeleteRuleSetAsync(Guid ruleSetId, Guid actor, CancellationToken ct = default);
-
-        Task<LoiRuleSetDTO> SetDefaultRuleSetAsync(Guid ruleSetId, Guid actor, CancellationToken ct = default);
 
         Task<IReadOnlyList<LoiComponentDTO>> GetComponentsAsync(
             Guid ruleSetId, LoiDiscipline? discipline, string? search, CancellationToken ct = default);
@@ -48,18 +43,6 @@ namespace Application.Interfaces.IServices
 
         Task DeleteParameterAsync(Guid ruleSetId, Guid parameterId, Guid actor, CancellationToken ct = default);
 
-        Task<IReadOnlyList<LoiAliasResponseDTO>> GetSystemAliasesAsync(string? search, CancellationToken ct = default);
-
-        Task<LoiAliasResponseDTO> CreateSystemAliasAsync(CreateSystemLoiAliasDTO dto, Guid actor, CancellationToken ct = default);
-
-        Task DeleteSystemAliasAsync(Guid aliasId, Guid actor, CancellationToken ct = default);
-
-        Task<LoiRuleSetDTO?> SetProjectRuleSetAsync(
-            Guid projectId, Guid? ruleSetId, Guid actor, bool isSystemAdmin, CancellationToken ct = default);
-
         Task<LoiRuleSetDTO?> GetProjectRuleSetAsync(Guid projectId, CancellationToken ct = default);
-
-        Task<IReadOnlyList<LoiRuleSetDTO>> GetSelectableRuleSetsAsync(
-            Guid projectId, Guid actor, bool isSystemAdmin, CancellationToken ct = default);
     }
 }

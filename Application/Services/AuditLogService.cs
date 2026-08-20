@@ -1,10 +1,9 @@
-using Application.DTOs.RequestDTOs.Audit;
+﻿using Application.DTOs.RequestDTOs.Audit;
 using Application.DTOs.ResponseDTOs.Audit;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
-using System.Text;
 using Domain.Entities;
 using Domain.Enum.Audit;
 
@@ -13,7 +12,12 @@ namespace Application.Services
     public class AuditLogService : IAuditLogService
     {
         private const int ExportMaxRows = 5000;
+        private const string SystemExportPrefix = "nhat-ky-he-thong";
+        private const string ProjectExportPrefix = "nhat-ky-du-an";
+        private const string ExportExtension = "xlsx";
         private const int VietnamUtcOffsetHours = 7;
+        private const string ExcelContentType =
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
         private static readonly HashSet<string> FileActivityEntityTypes = new()
         {
@@ -186,7 +190,7 @@ namespace Application.Services
                 ids.Add(idSelector(entity).ToString());
         }
 
-        public async Task<AuditLogExportDTO> ExportCsvAsync(
+        public async Task<AuditLogExportDTO> ExportAsync(
             Guid? projectId, AuditLogFilterDTO filter, Guid actorId)
         {
             if (projectId.HasValue)
@@ -196,18 +200,71 @@ namespace Application.Services
 
             var scopeProjectId = projectId ?? filter.ProjectId;
             var rows = await _auditLogRepository.QueryAllAsync(
-                filter, scopeProjectId, null, null, ExportMaxRows);
+                filter, scopeProjectId, null, null, ExportMaxRows + 1);
 
-            var stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmm");
-            var prefix = projectId.HasValue ? "nhat-ky-du-an" : "nhat-ky-he-thong";
+            var truncated = rows.Count > ExportMaxRows;
+            if (truncated)
+                rows = rows.Take(ExportMaxRows).ToList();
+
+            var scopedProjectName = scopeProjectId.HasValue
+                ? (await _unitOfWork.Repository<Project>().GetByIdAsync(scopeProjectId.Value))?.ProjectName
+                : null;
+
+            var exportedAtLocal = DateTime.UtcNow.AddHours(VietnamUtcOffsetHours);
+            var content = AuditLogWorkbookBuilder.Build(new AuditLogWorkbookRequest(
+                Title: scopedProjectName is null
+                    ? "NHẬT KÝ HOẠT ĐỘNG HỆ THỐNG"
+                    : $"NHẬT KÝ HOẠT ĐỘNG DỰ ÁN — {scopedProjectName}",
+                ExportedBy: await ResolveAccountNameAsync(actorId) ?? actorId.ToString(),
+                ExportedAtLocal: exportedAtLocal,
+                FilterLines: await BuildFilterLinesAsync(filter, projectId.HasValue ? null : scopedProjectName),
+                Truncated: truncated,
+                TruncationLimit: ExportMaxRows,
+                LocalOffsetHours: VietnamUtcOffsetHours,
+                Rows: rows));
 
             return new AuditLogExportDTO
             {
-                Content = BuildCsv(rows),
-                FileName = $"{prefix}-{stamp}.csv",
-                ContentType = "text/csv"
+                Content = content,
+                FileName = BuildExportFileName(scopeProjectId, scopedProjectName, exportedAtLocal),
+                ContentType = ExcelContentType
             };
         }
+
+        private static string BuildExportFileName(
+            Guid? scopeProjectId, string? projectName, DateTime exportedAtLocal) =>
+            scopeProjectId.HasValue
+                ? FileDownloadNaming.BuildTimestampedName(
+                    ProjectExportPrefix, projectName, exportedAtLocal, ExportExtension)
+                : FileDownloadNaming.BuildTimestampedName(
+                    SystemExportPrefix, null, exportedAtLocal, ExportExtension);
+
+        private async Task<List<string>> BuildFilterLinesAsync(AuditLogFilterDTO filter, string? projectName)
+        {
+            var lines = new List<string>();
+
+            if (projectName is not null)
+                lines.Add($"Dự án: {projectName}");
+            if (filter.Scope.HasValue)
+                lines.Add($"Phạm vi: {AuditLogWorkbookBuilder.ScopeLabel(filter.Scope.Value)}");
+            if (filter.Action.HasValue)
+                lines.Add($"Hành động: {AuditLogWorkbookBuilder.ActionLabel(filter.Action.Value)}");
+            if (filter.ActorId.HasValue)
+                lines.Add($"Người thao tác: {await ResolveAccountNameAsync(filter.ActorId.Value) ?? filter.ActorId.Value.ToString()}");
+            if (!string.IsNullOrWhiteSpace(filter.EntityType))
+                lines.Add($"Đối tượng: {AuditLogWorkbookBuilder.EntityLabel(filter.EntityType)}");
+            if (!string.IsNullOrWhiteSpace(filter.Search))
+                lines.Add($"Từ khoá: \"{filter.Search}\"");
+            if (filter.From.HasValue)
+                lines.Add($"Từ ngày: {filter.From.Value.AddHours(VietnamUtcOffsetHours):dd/MM/yyyy}");
+            if (filter.To.HasValue)
+                lines.Add($"Đến ngày: {filter.To.Value.AddHours(VietnamUtcOffsetHours):dd/MM/yyyy}");
+
+            return lines;
+        }
+
+        private async Task<string?> ResolveAccountNameAsync(Guid accountId) =>
+            (await _unitOfWork.Repository<Account>().GetByIdAsync(accountId))?.UserName;
 
         private async Task EnsureCanReadProjectAsync(Guid projectId, Guid actorId)
         {
@@ -222,30 +279,5 @@ namespace Application.Services
                     "Only system admin or the project manager can export the project audit log.", 403);
         }
 
-        private static byte[] BuildCsv(List<AuditLogResponseDTO> rows)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("Thời gian (UTC+7),Người thao tác,Hành động,Phạm vi,Đối tượng,Mã đối tượng,Nội dung");
-
-            foreach (var row in rows)
-            {
-                sb.Append(CsvCell(row.CreatedAt?.AddHours(VietnamUtcOffsetHours).ToString("yyyy-MM-dd HH:mm:ss"))).Append(',');
-                sb.Append(CsvCell(row.ActorName)).Append(',');
-                sb.Append(CsvCell(row.Action.ToString())).Append(',');
-                sb.Append(CsvCell(row.Scope.ToString())).Append(',');
-                sb.Append(CsvCell(row.EntityType)).Append(',');
-                sb.Append(CsvCell(row.EntityId)).Append(',');
-                sb.AppendLine(CsvCell(row.Detail));
-            }
-
-            var utf8Bom = new UTF8Encoding(true);
-            return utf8Bom.GetPreamble().Concat(utf8Bom.GetBytes(sb.ToString())).ToArray();
-        }
-
-        private static string CsvCell(string? value)
-        {
-            if (string.IsNullOrEmpty(value)) return string.Empty;
-            return $"\"{value.Replace("\"", "\"\"")}\"";
-        }
     }
 }

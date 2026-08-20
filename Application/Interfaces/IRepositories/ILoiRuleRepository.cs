@@ -1,4 +1,4 @@
-using Domain.Entities;
+﻿using Domain.Entities;
 using Domain.Enum.Loi;
 
 namespace Application.Interfaces.IRepositories
@@ -34,8 +34,6 @@ namespace Application.Interfaces.IRepositories
             Guid ruleSetId, CancellationToken ct = default);
 
         Task<int> CountProjectsUsingAsync(Guid ruleSetId, CancellationToken ct = default);
-
-        Task<int> CountProjectsInheritingDefaultAsync(CancellationToken ct = default);
 
         Task<bool> ParamNameExistsAsync(string paramNameNormalized, CancellationToken ct = default);
 

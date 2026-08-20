@@ -1,4 +1,4 @@
-using Application.DTOs.RequestDTOs.Loi;
+﻿using Application.DTOs.RequestDTOs.Loi;
 using Application.DTOs.ResponseDTOs.Loi;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IRepositories;
@@ -26,26 +26,25 @@ namespace Application.Services.Loi
             _audit = audit;
         }
 
-        public async Task<byte[]> GenerateTemplateAsync(Guid ruleSetId, CancellationToken ct = default)
+        public async Task<byte[]> GenerateTemplateAsync(Guid? ruleSetId, CancellationToken ct = default)
         {
-            var ruleSet = await RequireRuleSetAsync(ruleSetId);
-            var parameters = (await _uow.Repository<LoiParameter>().FindAsync(p => p.RuleSetId == ruleSetId)).ToList();
-            var components = (await _uow.Repository<LoiComponent>().FindAsync(c => c.RuleSetId == ruleSetId)).ToList();
-            var requirements = (await _uow.Repository<LoiRequirement>().FindAsync(r => r.RuleSetId == ruleSetId)).ToList();
+            var source = await ResolveTemplateSourceAsync(ruleSetId);
 
             using var engine = new ExcelEngine();
             engine.Excel.DefaultVersion = ExcelVersion.Excel2016;
             var workbook = engine.Excel.Workbooks.Create(4);
 
-            WriteGuideSheet(workbook.Worksheets[0], ruleSet);
-            WriteParameterSheet(workbook.Worksheets[1], parameters);
-            WriteComponentSheet(workbook.Worksheets[2], components);
+            WriteGuideSheet(workbook.Worksheets[0], source.Name);
+            WriteParameterSheet(workbook.Worksheets[1], source.Parameters);
+            WriteComponentSheet(workbook.Worksheets[2], source.Components);
 
             var matrixSheet = workbook.Worksheets[3];
-            WriteRequirementSheet(matrixSheet, LoiDiscipline.KienTrucKetCau, parameters, components, requirements);
+            WriteRequirementSheet(matrixSheet, LoiDiscipline.KienTrucKetCau,
+                source.Parameters, source.Components, source.Requirements);
 
             var mepSheet = workbook.Worksheets.Create(LoiRuleImportSheet.RequirementsMep);
-            WriteRequirementSheet(mepSheet, LoiDiscipline.Mep, parameters, components, requirements);
+            WriteRequirementSheet(mepSheet, LoiDiscipline.Mep,
+                source.Parameters, source.Components, source.Requirements);
 
             using var output = new MemoryStream();
             workbook.SaveAs(output);
@@ -161,13 +160,11 @@ namespace Application.Services.Loi
                 Id = ruleSet.Id,
                 Name = ruleSet.Name,
                 Description = ruleSet.Description,
-                IsDefault = ruleSet.IsDefault,
                 IsSystem = ruleSet.IsSystem,
                 ComponentCount = count?.ComponentCount ?? 0,
                 RequirementCount = count?.RequirementCount ?? 0,
                 ParameterCount = count?.ParameterCount ?? 0,
                 ProjectCount = count?.ProjectCount ?? 0,
-                InheritingProjectCount = await _rules.CountProjectsInheritingDefaultAsync(ct),
                 CreatedAt = ruleSet.CreatedAt,
                 UpdatedAt = ruleSet.UpdatedAt
             };
@@ -196,7 +193,6 @@ namespace Application.Services.Loi
                 Id = Guid.NewGuid(),
                 Name = name,
                 Description = string.IsNullOrWhiteSpace(dto.NewRuleSetDescription) ? null : dto.NewRuleSetDescription.Trim(),
-                IsDefault = false,
                 IsSystem = false,
                 CreatedByAccountId = actor,
                 CreatedAt = DateTime.UtcNow
@@ -709,13 +705,13 @@ namespace Application.Services.Loi
             return rows;
         }
 
-        private static void WriteGuideSheet(IWorksheet sheet, LoiRuleSet ruleSet)
+        private static void WriteGuideSheet(IWorksheet sheet, string ruleSetName)
         {
             sheet.Name = LoiRuleImportSheet.Guide;
 
             var lines = new (string Label, string Value)[]
             {
-                ("Bộ luật", ruleSet.Name),
+                ("Bộ luật", ruleSetName),
                 ("Nguồn", "QĐ 347/QĐ-BXD ngày 02/04/2021 — Phụ lục 02"),
                 (string.Empty, string.Empty),
                 ("Sheet ThamSo", "Danh mục tham số chuẩn. Cột: Bộ môn · Tên tham số · Nhóm · Thứ tự cột."),
@@ -899,6 +895,24 @@ namespace Application.Services.Loi
             sheet.Columns[LoiRuleImportSheet.VariantColumn - 1].ColumnWidth = 26;
             sheet.Columns[LoiRuleImportSheet.FieldColumn - 1].ColumnWidth = 32;
             sheet.Range[LoiRuleImportSheet.HeaderRow, 1, LoiRuleImportSheet.HeaderRow, 4].FreezePanes();
+        }
+
+        private async Task<LoiStandardRuleTable> ResolveTemplateSourceAsync(Guid? ruleSetId)
+        {
+            if (!ruleSetId.HasValue) return LoiStandardRuleTable.Load();
+
+            var chosen = await RequireRuleSetAsync(ruleSetId.Value);
+            var requirements = (await _uow.Repository<LoiRequirement>()
+                .FindAsync(r => r.RuleSetId == chosen.Id)).ToList();
+
+            if (requirements.Count == 0) return LoiStandardRuleTable.Load();
+
+            return new LoiStandardRuleTable(
+                chosen.Name,
+                chosen.Description,
+                (await _uow.Repository<LoiParameter>().FindAsync(p => p.RuleSetId == chosen.Id)).ToList(),
+                (await _uow.Repository<LoiComponent>().FindAsync(c => c.RuleSetId == chosen.Id)).ToList(),
+                requirements);
         }
 
         private async Task<LoiRuleSet> RequireRuleSetAsync(Guid ruleSetId) =>
