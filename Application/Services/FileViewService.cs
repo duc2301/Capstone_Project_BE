@@ -20,7 +20,6 @@ namespace Application.Services
         private const string KindModel = "model";
         private const string KindInline = "inline";
         private const string KindDownload = "download";
-        private const int UrlExpiryMinutes = 60;
 
         private static readonly string[] TextExts = { ".txt", ".csv" };
 
@@ -104,7 +103,7 @@ namespace Application.Services
             {
                 FileType.Ifc or FileType.Cad => await BuildModelAsync(version, fileName, format),
                 FileType.Pdf or FileType.Image when hasStoredContent
-                    => await BuildInlineAsync(version.StoragePath!, ext, fileName, format, ct),
+                    => BuildInline(fileItem, version, ext, fileName, format),
                 FileType.Office when hasStoredContent
                     => await BuildOfficeAsync(fileItem, version, ext, fileName, format, ct),
                 _ => Download(fileName, format),
@@ -176,48 +175,46 @@ namespace Application.Services
             _translationQueue.Enqueue(version.Id);
         }
 
-        // ---- PDF/ảnh/text: presigned URL + content type ----
-        private async Task<FileViewInfoDTO> BuildInlineAsync(
-            string storagePath, string ext, string fileName, string format, CancellationToken ct)
-        {
-            var url = await _storage.GetPresignedUrlAsync(storagePath, UrlExpiryMinutes, ct);
-            if (string.IsNullOrWhiteSpace(url))
-                return Download(fileName, format);   // provider không hỗ trợ link (vd local) -> tải về
-
-            return new FileViewInfoDTO
+        // ---- PDF/ảnh/text: trỏ FE tới endpoint proxy same-origin (/view-content) thay vì presigned URL public ----
+        // Không còn phát hành link S3 công khai: nội dung chỉ chảy qua API có [Authorize] + kiểm quyền theo từng request,
+        // nên URL dán sang trình duyệt khác (không JWT) sẽ 401. FE fetch URL này kèm Bearer (như /view-pdf) rồi render.
+        private FileViewInfoDTO BuildInline(
+            FileItem fileItem, FileVersionState version, string ext, string fileName, string format)
+            => new()
             {
                 Kind = KindInline,
-                Url = url,
+                Url = BuildContentUrl(fileItem.Id, version.Id),
                 ContentType = _storage.GetContentType(ext),
                 FileName = fileName,
                 Format = format,
             };
-        }
 
         // ---- Office: txt/csv xem text; doc/xls/ppt convert sang PDF rồi inline ----
         private async Task<FileViewInfoDTO> BuildOfficeAsync(
             FileItem fileItem, FileVersionState version, string ext, string fileName, string format, CancellationToken ct)
         {
             if (TextExts.Contains(ext))
-                return await BuildInlineAsync(version.StoragePath!, ext, fileName, format, ct);
+                return BuildInline(fileItem, version, ext, fileName, format);
 
+            // doc/xls/ppt: phải convert được sang PDF mới xem inline được; không thì tải về.
             var previewPath = await EnsureOfficePdfPathAsync(fileItem, version, ext, ct);
             if (string.IsNullOrWhiteSpace(previewPath))
-                return Download(fileName, format);
-
-            var url = await _storage.GetPresignedUrlAsync(previewPath, UrlExpiryMinutes, ct);
-            if (string.IsNullOrWhiteSpace(url))
                 return Download(fileName, format);
 
             return new FileViewInfoDTO
             {
                 Kind = KindInline,
-                Url = url,
+                Url = BuildContentUrl(fileItem.Id, version.Id),
                 ContentType = "application/pdf",
                 FileName = fileName,
                 Format = format,
             };
         }
+
+        // Đường dẫn same-origin để FE xem nội dung (fetch kèm Bearer rồi render). Ghim versionStateId để xem đúng
+        // phiên bản đang mở (kể cả bản cũ) và không phụ thuộc CurrentVersionId có đổi giữa lúc mở view và lúc tải bytes.
+        private static string BuildContentUrl(Guid fileItemId, Guid versionStateId)
+            => $"/api/file-items/{fileItemId}/view-content?versionStateId={versionStateId}";
 
         // Đảm bảo có bản PDF của file Office (convert + cache PreviewStoragePath 1 lần). null nếu không convert được.
         private async Task<string?> EnsureOfficePdfPathAsync(
@@ -284,6 +281,65 @@ namespace Application.Services
 
             var stream = await _storage.OpenReadAsync(storagePath, ct);
             return new InlinePdfResult(stream, $"{fileItem.Name}.pdf");
+        }
+
+        // ---- Proxy nội dung xem inline (thay presigned URL public) — same-origin, kiểm quyền lại theo TỪNG request ----
+        //  PDF/ảnh -> file gốc; txt/csv -> file gốc; doc/xls/ppt -> bản convert PDF (dùng lại cache PreviewStoragePath).
+        //  Chảy qua API có [Authorize] + CanViewFile nên URL dán sang trình duyệt khác (không JWT) -> 401; mất quyền -> 403.
+        public async Task<InlineContentResult> OpenViewContentAsync(
+            Guid fileItemId, Guid? versionStateId, Guid actor, CancellationToken ct = default)
+        {
+            var fileItem = await RequireViewableFileAsync(fileItemId, actor);
+
+            FileVersionState version;
+            if (versionStateId.HasValue)
+            {
+                version = await RequireVersionOfFileAsync(fileItem.Id, versionStateId.Value);
+            }
+            else
+            {
+                if (!fileItem.CurrentVersionId.HasValue)
+                    throw new ApiExceptionResponse("File has no content version.", 404);
+                version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
+                    ?? throw new ApiExceptionResponse("Current version not found.", 404);
+            }
+
+            if (string.IsNullOrWhiteSpace(version.StoragePath))
+                throw new ApiExceptionResponse("Version has no stored content.", 404);
+
+            var format = version.Format ?? string.Empty;
+            var ext = format.StartsWith('.') ? format.ToLowerInvariant() : "." + format.ToLowerInvariant();
+            var fileName = FileDownloadNaming.BuildFileName(fileItem.Name, format);
+
+            string storagePath;
+            string contentType;
+            switch (fileItem.FileType)
+            {
+                case FileType.Pdf:
+                case FileType.Image:
+                    storagePath = version.StoragePath!;
+                    contentType = _storage.GetContentType(ext);
+                    break;
+
+                // txt/csv: xem thẳng nội dung text gốc.
+                case FileType.Office when TextExts.Contains(ext):
+                    storagePath = version.StoragePath!;
+                    contentType = _storage.GetContentType(ext);
+                    break;
+
+                // doc/xls/ppt: phục vụ bản PDF đã convert (đã cache lúc gọi /view -> ở đây chỉ đọc lại cache).
+                case FileType.Office:
+                    storagePath = await EnsureOfficePdfPathAsync(fileItem, version, ext, ct)
+                        ?? throw new ApiExceptionResponse("Không thể chuyển file sang PDF để xem.", 415);
+                    contentType = "application/pdf";
+                    break;
+
+                default:
+                    throw new ApiExceptionResponse("File này không hỗ trợ xem trực tiếp.", 400);
+            }
+
+            var stream = await _storage.OpenReadAsync(storagePath, ct);
+            return new InlineContentResult(stream, contentType, fileName);
         }
 
         private static FileViewInfoDTO Download(string fileName, string format) => new()

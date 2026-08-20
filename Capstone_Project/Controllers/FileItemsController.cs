@@ -95,6 +95,18 @@ namespace Capstone_Project.Controllers
             return File(pdf.Content, "application/pdf", pdf.FileName);
         }
 
+        // Proxy xem nội dung file qua chính API (same-origin) — thay cho presigned URL public.
+        // /view trả Url trỏ về đây; FE fetch kèm Bearer rồi render (blob/pdf.js/img). Dán URL sang trình duyệt
+        // khác không có JWT -> 401; user mất quyền -> 403 (kiểm CanViewFile lại theo từng request). KHÔNG kèm
+        // tên file tải về -> Content-Disposition inline để trình duyệt render tại chỗ thay vì tải xuống.
+        [HttpGet("{id:guid}/view-content")]
+        public async Task<IActionResult> GetViewContent(
+            Guid id, [FromQuery] Guid? versionStateId, CancellationToken ct)
+        {
+            var content = await _view.OpenViewContentAsync(id, versionStateId, User.GetAccountId(), ct);
+            return File(content.Content, content.ContentType);
+        }
+
         // Dịch lại model (IFC/CAD) lên APS — dùng khi trạng thái dịch là Failed. Chạy ở hàng đợi nền.
         [HttpPost("{id:guid}/retranslate")]
         public async Task<IActionResult> Retranslate(Guid id, CancellationToken ct)
