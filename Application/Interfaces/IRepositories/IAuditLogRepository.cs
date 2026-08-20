@@ -1,5 +1,6 @@
 using Application.DTOs.RequestDTOs.Audit;
 using Application.DTOs.ResponseDTOs.Audit;
+using Domain.Enum.Audit;
 
 namespace Application.Interfaces.IRepositories
 {
@@ -31,5 +32,10 @@ namespace Application.Interfaces.IRepositories
 
         // Các group đang Active mà account là thành viên Active trong 1 dự án.
         Task<HashSet<Guid>> GetMyActiveGroupIdsAsync(Guid projectId, Guid accountId);
+
+        // Đã có dòng log cùng actor + cùng hành động + cùng đối tượng kể từ mốc since chưa.
+        // Dùng để chặn ghi trùng cho hành động lặp lại nhiều lần (mở xem tài liệu).
+        Task<bool> HasRecentAsync(
+            AuditAction action, string entityType, string entityId, Guid actorId, DateTime since);
     }
 }

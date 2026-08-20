@@ -220,6 +220,26 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(l => l.LinkedFileItemId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // AuditLog: bảng chỉ-ghi-thêm, đọc luôn kèm điều kiện lọc -> phải có index, nếu không
+            // mỗi lần mở tab Nhật ký là một lần quét toàn bảng.
+            // KHÔNG khai FK/nav sang Project/Folder/Account: log phải sống sót khi bản ghi gốc bị xoá.
+            modelBuilder.Entity<AuditLog>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+
+                // 3 view đọc đều lọc theo dự án rồi sắp xếp mới nhất trước (AuditLogRepository).
+                entity.HasIndex(x => new { x.ProjectId, x.CreatedAt });
+
+                // Nhật ký theo từng tệp: GET /api/audit-logs/files/{fileItemId}.
+                entity.HasIndex(x => new { x.EntityType, x.EntityId });
+
+                // Lọc quyền của view "/my" chạy theo FolderId.
+                entity.HasIndex(x => x.FolderId);
+
+                // Tra hoạt động của một tài khoản + kiểm chống ghi trùng khi log hành động Xem.
+                entity.HasIndex(x => new { x.ActorAccountId, x.Action, x.CreatedAt });
+            });
+
             
 
             modelBuilder.Entity<DiscussionMessage>()

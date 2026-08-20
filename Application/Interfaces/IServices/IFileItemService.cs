@@ -6,9 +6,10 @@ namespace Application.Interfaces.IServices
     public interface IFileItemService
     {
         Task<FileItemResponseDTO?> GetByIdAsync(Guid id);
-        Task<FileItemResponseDTO> CreateAsync(CreateFileItemDTO dto);
-        Task<FileItemResponseDTO> UpdateAsync(Guid id, UpdateFileItemDTO dto);
-        Task DeleteAsync(Guid id);
+        // actorId bắt buộc: ba thao tác này đều ghi nhật ký, không có actor thì không truy được ai làm.
+        Task<FileItemResponseDTO> CreateAsync(CreateFileItemDTO dto, Guid actorId);
+        Task<FileItemResponseDTO> UpdateAsync(Guid id, UpdateFileItemDTO dto, Guid actorId);
+        Task DeleteAsync(Guid id, Guid actorId);
 
         Task<IEnumerable<FileListItemDTO>> GetByFolderAsync(Guid folderId, Guid actorId);
         Task<TransferZoneResponseDTO> TransferZoneAsync(Guid fileItemId, TransferZoneRequestDTO dto, Guid actorId);

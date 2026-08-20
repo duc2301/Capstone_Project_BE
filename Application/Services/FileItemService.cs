@@ -61,33 +61,60 @@ namespace Application.Services
             return dto;
         }
 
-        public async Task<FileItemResponseDTO> CreateAsync(CreateFileItemDTO dto)
+        public async Task<FileItemResponseDTO> CreateAsync(CreateFileItemDTO dto, Guid actorId)
         {
             var entity = _mapper.Map<FileItem>(dto);
             entity.Id = Guid.NewGuid();
             entity.CreatedAt = entity.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.Repository<FileItem>().CreateAsync(entity);
+
+            await LogFileCrudAsync(AuditAction.Create, entity, actorId, $"Tạo bản ghi tài liệu '{entity.Name}'");
+
             await _unitOfWork.CommitAsync();
             return _mapper.Map<FileItemResponseDTO>(entity);
         }
 
-        public async Task<FileItemResponseDTO> UpdateAsync(Guid id, UpdateFileItemDTO dto)
+        public async Task<FileItemResponseDTO> UpdateAsync(Guid id, UpdateFileItemDTO dto, Guid actorId)
         {
             var entity = await _unitOfWork.Repository<FileItem>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"FileItem with ID {id} not found.", 404);
+
+            var oldName = entity.Name;
             _mapper.Map(dto, entity);
             entity.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<FileItem>().Update(entity);
+
+            var detail = oldName == entity.Name
+                ? $"Sửa thông tin tài liệu '{entity.Name}'"
+                : $"Đổi tên tài liệu '{oldName}' thành '{entity.Name}'";
+            await LogFileCrudAsync(AuditAction.Update, entity, actorId, detail);
+
             await _unitOfWork.CommitAsync();
             return _mapper.Map<FileItemResponseDTO>(entity);
         }
 
-        public async Task DeleteAsync(Guid id)
+        public async Task DeleteAsync(Guid id, Guid actorId)
         {
             var entity = await _unitOfWork.Repository<FileItem>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"FileItem with ID {id} not found.", 404);
+
+            // Ghi log TRƯỚC khi xoá: sau khi xoá thì không còn đọc được tên/folder của bản ghi.
+            await LogFileCrudAsync(AuditAction.Delete, entity, actorId, $"Xóa tài liệu '{entity.Name}'");
+
             _unitOfWork.Repository<FileItem>().Delete(entity);
             await _unitOfWork.CommitAsync();
+        }
+
+        // Ba thao tác CRUD trên bản ghi tài liệu trước đây không để lại dấu vết nào.
+        // Dùng LogAsync (không commit) để log nằm cùng transaction với chính thao tác.
+        private async Task LogFileCrudAsync(AuditAction action, FileItem entity, Guid actorId, string detail)
+        {
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(entity.FolderId);
+
+            await _auditLog.LogAsync(
+                LogScope.Group, action, nameof(FileItem), entity.Id.ToString(), actorId,
+                detail: detail,
+                projectId: folder?.ProjectId, folderId: entity.FolderId);
         }
 
         public async Task<TransferZoneResponseDTO> TransferZoneAsync(Guid fileItemId, TransferZoneRequestDTO dto, Guid actorId)

@@ -278,6 +278,14 @@ namespace Application.Services
             if (string.IsNullOrEmpty(version.StoragePath))
                 throw new ApiExceptionResponse("Current version has no stored content.", 404);
 
+            // Cấp link xem trực tiếp cũng là một lượt truy cập nội dung -> phải vào nhật ký,
+            // giống Download ở OpenVersionContentAsync. Gộp trùng để mở lại không đẻ log rác.
+            var urlFolder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
+            await _auditLog.LogThrottledAsync(
+                LogScope.Group, AuditAction.View, nameof(FileItem), fileItem.Id.ToString(), actor,
+                detail: $"Xem '{fileItem.Name}' ({version.DisplayVersion})",
+                projectId: urlFolder?.ProjectId, folderId: fileItem.FolderId);
+
             return await _storage.GetPresignedUrlAsync(version.StoragePath, minutes, ct);
         }
 
