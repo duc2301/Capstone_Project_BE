@@ -2,6 +2,7 @@ using Application.Interfaces.IRepositories;
 using Domain.Entities;
 using Domain.Enum.Cde;
 using Domain.Enum.Group;
+using Domain.Enum.Issue;
 using Domain.Enum.Permission;
 using Domain.Enum.Project;
 using Infrastructure.DbContexts;
@@ -86,16 +87,25 @@ namespace Infrastructure.Repositories
                                 m.AccountId == accountId && m.Status == GroupMemberStatus.Active))
                 .Select(fp => fp.FileItemId);
 
-            // (c) Grant xem sinh ra từ issue được giao (người được giao / thành viên nhóm được giao).
-            var issueGrantedFileIds = _context.IssueFileViewGrants
-                .Where(g => g.AccountId == accountId
-                         && g.Status == PermissionStatus.Active
-                         && g.FileItem.Folder.ProjectId == projectId)
-                .Select(g => g.FileItemId);
+            var issueStakeholderFileIds = _context.FileItems
+                .Where(fi => fi.Folder.ProjectId == projectId
+                          && (fi.Folder.Area == CdeArea.Shared || fi.Folder.Area == CdeArea.Published)
+                          && _context.Issues.Any(i =>
+                                i.LinkedFileItemId == fi.Id
+                                && i.Status != IssueStatus.Closed
+                                && (i.RaisedByAccountId == accountId
+                                    || i.AssignedToAccountId == accountId
+                                    || (i.AssignedToGroupId != null && _context.GroupMembers.Any(m =>
+                                            m.GroupId == i.AssignedToGroupId
+                                            && m.AccountId == accountId
+                                            && m.Status == GroupMemberStatus.Active))
+                                    || _context.IssueMentions.Any(m =>
+                                            m.IssueId == i.Id && m.MentionedAccountId == accountId))))
+                .Select(fi => fi.Id);
 
             var fileIds = await grantedFileIds
                 .Concat(permittedFileIds)
-                .Concat(issueGrantedFileIds)
+                .Concat(issueStakeholderFileIds)
                 .Distinct().ToListAsync();
             if (fileIds.Count == 0) return new List<FileItem>();
 

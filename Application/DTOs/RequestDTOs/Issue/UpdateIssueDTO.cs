@@ -15,9 +15,6 @@ namespace Application.DTOs.RequestDTOs.Issue
 
         public IssueStatus? Status { get; set; }
         public IssuePriority? Priority { get; set; }
-        public Guid? AssignedToAccountId { get; set; }
-        public Guid? AssignedToOrganizationId { get; set; }
-        public Guid? AssignedToGroupId { get; set; }
         public DateTime? DueDate { get; set; }
         public Guid? LinkedFileItemId { get; set; }
         public string? ModelLocationJson { get; set; }

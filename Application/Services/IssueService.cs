@@ -21,6 +21,7 @@ namespace Application.Services
     public class IssueService : IIssueService
     {
         private const long MaxAttachmentSizeBytes = 20 * 1024 * 1024; // 20MB, khop [RequestSizeLimit] o controller
+        private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
 
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
@@ -189,11 +190,19 @@ namespace Application.Services
             var hasFullAccess = await _permission.HasProjectFullAccessAsync(projectId, accountId);
             var isSystemAdmin = await _permission.HasSystemAdminAsync(accountId);
             var viewableFolderIds = await _permission.GetViewableFolderIdsAsync(projectId, accountId);
+            var accountGroupIds = await GetActiveGroupIdsOfAccountAsync(accountId);
+            var mentionedIssueIds = await GetMentionedIssueIdsAsync(issues.Select(i => i.Id), accountId);
 
             Guid? FolderOf(Issue issue)
                 => issue.LinkedFileItemId.HasValue && fileById.TryGetValue(issue.LinkedFileItemId.Value, out var file)
                     ? file.FolderId
                     : null;
+
+            bool IsStakeholder(Issue issue)
+                => issue.RaisedByAccountId == accountId
+                   || issue.AssignedToAccountId == accountId
+                   || (issue.AssignedToGroupId.HasValue && accountGroupIds.Contains(issue.AssignedToGroupId.Value))
+                   || mentionedIssueIds.Contains(issue.Id);
 
             bool CanSee(Issue issue)
             {
@@ -201,11 +210,13 @@ namespace Application.Services
 
                 var folderId = FolderOf(issue);
                 if (!folderId.HasValue)
-                    return issue.RaisedByAccountId == accountId || issue.AssignedToAccountId == accountId;
+                    return IsStakeholder(issue);
 
                 if (viewableFolderIds.Contains(folderId.Value)) return true;
 
                 var isWip = !folderAreaById.TryGetValue(folderId.Value, out var area) || area == CdeArea.Wip;
+                if (!isWip && IsStakeholder(issue)) return true;
+
                 return hasFullAccess && !isWip;
             }
 
@@ -284,6 +295,7 @@ namespace Application.Services
                     AssignedToGroupId = i.AssignedToGroupId,
                     AssignedToGroupName = GroupNameOf(i.AssignedToGroupId),
                     DueDate = i.DueDate,
+                    AssignmentStatus = i.AssignmentStatus,
                     CreatedAt = i.CreatedAt,
                     UpdatedAt = i.UpdatedAt,
                     LinkedFileItemId = i.LinkedFileItemId,
@@ -314,6 +326,8 @@ namespace Application.Services
             var accountIdsToResolve = participantIds.ToHashSet();
             if (entity.RaisedByAccountId.HasValue) accountIdsToResolve.Add(entity.RaisedByAccountId.Value);
             if (entity.AssignedToAccountId.HasValue) accountIdsToResolve.Add(entity.AssignedToAccountId.Value);
+            if (entity.AssignmentRespondedByAccountId.HasValue)
+                accountIdsToResolve.Add(entity.AssignmentRespondedByAccountId.Value);
 
             var accountNames = accountIdsToResolve.Count > 0
                 ? (await _unitOfWork.Repository<Account>().FindAsync(a => accountIdsToResolve.Contains(a.Id)))
@@ -324,6 +338,8 @@ namespace Application.Services
 
             dto.RaisedByName = ResolveName(entity.RaisedByAccountId);
             dto.AssignedToName = ResolveName(entity.AssignedToAccountId);
+            dto.AssignmentRespondedByName = ResolveName(entity.AssignmentRespondedByAccountId);
+            dto.CanRespondToAssignment = await CanRespondToAssignmentAsync(entity, accountId);
             await BuildAssignmentNamesAsync(dto, entity);
             dto.Participants = participantIds.Select(pid => new AccountRefDTO
             {
@@ -363,6 +379,8 @@ namespace Application.Services
                     ?? throw new ApiExceptionResponse("File folder not found.", 404);
                 if (folder.Area != CdeArea.Shared && folder.Area != CdeArea.Published)
                     throw new ApiExceptionResponse("Issue can only be created for files in Shared or Published zone.", 400);
+                if (!await _permission.HasViewFileAsync(fileItem.Id, actorId))
+                    throw new ApiExceptionResponse("You do not have permission to create an issue for this file.", 403);
                 if (folder.Area == CdeArea.Published)
                 {
                     var projectFolders = await _zoneResolver.GetProjectFoldersAsync(folder.ProjectId);
@@ -379,11 +397,14 @@ namespace Application.Services
             entity.Id = Guid.NewGuid();
             entity.RaisedByAccountId = actorId;
             entity.Status = IssueStatus.Open;
-            if (entity.DueDate.HasValue)
-                entity.DueDate = DateTime.SpecifyKind(entity.DueDate.Value, DateTimeKind.Utc);
+            entity.DueDate = NormalizeDueDate(entity.DueDate);
             var now = DateTime.UtcNow;
             entity.CreatedAt = now;
             entity.UpdatedAt = now;
+
+            var hasAssignee = entity.AssignedToAccountId.HasValue || entity.AssignedToGroupId.HasValue;
+            entity.AssignmentStatus = hasAssignee ? IssueAssignmentStatus.Pending : IssueAssignmentStatus.Unassigned;
+            entity.AssignedAt = hasAssignee ? now : null;
 
             await _unitOfWork.Repository<Issue>().CreateAsync(entity);
             await _auditLog.LogAsync(
@@ -395,36 +416,8 @@ namespace Application.Services
             await _discussionService.CreateForScopeAsync(
                 DiscussionScopeType.Issue, entity.Id, entity.ProjectId, entity.Title, actorId);
 
-            if (entity.AssignedToAccountId.HasValue)
-            {
-                await AddParticipantsAsync(entity.Id, new[] { entity.AssignedToAccountId.Value });
-                await GrantIssueFileViewAsync(
-                    entity.Id, entity.LinkedFileItemId!.Value, new[] { entity.AssignedToAccountId.Value });
-                if (entity.AssignedToAccountId.Value != actorId)
-                {
-                    await _notification.NotifyAsync(
-                        entity.AssignedToAccountId.Value,
-                        $"Bạn được giao vấn đề \"{entity.Title}\".",
-                        linkType: "Issue",
-                        linkId: entity.Id.ToString());
-                }
-            }
-            else if (entity.AssignedToGroupId.HasValue)
-            {
-                var memberIds = await GetActiveGroupMemberIdsAsync(entity.AssignedToGroupId.Value);
-                await AddParticipantsAsync(entity.Id, memberIds);
-                await GrantIssueFileViewAsync(entity.Id, entity.LinkedFileItemId!.Value, memberIds);
-
-                var recipientIds = memberIds.Where(id => id != actorId).ToList();
-                if (recipientIds.Count > 0)
-                {
-                    await _notification.NotifyManyAsync(
-                        recipientIds,
-                        $"Nhóm của bạn được giao vấn đề \"{entity.Title}\".",
-                        linkType: "Issue",
-                        linkId: entity.Id.ToString());
-                }
-            }
+            if (hasAssignee)
+                await AnnounceAssignmentAsync(entity, actorId);
 
             var result = await BuildAssignmentNamesAsync(_mapper.Map<IssueResponseDTO>(entity), entity);
 
@@ -434,18 +427,84 @@ namespace Application.Services
             return result;
         }
 
-        public async Task<IssueResponseDTO> UpdateAsync(Guid id, UpdateIssueDTO dto)
+        private async Task AnnounceAssignmentAsync(Issue issue, Guid actorId)
+        {
+            var assigneeLabel = await ResolveAssigneeLabelAsync(issue);
+            await _auditLog.LogAndSaveAsync(
+                LogScope.Project, AuditAction.Assign, nameof(Issue), issue.Id.ToString(), actorId,
+                detail: $"Giao vấn đề '{issue.Title}' cho {assigneeLabel}",
+                projectId: issue.ProjectId);
+
+            if (issue.AssignedToAccountId.HasValue)
+            {
+                await AddParticipantsAsync(issue.Id, new[] { issue.AssignedToAccountId.Value });
+                if (issue.AssignedToAccountId.Value != actorId)
+                {
+                    await _notification.NotifyAsync(
+                        issue.AssignedToAccountId.Value,
+                        $"Bạn được giao vấn đề \"{issue.Title}\". Hãy xác nhận nhận việc hoặc từ chối.",
+                        linkType: "Issue",
+                        linkId: issue.Id.ToString());
+                }
+                return;
+            }
+
+            if (!issue.AssignedToGroupId.HasValue) return;
+
+            var memberIds = await GetActiveGroupMemberIdsAsync(issue.AssignedToGroupId.Value);
+            await AddParticipantsAsync(issue.Id, memberIds);
+
+            var leaderIds = await GetActiveGroupLeaderIdsAsync(issue.AssignedToGroupId.Value);
+            foreach (var recipientId in memberIds.Where(id => id != actorId))
+            {
+                var message = leaderIds.Contains(recipientId)
+                    ? $"Nhóm của bạn được giao vấn đề \"{issue.Title}\". Trưởng nhóm hãy xác nhận nhận việc hoặc từ chối."
+                    : $"Nhóm của bạn được giao vấn đề \"{issue.Title}\".";
+                await _notification.NotifyAsync(
+                    recipientId, message, linkType: "Issue", linkId: issue.Id.ToString());
+            }
+        }
+
+        private async Task<string> ResolveAssigneeLabelAsync(Issue issue)
+        {
+            if (issue.AssignedToAccountId.HasValue)
+            {
+                var account = await _unitOfWork.Repository<Account>().GetByIdAsync(issue.AssignedToAccountId.Value);
+                return account?.UserName ?? "người dùng";
+            }
+
+            if (issue.AssignedToGroupId.HasValue)
+            {
+                var group = await _unitOfWork.Repository<Group>().GetByIdAsync(issue.AssignedToGroupId.Value);
+                return $"nhóm {group?.Name}";
+            }
+
+            return "chưa xác định";
+        }
+
+        public async Task<IssueResponseDTO> UpdateAsync(Guid id, UpdateIssueDTO dto, Guid actorId)
         {
             var entity = await _unitOfWork.Repository<Issue>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Issue with ID {id} not found.", 404);
+            RequireCreator(entity, actorId, "Only the issue creator can update this issue.");
+
+            var previousDueDate = entity.DueDate;
             _mapper.Map(dto, entity);
-            if (entity.DueDate.HasValue)
-                entity.DueDate = DateTime.SpecifyKind(entity.DueDate.Value, DateTimeKind.Utc);
+            entity.DueDate = NormalizeDueDate(entity.DueDate);
+            if (entity.DueDate != previousDueDate)
+            {
+                entity.DueReminderSentAt = null;
+                entity.OverdueNotifiedAt = null;
+            }
             entity.UpdatedAt = DateTime.UtcNow;
             _unitOfWork.Repository<Issue>().Update(entity);
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Update, nameof(Issue), entity.Id.ToString(), actorId,
+                detail: $"Cập nhật vấn đề '{entity.Title}'",
+                projectId: entity.ProjectId);
             await _unitOfWork.CommitAsync();
 
-            var result = _mapper.Map<IssueResponseDTO>(entity);
+            var result = await BuildAssignmentNamesAsync(_mapper.Map<IssueResponseDTO>(entity), entity);
 
             if (entity.LinkedFileItemId.HasValue)
                 await _issueBroadcaster.IssueUpdatedAsync(entity.LinkedFileItemId.Value, result);
@@ -453,12 +512,222 @@ namespace Application.Services
             return result;
         }
 
-        public async Task DeleteAsync(Guid id)
+        public async Task DeleteAsync(Guid id, Guid actorId)
         {
             var entity = await _unitOfWork.Repository<Issue>().GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Issue with ID {id} not found.", 404);
+            RequireCreator(entity, actorId, "Only the issue creator can delete this issue.");
+
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Delete, nameof(Issue), entity.Id.ToString(), actorId,
+                detail: $"Xoá vấn đề '{entity.Title}'",
+                projectId: entity.ProjectId);
             _unitOfWork.Repository<Issue>().Delete(entity);
             await _unitOfWork.CommitAsync();
+        }
+
+        public async Task<IEnumerable<PendingIssueAssignmentDTO>> GetPendingAssignmentsForMeAsync(Guid accountId)
+        {
+            var leaderGroupIds = (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                    m => m.AccountId == accountId
+                      && m.Status == GroupMemberStatus.Active
+                      && m.Role == GroupMemberRole.Leader))
+                .Select(m => m.GroupId)
+                .ToHashSet();
+
+            var issues = (await _unitOfWork.Repository<Issue>().FindAsync(
+                    i => i.AssignmentStatus == IssueAssignmentStatus.Pending
+                      && i.Status != IssueStatus.Closed
+                      && (i.AssignedToAccountId == accountId
+                          || (i.AssignedToGroupId != null && leaderGroupIds.Contains(i.AssignedToGroupId.Value)))))
+                .OrderByDescending(i => i.AssignedAt)
+                .ToList();
+            if (issues.Count == 0) return Enumerable.Empty<PendingIssueAssignmentDTO>();
+
+            var groupIds = issues.Where(i => i.AssignedToGroupId.HasValue)
+                .Select(i => i.AssignedToGroupId!.Value).ToHashSet();
+            var groupNameById = groupIds.Count == 0
+                ? new Dictionary<Guid, string>()
+                : (await _unitOfWork.Repository<Group>().FindAsync(g => groupIds.Contains(g.Id)))
+                    .ToDictionary(g => g.Id, g => g.Name);
+
+            return issues.Select(i => new PendingIssueAssignmentDTO
+            {
+                IssueId = i.Id,
+                Title = i.Title,
+                ProjectId = i.ProjectId,
+                LinkedFileItemId = i.LinkedFileItemId,
+                DueDate = i.DueDate,
+                AssignedToGroupName = i.AssignedToGroupId.HasValue
+                    && groupNameById.TryGetValue(i.AssignedToGroupId.Value, out var name) ? name : null
+            }).ToList();
+        }
+
+        public async Task<IssueResponseDTO> AssignAsync(Guid issueId, AssignIssueDTO dto, Guid actorId)
+        {
+            var issue = await _unitOfWork.Repository<Issue>().GetByIdAsync(issueId)
+                ?? throw new ApiExceptionResponse("Issue not found.", 404);
+            RequireCreator(issue, actorId, "Only the issue creator can assign this issue.");
+
+            if (issue.Status == IssueStatus.Closed)
+                throw new ApiExceptionResponse("This issue is already resolved.", 400);
+            if (dto.AssignedToAccountId.HasValue == dto.AssignedToGroupId.HasValue)
+                throw new ApiExceptionResponse("Choose exactly one assignee: an account or a group.", 400);
+
+            if (dto.AssignedToGroupId.HasValue)
+                await RequireAssignableGroupAsync(issue.ProjectId, dto.AssignedToGroupId.Value, issue.LinkedFileItemId);
+            else
+                await RequireAssignableAccountAsync(dto.AssignedToAccountId!.Value, issue.LinkedFileItemId);
+
+            await ClearCurrentAssignmentParticipantsAsync(issue);
+
+            issue.AssignedToAccountId = dto.AssignedToAccountId;
+            issue.AssignedToGroupId = dto.AssignedToGroupId;
+            issue.AssignmentStatus = IssueAssignmentStatus.Pending;
+            issue.AssignedAt = DateTime.UtcNow;
+            issue.AssignmentRespondedAt = null;
+            issue.AssignmentRespondedByAccountId = null;
+            issue.AssignmentRejectReason = null;
+            issue.UpdatedAt = DateTime.UtcNow;
+            _unitOfWork.Repository<Issue>().Update(issue);
+            await _unitOfWork.CommitAsync();
+
+            await AnnounceAssignmentAsync(issue, actorId);
+
+            return await BroadcastIssueAsync(issue);
+        }
+
+        public async Task<IssueResponseDTO> AcceptAssignmentAsync(Guid issueId, Guid actorId)
+        {
+            var issue = await RequirePendingAssignmentRespondentAsync(issueId, actorId);
+
+            issue.AssignmentStatus = IssueAssignmentStatus.Accepted;
+            issue.AssignmentRespondedByAccountId = actorId;
+            issue.AssignmentRespondedAt = DateTime.UtcNow;
+            issue.AssignmentRejectReason = null;
+            issue.UpdatedAt = DateTime.UtcNow;
+            _unitOfWork.Repository<Issue>().Update(issue);
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.AcceptInvite, nameof(Issue), issue.Id.ToString(), actorId,
+                detail: $"Nhận xử lý vấn đề '{issue.Title}'",
+                projectId: issue.ProjectId);
+            await _unitOfWork.CommitAsync();
+
+            await NotifyCreatorOfAssignmentResponseAsync(
+                issue, actorId, $"đã nhận xử lý vấn đề \"{issue.Title}\".");
+
+            return await BroadcastIssueAsync(issue);
+        }
+
+        public async Task<IssueResponseDTO> RejectAssignmentAsync(Guid issueId, string reason, Guid actorId)
+        {
+            var trimmedReason = (reason ?? string.Empty).Trim();
+            if (trimmedReason.Length == 0)
+                throw new ApiExceptionResponse("A reason is required to decline this assignment.", 400);
+
+            var issue = await RequirePendingAssignmentRespondentAsync(issueId, actorId);
+            await ClearCurrentAssignmentParticipantsAsync(issue);
+
+            issue.AssignedToAccountId = null;
+            issue.AssignedToGroupId = null;
+            issue.AssignmentStatus = IssueAssignmentStatus.Rejected;
+            issue.AssignmentRespondedByAccountId = actorId;
+            issue.AssignmentRespondedAt = DateTime.UtcNow;
+            issue.AssignmentRejectReason = trimmedReason;
+            issue.UpdatedAt = DateTime.UtcNow;
+            _unitOfWork.Repository<Issue>().Update(issue);
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.RejectInvite, nameof(Issue), issue.Id.ToString(), actorId,
+                detail: $"Từ chối vấn đề '{issue.Title}'. Lý do: {trimmedReason}",
+                projectId: issue.ProjectId);
+            await _unitOfWork.CommitAsync();
+
+            await NotifyCreatorOfAssignmentResponseAsync(
+                issue, actorId,
+                $"đã từ chối vấn đề \"{issue.Title}\". Lý do: {trimmedReason}. Hãy mở vấn đề để giao cho người khác.");
+
+            return await BroadcastIssueAsync(issue);
+        }
+
+        private async Task<Issue> RequirePendingAssignmentRespondentAsync(Guid issueId, Guid actorId)
+        {
+            var issue = await _unitOfWork.Repository<Issue>().GetByIdAsync(issueId)
+                ?? throw new ApiExceptionResponse("Issue not found.", 404);
+
+            if (issue.Status == IssueStatus.Closed)
+                throw new ApiExceptionResponse("This issue is already resolved.", 400);
+            if (issue.AssignmentStatus != IssueAssignmentStatus.Pending)
+                throw new ApiExceptionResponse("This assignment is not waiting for a response.", 400);
+
+            if (issue.AssignedToAccountId.HasValue)
+            {
+                if (issue.AssignedToAccountId.Value != actorId)
+                    throw new ApiExceptionResponse("Only the assignee can respond to this assignment.", 403);
+                return issue;
+            }
+
+            if (issue.AssignedToGroupId.HasValue)
+            {
+                var leaderIds = await GetActiveGroupLeaderIdsAsync(issue.AssignedToGroupId.Value);
+                if (!leaderIds.Contains(actorId))
+                    throw new ApiExceptionResponse("Only the Team Leader of the assigned group can respond.", 403);
+                return issue;
+            }
+
+            throw new ApiExceptionResponse("This issue has no assignee.", 400);
+        }
+
+        private async Task NotifyCreatorOfAssignmentResponseAsync(Issue issue, Guid actorId, string message)
+        {
+            if (!issue.RaisedByAccountId.HasValue || issue.RaisedByAccountId.Value == actorId) return;
+
+            var actor = await _unitOfWork.Repository<Account>().GetByIdAsync(actorId);
+            await _notification.NotifyAsync(
+                issue.RaisedByAccountId.Value,
+                $"{actor?.UserName ?? "Người dùng"} {message}",
+                senderName: actor?.UserName,
+                linkType: "Issue",
+                linkId: issue.Id.ToString());
+        }
+
+        private async Task<IssueResponseDTO> BroadcastIssueAsync(Issue issue)
+        {
+            var result = await BuildAssignmentNamesAsync(_mapper.Map<IssueResponseDTO>(issue), issue);
+            if (issue.LinkedFileItemId.HasValue)
+                await _issueBroadcaster.IssueUpdatedAsync(issue.LinkedFileItemId.Value, result);
+            return result;
+        }
+
+        private async Task ClearCurrentAssignmentParticipantsAsync(Issue issue)
+        {
+            var accountIds = new List<Guid>();
+            if (issue.AssignedToAccountId.HasValue) accountIds.Add(issue.AssignedToAccountId.Value);
+            if (issue.AssignedToGroupId.HasValue)
+                accountIds.AddRange(await GetActiveGroupMemberIdsAsync(issue.AssignedToGroupId.Value));
+
+            var removable = accountIds
+                .Distinct()
+                .Where(id => id != issue.RaisedByAccountId)
+                .ToList();
+            if (removable.Count == 0) return;
+
+            var mentions = (await _unitOfWork.Repository<IssueMention>().FindAsync(
+                    m => m.IssueId == issue.Id && removable.Contains(m.MentionedAccountId)))
+                .ToList();
+            if (mentions.Count == 0) return;
+
+            foreach (var mention in mentions)
+                _unitOfWork.Repository<IssueMention>().Delete(mention);
+            await _unitOfWork.CommitAsync();
+        }
+
+        private static DateTime? NormalizeDueDate(DateTime? value)
+        {
+            if (!value.HasValue) return null;
+
+            var endOfDayLocal = DateTime.SpecifyKind(value.Value, DateTimeKind.Unspecified)
+                .Date.AddDays(1).AddSeconds(-1);
+            return DateTime.SpecifyKind(endOfDayLocal - VietnamOffset, DateTimeKind.Utc);
         }
 
         public async Task<IssueResponseDTO> ResolveAsync(Guid issueId, Guid actorId)
@@ -475,8 +744,6 @@ namespace Application.Services
                 projectId: issue.ProjectId);
             await _unitOfWork.CommitAsync();
 
-            // Issue đóng -> thu hồi grant xem file sinh ra từ issue này.
-            await RevokeIssueFileViewAsync(issue.Id);
             var discussion = (await _unitOfWork.Repository<Discussion>().FindAsync(
                     d => d.ScopeType == DiscussionScopeType.Issue && d.ScopeId == issueId))
                 .FirstOrDefault();
@@ -542,6 +809,11 @@ namespace Application.Services
                 IssueId = issueId,
                 MentionedAccountId = accountId
             });
+            var invited = await _unitOfWork.Repository<Account>().GetByIdAsync(accountId);
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Invite, nameof(Issue), issue.Id.ToString(), actorId,
+                detail: $"Mời {invited?.UserName ?? "người dùng"} tham gia vấn đề '{issue.Title}'",
+                projectId: issue.ProjectId);
             await _unitOfWork.CommitAsync();
 
             await _notification.NotifyAsync(
@@ -564,6 +836,11 @@ namespace Application.Services
             if (mention == null) return;
 
             _unitOfWork.Repository<IssueMention>().Delete(mention);
+            var removed = await _unitOfWork.Repository<Account>().GetByIdAsync(accountId);
+            await _auditLog.LogAsync(
+                LogScope.Project, AuditAction.Update, nameof(Issue), issue.Id.ToString(), actorId,
+                detail: $"Gỡ {removed?.UserName ?? "người dùng"} khỏi vấn đề '{issue.Title}'",
+                projectId: issue.ProjectId);
             await _unitOfWork.CommitAsync();
         }
 
@@ -611,8 +888,11 @@ namespace Application.Services
 
         public async Task<PagedResult<ProjectIssueListItemDTO>> GetAssignedToMeAsync(Guid accountId, int page, int pageSize)
         {
+            var accountGroupIds = await GetActiveGroupIdsOfAccountAsync(accountId);
             var issues = (await _unitOfWork.Repository<Issue>().FindAsync(
-                    i => i.AssignedToAccountId == accountId && i.Status != IssueStatus.Closed))
+                    i => i.Status != IssueStatus.Closed
+                      && (i.AssignedToAccountId == accountId
+                          || (i.AssignedToGroupId != null && accountGroupIds.Contains(i.AssignedToGroupId.Value)))))
                 .OrderByDescending(i => i.CreatedAt)
                 .ToList();
 
@@ -669,6 +949,7 @@ namespace Application.Services
                         && raisedByNames.TryGetValue(i.RaisedByAccountId.Value, out var raised) ? raised : null,
                     AssignedToAccountId = i.AssignedToAccountId,
                     DueDate = i.DueDate,
+                    AssignmentStatus = i.AssignmentStatus,
                     CreatedAt = i.CreatedAt,
                     UpdatedAt = i.UpdatedAt,
                     LinkedFileItemId = i.LinkedFileItemId,
@@ -768,59 +1049,50 @@ namespace Application.Services
                 .Distinct()
                 .ToList();
 
-        // Cấp quyền xem file được liên kết cho danh sách account (người được giao / ẢNH CHỤP thành viên
-        // nhóm được giao). Đường Allow cộng thêm, độc lập ACL nhóm. Upsert-and-reactivate theo
-        // (IssueId, AccountId) để không vi phạm unique index nếu grant đã tồn tại.
-        private async Task GrantIssueFileViewAsync(Guid issueId, Guid fileItemId, IEnumerable<Guid> accountIds)
+        private async Task<bool> CanRespondToAssignmentAsync(Issue issue, Guid accountId)
         {
-            var wanted = accountIds.Distinct().ToList();
-            if (wanted.Count == 0) return;
+            if (issue.AssignmentStatus != IssueAssignmentStatus.Pending) return false;
+            if (issue.AssignedToAccountId.HasValue) return issue.AssignedToAccountId.Value == accountId;
+            if (!issue.AssignedToGroupId.HasValue) return false;
 
-            var existing = (await _unitOfWork.Repository<IssueFileViewGrant>().FindAsync(
-                    g => g.IssueId == issueId && wanted.Contains(g.AccountId)))
-                .ToDictionary(g => g.AccountId);
-
-            var now = DateTime.UtcNow;
-            var changed = false;
-            foreach (var accountId in wanted)
-            {
-                if (existing.TryGetValue(accountId, out var grant))
-                {
-                    if (grant.Status != PermissionStatus.Active)
-                    {
-                        grant.Status = PermissionStatus.Active;
-                        _unitOfWork.Repository<IssueFileViewGrant>().Update(grant);
-                        changed = true;
-                    }
-                    continue;
-                }
-
-                await _unitOfWork.Repository<IssueFileViewGrant>().CreateAsync(new IssueFileViewGrant
-                {
-                    Id = Guid.NewGuid(),
-                    IssueId = issueId,
-                    FileItemId = fileItemId,
-                    AccountId = accountId,
-                    Status = PermissionStatus.Active,
-                    CreatedAt = now
-                });
-                changed = true;
-            }
-
-            if (changed) await _unitOfWork.CommitAsync();
+            var leaderIds = await GetActiveGroupLeaderIdsAsync(issue.AssignedToGroupId.Value);
+            return leaderIds.Contains(accountId);
         }
 
-        // Thu hồi toàn bộ grant sinh ra từ 1 issue (khi đóng issue). Vì grant nằm ở bảng riêng và khóa
-        // theo IssueId nên không bao giờ chạm grant của luồng ký hay của issue khác trên cùng file.
-        private async Task RevokeIssueFileViewAsync(Guid issueId)
-        {
-            var grants = (await _unitOfWork.Repository<IssueFileViewGrant>()
-                .FindAsync(g => g.IssueId == issueId)).ToList();
-            if (grants.Count == 0) return;
+        private async Task<HashSet<Guid>> GetActiveGroupIdsOfAccountAsync(Guid accountId)
+            => (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                    m => m.AccountId == accountId && m.Status == GroupMemberStatus.Active))
+                .Select(m => m.GroupId)
+                .ToHashSet();
 
-            foreach (var grant in grants)
-                _unitOfWork.Repository<IssueFileViewGrant>().Delete(grant);
-            await _unitOfWork.CommitAsync();
+        private async Task<HashSet<Guid>> GetMentionedIssueIdsAsync(IEnumerable<Guid> issueIds, Guid accountId)
+        {
+            var ids = issueIds.ToHashSet();
+            if (ids.Count == 0) return new HashSet<Guid>();
+
+            return (await _unitOfWork.Repository<IssueMention>().FindAsync(
+                    m => m.MentionedAccountId == accountId && ids.Contains(m.IssueId)))
+                .Select(m => m.IssueId)
+                .ToHashSet();
+        }
+
+        private async Task<List<Guid>> GetActiveGroupLeaderIdsAsync(Guid groupId)
+            => (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                    m => m.GroupId == groupId
+                      && m.Status == GroupMemberStatus.Active
+                      && m.Role == GroupMemberRole.Leader))
+                .Select(m => m.AccountId)
+                .Distinct()
+                .ToList();
+
+        private async Task RequireAssignableAccountAsync(Guid accountId, Guid? fileItemId)
+        {
+            if (!fileItemId.HasValue)
+                throw new ApiExceptionResponse("Issue must be linked to a file.", 400);
+
+            var assignable = await GetAssignableMembersAsync(fileItemId.Value);
+            if (assignable.All(m => m.AccountId != accountId))
+                throw new ApiExceptionResponse("This account cannot be assigned to the linked file.", 400);
         }
 
         private async Task AddParticipantsAsync(Guid issueId, IEnumerable<Guid> accountIds)
@@ -855,6 +1127,7 @@ namespace Application.Services
                 var assignableGroupIds = await ResolveAssignableGroupIdsAsync(fileItemId.Value);
                 if (!assignableGroupIds.Contains(groupId))
                     throw new ApiExceptionResponse("This group has no access to the linked file.", 400);
+                await RequireGroupHasActiveLeaderAsync(groupId);
                 return;
             }
 
@@ -865,6 +1138,15 @@ namespace Application.Services
                 .Any();
             if (!isProjectGroup)
                 throw new ApiExceptionResponse("This group does not take part in the project.", 400);
+            await RequireGroupHasActiveLeaderAsync(groupId);
+        }
+
+        private async Task RequireGroupHasActiveLeaderAsync(Guid groupId)
+        {
+            var leaderIds = await GetActiveGroupLeaderIdsAsync(groupId);
+            if (leaderIds.Count == 0)
+                throw new ApiExceptionResponse(
+                    "This group has no active Team Leader to accept the assignment.", 400);
         }
 
         private async Task<IssueResponseDTO> BuildAssignmentNamesAsync(IssueResponseDTO dto, Issue entity)
@@ -879,6 +1161,19 @@ namespace Application.Services
                 var organization = await _unitOfWork.Repository<Organization>()
                     .GetByIdAsync(entity.AssignedToOrganizationId.Value);
                 dto.AssignedToOrganizationName = organization?.DisplayName ?? organization?.LegalName;
+            }
+
+            if (entity.AssignedToAccountId.HasValue)
+            {
+                var assignee = await _unitOfWork.Repository<Account>().GetByIdAsync(entity.AssignedToAccountId.Value);
+                dto.AssignedToName = assignee?.UserName;
+            }
+
+            if (entity.AssignmentRespondedByAccountId.HasValue)
+            {
+                var respondent = await _unitOfWork.Repository<Account>()
+                    .GetByIdAsync(entity.AssignmentRespondedByAccountId.Value);
+                dto.AssignmentRespondedByName = respondent?.UserName;
             }
 
             return dto;
@@ -901,10 +1196,16 @@ namespace Application.Services
                     .ToDictionary(o => o.Id)
                 : new Dictionary<Guid, Organization>();
 
-            var memberCountByGroup = (await _unitOfWork.Repository<GroupMember>().FindAsync(
+            var activeMembers = (await _unitOfWork.Repository<GroupMember>().FindAsync(
                     m => groupIds.Contains(m.GroupId) && m.Status == GroupMemberStatus.Active))
+                .ToList();
+            var memberCountByGroup = activeMembers
                 .GroupBy(m => m.GroupId)
                 .ToDictionary(g => g.Key, g => g.Select(m => m.AccountId).Distinct().Count());
+            var groupIdsWithLeader = activeMembers
+                .Where(m => m.Role == GroupMemberRole.Leader)
+                .Select(m => m.GroupId)
+                .ToHashSet();
 
             return groups
                 .Select(g => new AssignableGroupDTO
@@ -915,7 +1216,8 @@ namespace Application.Services
                         && organizationsById.TryGetValue(g.OrganizationId.Value, out var organization)
                             ? organization.DisplayName ?? organization.LegalName
                             : null,
-                    MemberCount = memberCountByGroup.TryGetValue(g.Id, out var count) ? count : 0
+                    MemberCount = memberCountByGroup.TryGetValue(g.Id, out var count) ? count : 0,
+                    HasActiveLeader = groupIdsWithLeader.Contains(g.Id)
                 })
                 .OrderBy(g => g.GroupName)
                 .ToList();

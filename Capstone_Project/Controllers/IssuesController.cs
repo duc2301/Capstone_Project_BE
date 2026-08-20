@@ -66,14 +66,35 @@ namespace Capstone_Project.Controllers
 
         [HttpPut("{id:guid}")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateIssueDTO dto)
-            => Ok(ApiResponse.Success("Updated successfully", await _service.UpdateAsync(id, dto)));
+            => Ok(ApiResponse.Success("Updated successfully",
+                await _service.UpdateAsync(id, dto, User.GetAccountId())));
 
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> Delete(Guid id)
         {
-            await _service.DeleteAsync(id);
+            await _service.DeleteAsync(id, User.GetAccountId());
             return Ok(ApiResponse.Success("Deleted successfully"));
         }
+
+        [HttpGet("assignments/pending")]
+        public async Task<IActionResult> GetPendingAssignments()
+            => Ok(ApiResponse.Success("Retrieved successfully",
+                await _service.GetPendingAssignmentsForMeAsync(User.GetAccountId())));
+
+        [HttpPut("{id:guid}/assignment")]
+        public async Task<IActionResult> Assign(Guid id, [FromBody] AssignIssueDTO dto)
+            => Ok(ApiResponse.Success("Issue assigned",
+                await _service.AssignAsync(id, dto, User.GetAccountId())));
+
+        [HttpPost("{id:guid}/assignment/accept")]
+        public async Task<IActionResult> AcceptAssignment(Guid id)
+            => Ok(ApiResponse.Success("Assignment accepted",
+                await _service.AcceptAssignmentAsync(id, User.GetAccountId())));
+
+        [HttpPost("{id:guid}/assignment/reject")]
+        public async Task<IActionResult> RejectAssignment(Guid id, [FromBody] RejectIssueAssignmentDTO dto)
+            => Ok(ApiResponse.Success("Assignment declined",
+                await _service.RejectAssignmentAsync(id, dto.Reason, User.GetAccountId())));
 
         [HttpPost("{id:guid}/resolve")]
         public async Task<IActionResult> Resolve(Guid id)

@@ -2,6 +2,7 @@ using Application.Interfaces.IRepositories;
 using Domain.Entities;
 using Domain.Enum.Cde;
 using Domain.Enum.Group;
+using Domain.Enum.Issue;
 using Domain.Enum.Permission;
 using Domain.Enum.Project;
 using Infrastructure.DbContexts;
@@ -132,12 +133,25 @@ namespace Infrastructure.Repositories
                             && g.Status == PermissionStatus.Active);
         }
 
-        public async Task<bool> HasActiveIssueFileViewGrantAsync(Guid fileItemId, Guid accountId)
+        public async Task<bool> HasIssueStakeholderFileAccessAsync(Guid fileItemId, Guid accountId)
         {
-            return await _context.IssueFileViewGrants
-                .AnyAsync(g => g.FileItemId == fileItemId
-                            && g.AccountId == accountId
-                            && g.Status == PermissionStatus.Active);
+            var area = await _context.FileItems
+                .Where(f => f.Id == fileItemId)
+                .Select(f => (CdeArea?)f.Folder.Area)
+                .FirstOrDefaultAsync();
+            if (area != CdeArea.Shared && area != CdeArea.Published) return false;
+
+            return await _context.Issues.AnyAsync(i =>
+                i.LinkedFileItemId == fileItemId
+                && i.Status != IssueStatus.Closed
+                && (i.RaisedByAccountId == accountId
+                    || i.AssignedToAccountId == accountId
+                    || (i.AssignedToGroupId != null && _context.GroupMembers.Any(m =>
+                            m.GroupId == i.AssignedToGroupId
+                            && m.AccountId == accountId
+                            && m.Status == GroupMemberStatus.Active))
+                    || _context.IssueMentions.Any(m =>
+                            m.IssueId == i.Id && m.MentionedAccountId == accountId)));
         }
 
         // ===== Current-user permission retrieval (viewing only) =====
