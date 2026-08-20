@@ -239,9 +239,6 @@ namespace Application.Services
             // Versioning: vào SHARED -> P{rev+1}.01, vào PUBLISHED -> C{pubRev+1} (dòng state mới).
             await ApplyZoneVersioningAsync(fileItem, request.TargetZone);
 
-            // File chuyển sang Published = hoàn tất luồng ký -> thu hồi grant xem của NGƯỜI KÝ (FileViewGrant)
-            // VÀ grant xem sinh ra từ ISSUE (IssueFileViewGrant) trên file này: ở Published, không có quyền
-            // xem tường minh thì không được xem. Hai loại grant ở hai bảng RIÊNG, thu hồi độc lập.
             if (request.TargetZone == CdeArea.Published)
             {
                 var revokedCount = await RevokeFileViewGrantsOnZoneExitAsync(fileItem.Id);
@@ -664,13 +661,6 @@ namespace Application.Services
             return grantAccountIds.Count;
         }
 
-        /// <summary>
-        /// File rời khu vực (chuyển sang Published) -> thu hồi (hard-delete) MỌI grant xem cộng thêm trên
-        /// file: grant của người ký (FileViewGrant) VÀ grant sinh ra từ issue (IssueFileViewGrant). Hai bảng
-        /// độc lập nên thu hồi bên này không đụng bên kia; ai còn quyền xem qua ACL nhóm thì vẫn xem được.
-        /// Chỉ stage delete — commit do caller thực hiện.
-        /// </summary>
-        /// <returns>Tổng số grant bị thu hồi (cả hai bảng) — caller dùng để ghi nhật ký.</returns>
         private async Task<int> RevokeFileViewGrantsOnZoneExitAsync(Guid fileItemId)
         {
             var signerGrants = (await _unitOfWork.Repository<FileViewGrant>().FindAsync(
@@ -679,13 +669,7 @@ namespace Application.Services
             foreach (var grant in signerGrants)
                 _unitOfWork.Repository<FileViewGrant>().Delete(grant);
 
-            var issueGrants = (await _unitOfWork.Repository<IssueFileViewGrant>().FindAsync(
-                    g => g.FileItemId == fileItemId))
-                .ToList();
-            foreach (var grant in issueGrants)
-                _unitOfWork.Repository<IssueFileViewGrant>().Delete(grant);
-
-            return signerGrants.Count + issueGrants.Count;
+            return signerGrants.Count;
         }
 
         /// <summary>

@@ -13,8 +13,13 @@ namespace Application.Interfaces.IServices
         Task<PagedResult<ProjectIssueListItemDTO>> GetAssignedToMeAsync(Guid accountId, int page, int pageSize);
         Task<IssueResponseDTO?> GetByIdAsync(Guid id, Guid accountId);
         Task<IssueResponseDTO> CreateAsync(CreateIssueDTO dto, Guid actorId);
-        Task<IssueResponseDTO> UpdateAsync(Guid id, UpdateIssueDTO dto);
-        Task DeleteAsync(Guid id);
+        Task<IssueResponseDTO> UpdateAsync(Guid id, UpdateIssueDTO dto, Guid actorId);
+        Task DeleteAsync(Guid id, Guid actorId);
+
+        Task<IEnumerable<PendingIssueAssignmentDTO>> GetPendingAssignmentsForMeAsync(Guid accountId);
+        Task<IssueResponseDTO> AssignAsync(Guid issueId, AssignIssueDTO dto, Guid actorId);
+        Task<IssueResponseDTO> AcceptAssignmentAsync(Guid issueId, Guid actorId);
+        Task<IssueResponseDTO> RejectAssignmentAsync(Guid issueId, string reason, Guid actorId);
 
         /// <summary>Danh dau issue la "Da giai quyet" (map sang IssueStatus.Closed, khong can sua file).</summary>
         Task<IssueResponseDTO> ResolveAsync(Guid issueId, Guid actorId);

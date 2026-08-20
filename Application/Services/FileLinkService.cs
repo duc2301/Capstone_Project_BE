@@ -32,7 +32,7 @@ namespace Application.Services
             var source = await GetFileItemAsync(fileItemId);
             var sourceFolder = await GetFolderAsync(source.FolderId);
 
-            if (!await CanViewFolderAsync(sourceFolder, actorId))
+            if (!await _permission.HasViewFileAsync(fileItemId, actorId))
                 throw new ApiExceptionResponse("You do not have permission to view this file.", 403);
 
             var canLink = await CanModifyLinksAsync(sourceFolder, actorId);
@@ -302,9 +302,6 @@ namespace Application.Services
 
             return subtreeIds;
         }
-
-        private Task<bool> CanViewFolderAsync(Folder folder, Guid actorId)
-            => _permission.HasViewFolderAsync(folder.Id, actorId);
 
         private Task<bool> CanModifyLinksAsync(Folder folder, Guid actorId)
             => _permission.HasEditFolderAsync(folder.Id, actorId);

@@ -6,5 +6,6 @@ namespace Application.DTOs.ResponseDTOs.Issue
         public string GroupName { get; set; } = null!;
         public string? OrganizationName { get; set; }
         public int MemberCount { get; set; }
+        public bool HasActiveLeader { get; set; }
     }
 }

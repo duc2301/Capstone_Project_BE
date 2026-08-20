@@ -29,7 +29,7 @@ namespace Domain.Enum.Audit
 
         // ===== theo dõi truy cập tài liệu =====
         View,           // Mở xem nội dung file (ghi có chống trùng, xem AuditLogService)
-        Share,          // Cấp quyền xem file cho tài khoản cụ thể (FileViewGrant / IssueFileViewGrant)
+        Share,          // Cấp quyền xem file cho tài khoản cụ thể (FileViewGrant)
         RevokeShare     // Thu hồi quyền xem đã cấp
     }
 }
