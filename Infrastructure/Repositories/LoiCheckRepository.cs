@@ -1,4 +1,4 @@
-using Application.Interfaces.IRepositories;
+﻿using Application.Interfaces.IRepositories;
 using Domain.Entities;
 using Domain.Enum.Loi;
 using Infrastructure.DbContexts;
@@ -69,16 +69,6 @@ namespace Infrastructure.Repositories
                 .AsNoTracking()
                 .Where(p => p.Id == projectId)
                 .Select(p => p.LoiRuleSetId)
-                .FirstOrDefaultAsync(ct);
-        }
-
-        public async Task<Guid?> GetDefaultRuleSetIdAsync(CancellationToken ct = default)
-        {
-            return await _context.LoiRuleSets
-                .AsNoTracking()
-                .Where(s => s.IsDefault)
-                .OrderBy(s => s.Id)
-                .Select(s => (Guid?)s.Id)
                 .FirstOrDefaultAsync(ct);
         }
 

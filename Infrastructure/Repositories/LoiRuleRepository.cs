@@ -1,4 +1,4 @@
-using Application.Interfaces.IRepositories;
+﻿using Application.Interfaces.IRepositories;
 using Domain.Entities;
 using Domain.Enum.Loi;
 using Infrastructure.DbContexts;
@@ -129,13 +129,6 @@ namespace Infrastructure.Repositories
             return await _context.Projects
                 .AsNoTracking()
                 .CountAsync(p => p.LoiRuleSetId == ruleSetId, ct);
-        }
-
-        public async Task<int> CountProjectsInheritingDefaultAsync(CancellationToken ct = default)
-        {
-            return await _context.Projects
-                .AsNoTracking()
-                .CountAsync(p => p.LoiRuleSetId == null, ct);
         }
 
         public async Task<bool> ParamNameExistsAsync(string paramNameNormalized, CancellationToken ct = default)

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
@@ -110,18 +110,15 @@ namespace Application.Services.Loi
 
         private async Task<Guid?> ResolveRuleSetIdAsync(Guid? projectId, CancellationToken ct)
         {
-            if (projectId.HasValue)
-            {
-                var projectRuleSetId = await _checks.GetProjectRuleSetIdAsync(projectId.Value, ct);
-                if (projectRuleSetId is not null)
-                    return projectRuleSetId;
-            }
+            if (projectId is null) return null;
 
-            var fallbackId = await _checks.GetDefaultRuleSetIdAsync(ct);
-            if (fallbackId is null)
-                _logger.LogWarning("Chưa có bộ luật thông tin phi hình học mặc định — kết quả đối chiếu sẽ rỗng.");
+            var ruleSetId = await _checks.GetProjectRuleSetIdAsync(projectId.Value, ct);
+            if (ruleSetId is null)
+                _logger.LogWarning(
+                    "Dự án {ProjectId} chưa cấu hình bộ luật thông tin phi hình học — kết quả đối chiếu sẽ rỗng.",
+                    projectId.Value);
 
-            return fallbackId;
+            return ruleSetId;
         }
 
         private async Task SaveStatusAsync(Guid fileVersionId)

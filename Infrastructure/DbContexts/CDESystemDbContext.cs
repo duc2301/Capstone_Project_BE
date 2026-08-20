@@ -1,4 +1,4 @@
-using Domain.Entities;
+﻿using Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Pgvector;
@@ -584,7 +584,7 @@ namespace Infrastructure.DbContexts
 
             modelBuilder.Entity<LoiRuleSet>(b =>
             {
-                b.HasIndex(x => x.IsDefault);
+                b.HasIndex(x => x.IsSystem);
             });
 
             modelBuilder.Entity<LoiParameter>(b =>

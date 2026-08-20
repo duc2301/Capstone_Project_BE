@@ -1,4 +1,4 @@
-using Application.DTOs.RequestDTOs.Audit;
+﻿using Application.DTOs.RequestDTOs.Audit;
 using Application.DTOs.ResponseDTOs.Audit;
 using Domain.Enum.Audit;
 
@@ -52,6 +52,6 @@ namespace Application.Interfaces.IServices
 
         Task<AuditLogPageDTO> GetByFileItemAsync(Guid fileItemId, AuditLogFilterDTO filter, Guid actorId);
 
-        Task<AuditLogExportDTO> ExportCsvAsync(Guid? projectId, AuditLogFilterDTO filter, Guid actorId);
+        Task<AuditLogExportDTO> ExportAsync(Guid? projectId, AuditLogFilterDTO filter, Guid actorId);
     }
 }

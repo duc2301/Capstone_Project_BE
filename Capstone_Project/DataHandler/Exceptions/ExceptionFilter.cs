@@ -1,7 +1,9 @@
-using Application.DTOs.ApiResponseDTO;
+﻿using Application.DTOs.ApiResponseDTO;
 using Application.ExceptionMiddleware;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.Net.Http.Headers;
 
 namespace Capstone_Project.DataHandler.Exceptions
 {
@@ -9,6 +11,8 @@ namespace Capstone_Project.DataHandler.Exceptions
     {
         public void OnException(ExceptionContext context)
         {
+            ResetNegotiatedContentType(context.HttpContext.Response);
+
             if (context.Exception is ApiExceptionResponse ex)
             {
                 context.Result = new ObjectResult(new
@@ -56,6 +60,14 @@ namespace Capstone_Project.DataHandler.Exceptions
             };
 
             context.ExceptionHandled = true;
+        }
+
+        private static void ResetNegotiatedContentType(HttpResponse response)
+        {
+            if (response.HasStarted) return;
+
+            response.Headers.Remove(HeaderNames.ContentDisposition);
+            response.ContentType = null;
         }
     }
 }

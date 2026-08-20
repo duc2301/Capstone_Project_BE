@@ -1,4 +1,4 @@
-using Domain.Entities;
+﻿using Domain.Entities;
 
 namespace Application.Interfaces.IRepositories
 {
@@ -17,8 +17,6 @@ namespace Application.Interfaces.IRepositories
         Task<Guid?> GetProjectIdByFileItemAsync(Guid fileItemId, CancellationToken ct = default);
 
         Task<Guid?> GetProjectRuleSetIdAsync(Guid projectId, CancellationToken ct = default);
-
-        Task<Guid?> GetDefaultRuleSetIdAsync(CancellationToken ct = default);
 
         Task<IReadOnlyList<LoiRequirement>> GetRequirementsAsync(Guid ruleSetId, CancellationToken ct = default);
 

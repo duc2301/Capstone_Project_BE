@@ -1,4 +1,4 @@
-using Application.DTOs.RequestDTOs.Loi;
+﻿using Application.DTOs.RequestDTOs.Loi;
 using Application.DTOs.ResponseDTOs.Loi;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IRepositories;
@@ -29,47 +29,6 @@ namespace Application.Services.Loi
             _audit = audit;
         }
 
-        public async Task<IReadOnlyList<LoiRuleSetDTO>> GetRuleSetsAsync(CancellationToken ct = default)
-        {
-            var sets = (await _uow.Repository<LoiRuleSet>().GetAllAsync()).ToList();
-            var counts = await _rules.GetRuleSetCountsAsync(ct);
-            var inheriting = await _rules.CountProjectsInheritingDefaultAsync(ct);
-
-            return sets
-                .OrderByDescending(s => s.IsDefault)
-                .ThenBy(s => s.Name)
-                .Select(s => Map(s, counts, inheriting))
-                .ToList();
-        }
-
-        public async Task<LoiRuleSetDTO> CreateRuleSetAsync(
-            CreateLoiRuleSetDTO dto, Guid actor, CancellationToken ct = default)
-        {
-            var name = RequireText(dto.Name, "Tên bộ luật không được để trống.");
-            await RequireUniqueRuleSetNameAsync(name, null);
-
-            var isFirst = !(await _uow.Repository<LoiRuleSet>().GetAllAsync()).Any();
-
-            var entity = new LoiRuleSet
-            {
-                Id = Guid.NewGuid(),
-                Name = name,
-                Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim(),
-                IsDefault = isFirst,
-                IsSystem = false,
-                CreatedByAccountId = actor,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            await _uow.Repository<LoiRuleSet>().CreateAsync(entity);
-            await _audit.LogAsync(LogScope.System, AuditAction.Create, RuleSetEntity, entity.Id.ToString(), actor,
-                $"Tạo bộ luật thông tin phi hình học \"{entity.Name}\"");
-            await _uow.CommitAsync();
-
-            return Map(entity, await _rules.GetRuleSetCountsAsync(ct),
-                await _rules.CountProjectsInheritingDefaultAsync(ct));
-        }
-
         public async Task<LoiRuleSetDTO> UpdateRuleSetAsync(
             Guid ruleSetId, UpdateLoiRuleSetDTO dto, Guid actor, CancellationToken ct = default)
         {
@@ -91,8 +50,7 @@ namespace Application.Services.Loi
                 $"Sửa bộ luật thông tin phi hình học \"{entity.Name}\"");
             await _uow.CommitAsync();
 
-            return Map(entity, await _rules.GetRuleSetCountsAsync(ct),
-                await _rules.CountProjectsInheritingDefaultAsync(ct));
+            return Map(entity, await _rules.GetRuleSetCountsAsync(ct));
         }
 
         public async Task DeleteRuleSetAsync(Guid ruleSetId, Guid actor, CancellationToken ct = default)
@@ -101,45 +59,24 @@ namespace Application.Services.Loi
 
             if (entity.IsSystem)
                 throw new ApiExceptionResponse(
-                    "Không xoá được bộ luật gốc của hệ thống. Hãy tạo bộ luật mới nếu cần bộ khác.", 409);
-
-            if (entity.IsDefault)
-                throw new ApiExceptionResponse(
-                    "Không xoá được bộ luật đang đặt làm mặc định. Hãy đặt bộ khác làm mặc định trước.", 409);
+                    "Không xoá được bộ luật gốc của hệ thống (nguồn sinh file mẫu).", 409);
 
             var projectCount = await _rules.CountProjectsUsingAsync(ruleSetId, ct);
             if (projectCount > 0)
                 throw new ApiExceptionResponse(
-                    $"Bộ luật đang được {projectCount} dự án sử dụng. Hãy chuyển các dự án đó sang bộ khác trước.", 409);
+                    $"Bộ luật đang được {projectCount} dự án sử dụng, không xoá được từ một dự án.", 409);
+
+            foreach (var row in await _uow.Repository<LoiRequirement>().FindAsync(r => r.RuleSetId == ruleSetId))
+                _uow.Repository<LoiRequirement>().Delete(row);
+            foreach (var row in await _uow.Repository<LoiComponent>().FindAsync(c => c.RuleSetId == ruleSetId))
+                _uow.Repository<LoiComponent>().Delete(row);
+            foreach (var row in await _uow.Repository<LoiParameter>().FindAsync(pr => pr.RuleSetId == ruleSetId))
+                _uow.Repository<LoiParameter>().Delete(row);
 
             _uow.Repository<LoiRuleSet>().Delete(entity);
             await _audit.LogAsync(LogScope.System, AuditAction.Delete, RuleSetEntity, entity.Id.ToString(), actor,
                 $"Xoá bộ luật thông tin phi hình học \"{entity.Name}\"");
             await _uow.CommitAsync();
-        }
-
-        public async Task<LoiRuleSetDTO> SetDefaultRuleSetAsync(
-            Guid ruleSetId, Guid actor, CancellationToken ct = default)
-        {
-            var entity = await RequireRuleSetAsync(ruleSetId);
-
-            var current = (await _uow.Repository<LoiRuleSet>().FindAsync(s => s.IsDefault)).ToList();
-            foreach (var other in current.Where(s => s.Id != ruleSetId))
-            {
-                other.IsDefault = false;
-                _uow.Repository<LoiRuleSet>().Update(other);
-            }
-
-            entity.IsDefault = true;
-            entity.UpdatedAt = DateTime.UtcNow;
-            _uow.Repository<LoiRuleSet>().Update(entity);
-
-            await _audit.LogAsync(LogScope.System, AuditAction.Update, RuleSetEntity, entity.Id.ToString(), actor,
-                $"Đặt \"{entity.Name}\" làm bộ luật thông tin phi hình học mặc định");
-            await _uow.CommitAsync();
-
-            return Map(entity, await _rules.GetRuleSetCountsAsync(ct),
-                await _rules.CountProjectsInheritingDefaultAsync(ct));
         }
 
         public async Task<IReadOnlyList<LoiComponentDTO>> GetComponentsAsync(
@@ -512,112 +449,6 @@ namespace Application.Services.Loi
             await _uow.CommitAsync();
         }
 
-        public async Task<IReadOnlyList<LoiAliasResponseDTO>> GetSystemAliasesAsync(
-            string? search, CancellationToken ct = default)
-        {
-            var aliases = (await _uow.Repository<LoiFieldAlias>().FindAsync(a => a.ProjectId == null)).ToList();
-
-            if (!string.IsNullOrWhiteSpace(search))
-            {
-                var term = IfcFieldText.Normalize(search);
-                if (term.Length > 0)
-                    aliases = aliases
-                        .Where(a => a.AliasNormalized.Contains(term) || a.FieldNameNormalized.Contains(term))
-                        .ToList();
-            }
-
-            return aliases
-                .OrderBy(a => a.FieldNameNormalized)
-                .ThenBy(a => a.AliasNormalized)
-                .Select(MapAlias)
-                .ToList();
-        }
-
-        public async Task<LoiAliasResponseDTO> CreateSystemAliasAsync(
-            CreateSystemLoiAliasDTO dto, Guid actor, CancellationToken ct = default)
-        {
-            var alias = IfcFieldText.Normalize(dto.ParamNameInModel);
-            var standard = IfcFieldText.Normalize(dto.StandardParamName);
-
-            if (alias.Length == 0 || standard.Length == 0)
-                throw new ApiExceptionResponse("Tên tham số không hợp lệ.", 400);
-            if (alias == standard)
-                throw new ApiExceptionResponse("Tên trong model trùng với tham số chuẩn, không cần ánh xạ.", 400);
-
-            if (!await _rules.ParamNameExistsAsync(standard, ct))
-                throw new ApiExceptionResponse(
-                    $"\"{dto.StandardParamName}\" không có trong danh mục tham số chuẩn của bất kỳ bộ luật nào.", 400);
-
-            var existing = (await _uow.Repository<LoiFieldAlias>()
-                .FindAsync(a => a.ProjectId == null && a.AliasNormalized == alias)).FirstOrDefault();
-            if (existing is not null)
-                throw new ApiExceptionResponse(
-                    $"\"{dto.ParamNameInModel}\" đã được ánh xạ sang \"{existing.FieldNameNormalized}\".", 409);
-
-            var entity = new LoiFieldAlias
-            {
-                Id = Guid.NewGuid(),
-                FieldNameNormalized = standard,
-                AliasNormalized = alias,
-                ProjectId = null,
-                CreatedByAccountId = actor,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            await _uow.Repository<LoiFieldAlias>().CreateAsync(entity);
-            await _audit.LogAsync(LogScope.System, AuditAction.Create, AliasEntity, entity.Id.ToString(), actor,
-                $"Thêm ánh xạ tên tham số dùng chung: \"{alias}\" thành \"{standard}\"");
-            await _uow.CommitAsync();
-
-            return MapAlias(entity);
-        }
-
-        public async Task DeleteSystemAliasAsync(Guid aliasId, Guid actor, CancellationToken ct = default)
-        {
-            var entity = await _uow.Repository<LoiFieldAlias>().GetByIdAsync(aliasId)
-                ?? throw new ApiExceptionResponse("Không tìm thấy ánh xạ.", 404);
-
-            if (entity.ProjectId is not null)
-                throw new ApiExceptionResponse(
-                    "Đây là ánh xạ riêng của một dự án — hãy xoá trong trang dự án đó.", 400);
-
-            _uow.Repository<LoiFieldAlias>().Delete(entity);
-            await _audit.LogAsync(LogScope.System, AuditAction.Delete, AliasEntity, entity.Id.ToString(), actor,
-                $"Xoá ánh xạ tên tham số dùng chung: \"{entity.AliasNormalized}\"");
-            await _uow.CommitAsync();
-        }
-
-        public async Task<LoiRuleSetDTO?> SetProjectRuleSetAsync(
-            Guid projectId, Guid? ruleSetId, Guid actor, bool isSystemAdmin, CancellationToken ct = default)
-        {
-            var project = await _uow.Repository<Project>().GetByIdAsync(projectId)
-                ?? throw new ApiExceptionResponse("Không tìm thấy dự án.", 404);
-
-            if (!isSystemAdmin && project.ManagerAccountId != actor)
-                throw new ApiExceptionResponse(
-                    "Chỉ quản trị hệ thống hoặc quản lý dự án được đổi bộ luật thông tin phi hình học của dự án.", 403);
-
-            LoiRuleSet? ruleSet = null;
-            if (ruleSetId.HasValue)
-                ruleSet = await RequireRuleSetAsync(ruleSetId.Value);
-
-            project.LoiRuleSetId = ruleSet?.Id;
-            project.UpdatedAt = DateTime.UtcNow;
-            _uow.Repository<Project>().Update(project);
-
-            await _audit.LogAsync(LogScope.Project, AuditAction.Update, RuleSetEntity, projectId.ToString(), actor,
-                ruleSet is null
-                    ? "Dự án dùng bộ luật thông tin phi hình học mặc định của hệ thống"
-                    : $"Dự án chuyển sang bộ luật thông tin phi hình học \"{ruleSet.Name}\"",
-                projectId);
-            await _uow.CommitAsync();
-
-            return ruleSet is null
-                ? null
-                : Map(ruleSet, await _rules.GetRuleSetCountsAsync(ct),
-                    await _rules.CountProjectsInheritingDefaultAsync(ct));
-        }
-
         public async Task<LoiRuleSetDTO?> GetProjectRuleSetAsync(Guid projectId, CancellationToken ct = default)
         {
             var project = await _uow.Repository<Project>().GetByIdAsync(projectId)
@@ -626,23 +457,7 @@ namespace Application.Services.Loi
             if (project.LoiRuleSetId is null) return null;
 
             var ruleSet = await _uow.Repository<LoiRuleSet>().GetByIdAsync(project.LoiRuleSetId.Value);
-            return ruleSet is null
-                ? null
-                : Map(ruleSet, await _rules.GetRuleSetCountsAsync(ct),
-                    await _rules.CountProjectsInheritingDefaultAsync(ct));
-        }
-
-        public async Task<IReadOnlyList<LoiRuleSetDTO>> GetSelectableRuleSetsAsync(
-            Guid projectId, Guid actor, bool isSystemAdmin, CancellationToken ct = default)
-        {
-            var project = await _uow.Repository<Project>().GetByIdAsync(projectId)
-                ?? throw new ApiExceptionResponse("Không tìm thấy dự án.", 404);
-
-            if (!isSystemAdmin && project.ManagerAccountId != actor)
-                throw new ApiExceptionResponse(
-                    "Chỉ quản trị hệ thống hoặc quản lý dự án được xem danh sách bộ luật thông tin phi hình học.", 403);
-
-            return await GetRuleSetsAsync(ct);
+            return ruleSet is null ? null : Map(ruleSet, await _rules.GetRuleSetCountsAsync(ct));
         }
 
         private async Task<LoiRuleSet> RequireRuleSetAsync(Guid ruleSetId) =>
@@ -758,7 +573,7 @@ namespace Application.Services.Loi
         }
 
         private static LoiRuleSetDTO Map(
-            LoiRuleSet entity, IReadOnlyDictionary<Guid, LoiRuleSetCounts> counts, int inheritingProjectCount)
+            LoiRuleSet entity, IReadOnlyDictionary<Guid, LoiRuleSetCounts> counts)
         {
             counts.TryGetValue(entity.Id, out var count);
             return new LoiRuleSetDTO
@@ -766,13 +581,11 @@ namespace Application.Services.Loi
                 Id = entity.Id,
                 Name = entity.Name,
                 Description = entity.Description,
-                IsDefault = entity.IsDefault,
                 IsSystem = entity.IsSystem,
                 ComponentCount = count?.ComponentCount ?? 0,
                 RequirementCount = count?.RequirementCount ?? 0,
                 ParameterCount = count?.ParameterCount ?? 0,
                 ProjectCount = count?.ProjectCount ?? 0,
-                InheritingProjectCount = inheritingProjectCount,
                 CreatedAt = entity.CreatedAt,
                 UpdatedAt = entity.UpdatedAt
             };
@@ -808,13 +621,5 @@ namespace Application.Services.Loi
             };
         }
 
-        private static LoiAliasResponseDTO MapAlias(LoiFieldAlias entity) => new()
-        {
-            Id = entity.Id,
-            ParamNameInModel = entity.AliasNormalized,
-            StandardParamName = entity.FieldNameNormalized,
-            IsSystemWide = true,
-            CreatedAt = entity.CreatedAt
-        };
     }
 }
