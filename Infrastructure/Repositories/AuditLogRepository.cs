@@ -21,6 +21,20 @@ namespace Infrastructure.Repositories
             _context = context;
         }
 
+        // Ăn index (ActorAccountId, Action, CreatedAt) khai trong CDESystemDbContext.
+        public async Task<bool> HasRecentAsync(
+            Domain.Enum.Audit.AuditAction action, string entityType, string entityId,
+            Guid actorId, DateTime since)
+        {
+            return await _context.Set<AuditLog>()
+                .AsNoTracking()
+                .AnyAsync(l => l.ActorAccountId == actorId
+                            && l.Action == action
+                            && l.EntityType == entityType
+                            && l.EntityId == entityId
+                            && l.CreatedAt >= since);
+        }
+
         public async Task<AuditLogPageDTO> QueryAsync(
             AuditLogFilterDTO filter,
             Guid? projectId,

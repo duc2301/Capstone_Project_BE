@@ -3,6 +3,7 @@ using System;
 using Infrastructure.DbContexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Pgvector;
@@ -12,9 +13,11 @@ using Pgvector;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(CDESystemDbContext))]
-    partial class CDESystemDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260820125308_AuditLog_Indexes")]
+    partial class AuditLog_Indexes
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1248,9 +1251,6 @@ namespace Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime?>("AssignedAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<Guid?>("AssignedToAccountId")
                         .HasColumnType("uuid");
 
@@ -1259,18 +1259,6 @@ namespace Infrastructure.Migrations
 
                     b.Property<Guid?>("AssignedToOrganizationId")
                         .HasColumnType("uuid");
-
-                    b.Property<string>("AssignmentRejectReason")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("AssignmentRespondedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("AssignmentRespondedByAccountId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("AssignmentStatus")
-                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1281,17 +1269,11 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime?>("DueDate")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTime?>("DueReminderSentAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<Guid?>("LinkedFileItemId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("ModelLocationJson")
                         .HasColumnType("text");
-
-                    b.Property<DateTime?>("OverdueNotifiedAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("Priority")
                         .HasColumnType("integer");
@@ -1342,6 +1324,39 @@ namespace Infrastructure.Migrations
                     b.HasIndex("IssueId");
 
                     b.ToTable("IssueAttachments");
+                });
+
+            modelBuilder.Entity("Domain.Entities.IssueFileViewGrant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("FileItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("IssueId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.HasIndex("FileItemId");
+
+                    b.HasIndex("IssueId", "FileItemId", "AccountId")
+                        .IsUnique();
+
+                    b.ToTable("IssueFileViewGrants");
                 });
 
             modelBuilder.Entity("Domain.Entities.IssueMention", b =>
@@ -2736,6 +2751,33 @@ namespace Infrastructure.Migrations
                         .HasForeignKey("IssueId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Issue");
+                });
+
+            modelBuilder.Entity("Domain.Entities.IssueFileViewGrant", b =>
+                {
+                    b.HasOne("Domain.Entities.Account", "Account")
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domain.Entities.FileItem", "FileItem")
+                        .WithMany()
+                        .HasForeignKey("FileItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Domain.Entities.Issue", "Issue")
+                        .WithMany()
+                        .HasForeignKey("IssueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Account");
+
+                    b.Navigation("FileItem");
 
                     b.Navigation("Issue");
                 });

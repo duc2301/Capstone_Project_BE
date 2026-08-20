@@ -5,6 +5,7 @@ using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
+using Domain.Enum.Audit;
 using Domain.Enum.Cde;
 using Domain.Enum.File;
 using Microsoft.Extensions.Logging;
@@ -32,6 +33,7 @@ namespace Application.Services
         private readonly IOfficeToPdfConverter _officeConverter;
         private readonly IModelTranslationQueue _translationQueue;
         private readonly ILogger<FileViewService> _logger;
+        private readonly IAuditLogService _auditLog;
 
         public FileViewService(
             IUnitOfWork unitOfWork,
@@ -40,7 +42,8 @@ namespace Application.Services
             IFileStorageService storage,
             IOfficeToPdfConverter officeConverter,
             IModelTranslationQueue translationQueue,
-            ILogger<FileViewService> logger)
+            ILogger<FileViewService> logger,
+            IAuditLogService auditLog)
         {
             _unitOfWork = unitOfWork;
             _files = files;
@@ -49,6 +52,7 @@ namespace Application.Services
             _officeConverter = officeConverter;
             _translationQueue = translationQueue;
             _logger = logger;
+            _auditLog = auditLog;
         }
 
         public async Task<FileViewInfoDTO> GetViewInfoAsync(Guid fileItemId, Guid actor, CancellationToken ct = default)
@@ -61,6 +65,8 @@ namespace Application.Services
             var version = await _files.GetVersionForUpdateAsync(fileItem.CurrentVersionId.Value, ct)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
 
+            await LogViewAsync(fileItem, version, actor);
+
             return await BuildViewInfoAsync(fileItem, version, ct);
         }
 
@@ -70,7 +76,24 @@ namespace Application.Services
             var fileItem = await RequireViewableFileAsync(fileItemId, actor, ct);
             var version = await RequireVersionOfFileAsync(fileItem.Id, versionStateId, ct);
 
+            await LogViewAsync(fileItem, version, actor);
+
             return await BuildViewInfoAsync(fileItem, version, ct);
+        }
+
+        // Ghi nhật ký "xem tài liệu". Gọi SAU khi đã qua kiểm quyền (RequireViewableFileAsync) để
+        // không ghi lại những lượt bị từ chối.
+        // Dùng LogThrottledAsync vì đây là luồng chỉ-đọc (không có transaction nghiệp vụ để bám vào)
+        // và vì mở lại cùng một tệp nhiều lần không nên đẻ ra nhiều dòng log.
+        // folderId là bắt buộc: bộ lọc quyền của view "/my" chạy theo FolderId.
+        private async Task LogViewAsync(FileItem fileItem, FileVersionState version, Guid actor)
+        {
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
+
+            await _auditLog.LogThrottledAsync(
+                LogScope.Group, AuditAction.View, nameof(FileItem), fileItem.Id.ToString(), actor,
+                detail: $"Xem '{fileItem.Name}' ({version.DisplayVersion})",
+                projectId: folder?.ProjectId, folderId: fileItem.FolderId);
         }
 
         private async Task<FileItem> RequireViewableFileAsync(Guid fileItemId, Guid actor, CancellationToken ct)

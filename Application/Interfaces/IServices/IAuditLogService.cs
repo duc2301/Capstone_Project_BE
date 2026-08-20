@@ -35,6 +35,22 @@ namespace Application.Interfaces.IServices
             Guid? groupId = null
         );
 
+        // Ghi + commit, NHƯNG bỏ qua nếu cùng actor đã ghi cùng hành động trên cùng đối tượng
+        // trong cửa sổ thời gian gần đây. Dành cho hành động lặp lại nhiều lần (mở xem tài liệu):
+        // không có bước này thì mở đi mở lại một tệp sẽ đẻ ra hàng chục dòng log rác.
+        Task LogThrottledAsync(
+            LogScope scope,
+            AuditAction action,
+            string entityType,
+            string entityId,
+            Guid actorId,
+            string? detail = null,
+            Guid? projectId = null,
+            Guid? folderId = null,
+            Guid? groupId = null,
+            TimeSpan? window = null
+        );
+
         // ===== ĐỌC =====
 
         // Admin hệ thống: nhật ký mọi dự án (có thể lọc theo 1 dự án qua filter.ProjectId).

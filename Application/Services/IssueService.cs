@@ -438,6 +438,8 @@ namespace Application.Services
             if (issue.AssignedToAccountId.HasValue)
             {
                 await AddParticipantsAsync(issue.Id, new[] { issue.AssignedToAccountId.Value });
+                await LogAssignmentShareAsync(
+                    issue, actorId, AuditAction.Share, 1, $"được giao vấn đề '{issue.Title}'");
                 if (issue.AssignedToAccountId.Value != actorId)
                 {
                     await _notification.NotifyAsync(
@@ -453,6 +455,8 @@ namespace Application.Services
 
             var memberIds = await GetActiveGroupMemberIdsAsync(issue.AssignedToGroupId.Value);
             await AddParticipantsAsync(issue.Id, memberIds);
+            await LogAssignmentShareAsync(
+                issue, actorId, AuditAction.Share, memberIds.Count, $"nhóm được giao vấn đề '{issue.Title}'");
 
             var leaderIds = await GetActiveGroupLeaderIdsAsync(issue.AssignedToGroupId.Value);
             foreach (var recipientId in memberIds.Where(id => id != actorId))
@@ -579,7 +583,8 @@ namespace Application.Services
             else
                 await RequireAssignableAccountAsync(dto.AssignedToAccountId!.Value, issue.LinkedFileItemId);
 
-            await ClearCurrentAssignmentParticipantsAsync(issue);
+            await ClearCurrentAssignmentParticipantsAsync(
+                issue, actorId, $"giao lại vấn đề '{issue.Title}' cho người khác");
 
             issue.AssignedToAccountId = dto.AssignedToAccountId;
             issue.AssignedToGroupId = dto.AssignedToGroupId;
@@ -626,7 +631,8 @@ namespace Application.Services
                 throw new ApiExceptionResponse("A reason is required to decline this assignment.", 400);
 
             var issue = await RequirePendingAssignmentRespondentAsync(issueId, actorId);
-            await ClearCurrentAssignmentParticipantsAsync(issue);
+            await ClearCurrentAssignmentParticipantsAsync(
+                issue, actorId, $"từ chối vấn đề '{issue.Title}'");
 
             issue.AssignedToAccountId = null;
             issue.AssignedToGroupId = null;
@@ -698,7 +704,7 @@ namespace Application.Services
             return result;
         }
 
-        private async Task ClearCurrentAssignmentParticipantsAsync(Issue issue)
+        private async Task ClearCurrentAssignmentParticipantsAsync(Issue issue, Guid actorId, string reason)
         {
             var accountIds = new List<Guid>();
             if (issue.AssignedToAccountId.HasValue) accountIds.Add(issue.AssignedToAccountId.Value);
@@ -718,6 +724,16 @@ namespace Application.Services
 
             foreach (var mention in mentions)
                 _unitOfWork.Repository<IssueMention>().Delete(mention);
+            await LogAssignmentShareAsync(issue, actorId, AuditAction.RevokeShare, mentions.Count, reason);
+            await _unitOfWork.CommitAsync();
+        }
+
+        private async Task LogAssignmentShareAsync(
+            Issue issue, Guid actorId, AuditAction action, int accountCount, string reason)
+        {
+            if (!issue.LinkedFileItemId.HasValue || accountCount == 0) return;
+
+            await LogShareAsync(action, issue.LinkedFileItemId.Value, actorId, accountCount, reason);
             await _unitOfWork.CommitAsync();
         }
 
@@ -742,6 +758,16 @@ namespace Application.Services
                 LogScope.Project, AuditAction.StatusChange, nameof(Issue), issue.Id.ToString(), actorId,
                 detail: $"Đánh dấu đã giải quyết vấn đề '{issue.Title}'",
                 projectId: issue.ProjectId);
+
+            var involvedCount = (await _unitOfWork.Repository<IssueMention>()
+                .FindAsync(m => m.IssueId == issue.Id)).Count();
+            if (involvedCount > 0 && issue.LinkedFileItemId.HasValue)
+            {
+                await LogShareAsync(
+                    AuditAction.RevokeShare, issue.LinkedFileItemId.Value, actorId, involvedCount,
+                    $"đóng vấn đề '{issue.Title}'");
+            }
+
             await _unitOfWork.CommitAsync();
 
             var discussion = (await _unitOfWork.Repository<Discussion>().FindAsync(
@@ -1093,6 +1119,23 @@ namespace Application.Services
             var assignable = await GetAssignableMembersAsync(fileItemId.Value);
             if (assignable.All(m => m.AccountId != accountId))
                 throw new ApiExceptionResponse("This account cannot be assigned to the linked file.", 400);
+        }
+
+        // Nhật ký chia sẻ / thu hồi quyền xem tài liệu. Luôn kèm folderId vì bộ lọc quyền phía đọc
+        // chạy theo FolderId — thiếu thì ghi xong nhưng thành viên không xem được dòng log của mình.
+        private async Task LogShareAsync(
+            AuditAction action, Guid fileItemId, Guid actorId, int accountCount, string reason)
+        {
+            var file = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId);
+            if (file is null) return;
+
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(file.FolderId);
+            var verb = action == AuditAction.Share ? "Chia sẻ" : "Thu hồi";
+
+            await _auditLog.LogAsync(
+                LogScope.Project, action, nameof(FileItem), file.Id.ToString(), actorId,
+                detail: $"{verb} quyền xem '{file.Name}' của {accountCount} tài khoản ({reason})",
+                projectId: folder?.ProjectId, folderId: file.FolderId);
         }
 
         private async Task AddParticipantsAsync(Guid issueId, IEnumerable<Guid> accountIds)

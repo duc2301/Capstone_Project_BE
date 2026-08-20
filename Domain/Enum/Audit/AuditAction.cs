@@ -25,6 +25,11 @@ namespace Domain.Enum.Audit
         RejectInvite,
         Assign,
         StatusChange,
-        Archive         // Niêm phong lưu trữ: chốt bản Published chính thức vào vùng Archived
+        Archive,        // Niêm phong lưu trữ: chốt bản Published chính thức vào vùng Archived
+
+        // ===== theo dõi truy cập tài liệu =====
+        View,           // Mở xem nội dung file (ghi có chống trùng, xem AuditLogService)
+        Share,          // Cấp quyền xem file cho tài khoản cụ thể (FileViewGrant)
+        RevokeShare     // Thu hồi quyền xem đã cấp
     }
 }

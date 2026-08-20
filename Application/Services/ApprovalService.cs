@@ -128,7 +128,16 @@ namespace Application.Services
             // Người được assign ký (Leader) và TOÀN BỘ đội của họ được cấp quyền xem file mãi mãi: người
             // ký cần xem để ký, và có thể nhờ thành viên rành chuyên môn hơn trong đội cùng kiểm tra.
             // Grant bị thu hồi khi file trả về WIP.
-            await GrantFileViewToSignerTeamsAsync(fileItem.Id, request.Id, folder.ProjectId, signers);
+            var grantedCount = await GrantFileViewToSignerTeamsAsync(
+                fileItem.Id, request.Id, folder.ProjectId, signers);
+
+            // Cấp quyền xem cho tài khoản cụ thể = chia sẻ tài liệu -> phải truy được ai, file nào, lúc nào.
+            // Ghi MỘT dòng cho cả lô; cần biết cụ thể từng người thì tra bảng FileViewGrant.
+            if (grantedCount > 0)
+                await _auditLog.LogAsync(
+                    LogScope.Project, AuditAction.Share, nameof(FileItem), fileItem.Id.ToString(), actor,
+                    detail: $"Chia sẻ quyền xem '{fileItem.Name}' cho {grantedCount} tài khoản (đội của người ký)",
+                    projectId: folder.ProjectId, folderId: folder.Id);
 
             // folderId = folder NGUỒN lúc thao tác -> cả vòng đời (submit/approve/reject) cùng một tập người xem.
             await _auditLog.LogAsync(
@@ -231,7 +240,15 @@ namespace Application.Services
             await ApplyZoneVersioningAsync(fileItem, request.TargetZone);
 
             if (request.TargetZone == CdeArea.Published)
-                await RevokeFileViewGrantsOnZoneExitAsync(fileItem.Id);
+            {
+                var revokedCount = await RevokeFileViewGrantsOnZoneExitAsync(fileItem.Id);
+
+                if (revokedCount > 0)
+                    await _auditLog.LogAsync(
+                        LogScope.Project, AuditAction.RevokeShare, nameof(FileItem), fileItem.Id.ToString(), actor,
+                        detail: $"Thu hồi quyền xem '{fileItem.Name}' của {revokedCount} tài khoản (file sang Published)",
+                        projectId: folder.ProjectId, folderId: folder.Id);
+            }
 
             await _auditLog.LogAsync(
                 LogScope.Project, AuditAction.Approve, nameof(ApprovalRequest), request.Id.ToString(), actor,
@@ -596,7 +613,8 @@ namespace Application.Services
         /// Danh sách thành viên là ẢNH CHỤP lúc submit: người vào đội sau sẽ không tự có quyền tới khi submit lại.
         /// Upsert theo (FileItemId, AccountId) để không vi phạm unique index nếu đã có grant cũ.
         /// </summary>
-        private async Task GrantFileViewToSignerTeamsAsync(
+        /// <returns>Số tài khoản được cấp quyền xem — caller dùng để ghi nhật ký chia sẻ.</returns>
+        private async Task<int> GrantFileViewToSignerTeamsAsync(
             Guid fileItemId,
             Guid approvalRequestId,
             Guid projectId,
@@ -608,11 +626,11 @@ namespace Application.Services
                 .Distinct()
                 .ToList();
             if (signerAccountIds.Count == 0)
-                return;
+                return 0;
 
             var grantAccountIds = await ResolveSignerTeamMemberAccountIdsAsync(projectId, signerAccountIds);
             if (grantAccountIds.Count == 0)
-                return;
+                return 0;
 
             var existingGrants = (await _unitOfWork.Repository<FileViewGrant>().FindAsync(
                     g => g.FileItemId == fileItemId && grantAccountIds.Contains(g.AccountId)))
@@ -639,15 +657,19 @@ namespace Application.Services
                     CreatedAt = now
                 });
             }
+
+            return grantAccountIds.Count;
         }
 
-        private async Task RevokeFileViewGrantsOnZoneExitAsync(Guid fileItemId)
+        private async Task<int> RevokeFileViewGrantsOnZoneExitAsync(Guid fileItemId)
         {
             var signerGrants = (await _unitOfWork.Repository<FileViewGrant>().FindAsync(
                     g => g.FileItemId == fileItemId))
                 .ToList();
             foreach (var grant in signerGrants)
                 _unitOfWork.Repository<FileViewGrant>().Delete(grant);
+
+            return signerGrants.Count;
         }
 
         /// <summary>
