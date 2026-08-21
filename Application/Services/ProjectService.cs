@@ -104,6 +104,8 @@ namespace Application.Services
 
             RequireAdminOrManager(entity, actorId, isSystemAdmin);
 
+            var previousImagePath = entity.ProjectImageStoragePath;
+
             entity.ProjectImageStoragePath = await _imageUpload.SaveImageAsync(
                 content, fileName, sizeBytes, $"{ProjectImagePrefix}/{id}", ct);
             entity.ProjectImageUrl = null;
@@ -116,6 +118,9 @@ namespace Application.Services
                 detail: $"Cập nhật ảnh dự án '{entity.ProjectName}'", projectId: entity.Id);
 
             await _unitOfWork.CommitAsync();
+
+            // Sau commit: bản ghi đã trỏ sang ảnh mới nên ảnh cũ không còn ai tham chiếu.
+            await _imageUpload.DeleteImageAsync(previousImagePath, ct);
 
             return await GetByIdAsync(id) ?? _mapper.Map<ProjectResponseDTO>(entity);
         }

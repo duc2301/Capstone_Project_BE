@@ -66,6 +66,18 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("Uploaded successfully", result));
         }
 
+        // Tên tài liệu này còn trống không? Modal upload hỏi trước khi gửi bytes để hỏi ý người dùng
+        // ngay tại chỗ (lên phiên bản hay tách tài liệu riêng), khỏi tải xong hàng trăm MB mới báo trùng.
+        [HttpGet("name-availability")]
+        public async Task<IActionResult> CheckNameAvailability(
+            [FromQuery] Guid folderId, [FromQuery] string name, [FromQuery] string format,
+            [FromQuery] bool bypassNamingConvention, CancellationToken ct)
+        {
+            var result = await _upload.CheckNameAvailabilityAsync(
+                folderId, name, format, bypassNamingConvention, User.GetAccountId(), User.IsAdmin(), ct);
+            return Ok(ApiResponse.Success("Name availability checked", result));
+        }
+
         // Tải file về (kiểm tra quyền Download trong service).
         [HttpGet("{id:guid}/download")]
         public async Task<IActionResult> Download(Guid id, CancellationToken ct)

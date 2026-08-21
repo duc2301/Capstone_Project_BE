@@ -3,6 +3,7 @@ using System.Text;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
+using Application.Services.Storage;
 using Domain.Entities;
 using Domain.Enum.Audit;
 using Domain.Enum.Cde;
@@ -138,41 +139,24 @@ namespace Application.Services
             return entries;
         }
 
+        // Dùng chung phép duyệt cây với bộ dựng object key (FolderAncestryResolver), nhưng giữ cách
+        // chuẩn hoá tên RIÊNG: tên bên trong file ZIP phải giữ tiếng Việt có dấu, khác với object key
+        // vốn phải slug hoá về ASCII.
         private static Dictionary<Guid, string> BuildFolderPaths(List<Folder> folders, string rootName)
         {
             var byId = folders.ToDictionary(f => f.Id);
             var paths = new Dictionary<Guid, string>();
 
-            foreach (var folder in folders.OrderBy(f => f.Area).ThenBy(f => f.Name, StringComparer.Ordinal))
-                ResolvePath(folder, byId, paths, rootName);
+            foreach (var folder in folders)
+            {
+                var path = rootName;
+                foreach (var node in FolderAncestryResolver.BuildChain(folder, byId))
+                    path = $"{path}/{SanitizeName(node.Name, AreaFolderName(node.Area))}";
+
+                paths[folder.Id] = path;
+            }
 
             return paths;
-        }
-
-        private static string ResolvePath(
-            Folder folder, Dictionary<Guid, Folder> byId, Dictionary<Guid, string> paths, string rootName)
-        {
-            var pending = new List<Folder>();
-            var visited = new HashSet<Guid>();
-            Folder? current = folder;
-
-            while (current is not null && !paths.ContainsKey(current.Id) && visited.Add(current.Id))
-            {
-                pending.Add(current);
-                current = current.ParentFolderId.HasValue && byId.TryGetValue(current.ParentFolderId.Value, out var parent)
-                    ? parent
-                    : null;
-            }
-
-            var path = current is not null && paths.TryGetValue(current.Id, out var known) ? known : rootName;
-
-            for (var index = pending.Count - 1; index >= 0; index--)
-            {
-                path = $"{path}/{SanitizeName(pending[index].Name, AreaFolderName(pending[index].Area))}";
-                paths[pending[index].Id] = path;
-            }
-
-            return path;
         }
 
         private static string AreaFolderName(CdeArea area) => area switch

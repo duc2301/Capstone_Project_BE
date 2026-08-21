@@ -1,4 +1,5 @@
 using Application.DTOs.RequestDTOs.FileVersion;
+using Application.DTOs.ResponseDTOs.FileItem;
 using Application.DTOs.ResponseDTOs.FileVersion;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
@@ -70,6 +71,33 @@ namespace Application.Services
 
             await PersistSnapshotAsync(snapshot, current);
             return ToResult(snapshot);
+        }
+
+        // Tên tài liệu này còn trống không, nếu bận thì bận ở đâu. CHỈ ĐỌC, KHÔNG ném lỗi — luồng
+        // upload dùng để hỏi ý người dùng TRƯỚC khi tải bytes lên, và để dò tên trống khi họ chọn
+        // tách thành tài liệu riêng. Phần "còn lựa chọn nào" phụ thuộc quy tắc đặt tên của thư mục
+        // nên caller (luồng upload) điền nốt — service này chỉ nắm luật trùng tên.
+        public async Task<NameAvailabilityDTO> CheckNameAvailabilityAsync(Guid folderId, string fileName, string? format)
+        {
+            var result = new NameAvailabilityDTO { Name = fileName ?? string.Empty, Format = format ?? string.Empty };
+            if (string.IsNullOrWhiteSpace(fileName))
+                return result;
+
+            // Cùng thư mục xét theo Name (đổi đuôi vẫn là cùng tài liệu, vd ký số docx -> pdf).
+            var sameFolder = await _unitOfWork.FileVersionRepository.FindExistingDocumentAsync(folderId, fileName);
+            if (sameFolder != null)
+                return await DescribeConflictAsync(result, sameFolder, NameConflictScope.SameFolder);
+
+            // Ngoài thư mục xét theo (Name + đuôi): Plan.pdf và Plan.docx được phép cùng tồn tại.
+            if (string.IsNullOrWhiteSpace(format))
+                return result;
+
+            var otherFolder = await _unitOfWork.FileVersionRepository
+                .FindProjectDuplicateByNameAndFormatAsync(folderId, fileName, format);
+            if (otherFolder == null)
+                return result;
+
+            return await DescribeConflictAsync(result, otherFolder, NameConflictScope.OtherFolder);
         }
 
         // Bản chỉ-đọc của GetNextUploadVersionAsync: cùng công thức đánh số nhưng không ghi gì và
@@ -304,23 +332,54 @@ namespace Application.Services
             if (string.IsNullOrWhiteSpace(format))
                 return;
 
-            var duplicate = await _unitOfWork.FileVersionRepository
-                .FindProjectDuplicateByNameAndFormatAsync(folderId, fileName, format);
-            if (duplicate == null)
+            var availability = await CheckNameAvailabilityAsync(folderId, fileName, format);
+            if (availability.Scope != NameConflictScope.OtherFolder)
                 return;
 
-            // Ca hay gặp nhất: tài liệu đã rời WIP (sang Shared/Published, hoặc có bản niêm phong ở
-            // Archived) rồi có người tải lại đúng tên vào WIP. FindExistingDocumentAsync dò theo FOLDER
-            // nên không khớp, luồng rơi vào nhánh "tài liệu mới" và dừng ở đây. Nếu chỉ báo "đã tồn tại"
-            // thì người dùng không biết phải làm gì tiếp — nên nói rõ tài liệu đang ở đâu, bản nào,
-            // và đường đi tiếp theo tương ứng với từng khu vực.
-            var duplicateFolder = await _unitOfWork.Repository<Folder>().GetByIdAsync(duplicate.FolderId);
-            var zone = duplicateFolder != null ? FormatZone(duplicateFolder.Area) : "khu vực khác";
+            var zone = availability.ConflictArea.HasValue
+                ? FormatZone(availability.ConflictArea.Value)
+                : "khu vực khác";
+            var revision = string.IsNullOrEmpty(availability.ConflictDisplayVersion)
+                ? string.Empty
+                : $", phiên bản {availability.ConflictDisplayVersion}";
 
-            var current = await _unitOfWork.FileVersionRepository.GetCurrentStateAsync(duplicate.Id);
-            var revision = current is null ? string.Empty : $", phiên bản {current.DisplayVersion}";
+            throw new InvalidOperationException(
+                $"Đã tồn tại tài liệu '{fileName}.{format}' trong dự án, đang ở khu vực {zone}{revision}. "
+                + availability.Guidance);
+        }
 
-            var huongXuLy = duplicateFolder?.Area switch
+        // Gom thông tin về tài liệu đang chiếm tên. Nếu chỉ báo "đã tồn tại" thì người dùng không
+        // biết làm gì tiếp — phải nói rõ tài liệu đang ở đâu, bản nào, và đường đi tương ứng.
+        private async Task<NameAvailabilityDTO> DescribeConflictAsync(
+            NameAvailabilityDTO result, FileItem conflict, NameConflictScope scope)
+        {
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(conflict.FolderId);
+            var current = await _unitOfWork.FileVersionRepository.GetCurrentStateAsync(conflict.Id);
+
+            result.Scope = scope;
+            result.ConflictFileItemId = conflict.Id;
+            result.ConflictFolderName = folder?.Name;
+            result.ConflictArea = folder?.Area;
+            result.ConflictDisplayVersion = current?.DisplayVersion;
+            // Bản đã phát hành không nhận upload thay thế (xem GetNextUploadVersionAsync) -> hết đường lên phiên bản.
+            result.CanCreateVersion =
+                scope == NameConflictScope.SameFolder && current?.Stage != VersionStage.Published;
+            result.Guidance = BuildConflictGuidance(scope, folder?.Area, result.CanCreateVersion);
+            return result;
+        }
+
+        // Ca hay gặp nhất: tài liệu đã rời WIP (sang Shared/Published, hoặc có bản niêm phong ở
+        // Archived) rồi có người tải lại đúng tên vào WIP. Trùng cùng thư mục thì người dùng tự
+        // quyết được (lên phiên bản / tách tài liệu riêng) nên không cần hướng dẫn gì thêm.
+        private static string? BuildConflictGuidance(NameConflictScope scope, CdeArea? area, bool canCreateVersion)
+        {
+            if (scope == NameConflictScope.SameFolder)
+                return canCreateVersion
+                    ? null
+                    : "Tài liệu này đang ở bản phát hành nên không nhận bản thay thế. "
+                      + "Gửi yêu cầu trả tài liệu về WIP để cập nhật, hoặc lưu thành tài liệu riêng.";
+
+            return area switch
             {
                 CdeArea.Wip =>
                     "Mở đúng thư mục đó rồi tải lên để tạo phiên bản mới cho tài liệu này.",
@@ -332,10 +391,6 @@ namespace Application.Services
                     + "Nếu đây là tài liệu khác thì đặt tên khác để phân biệt.",
                 _ => "Nếu đây là tài liệu khác thì đặt tên khác để phân biệt."
             };
-
-            throw new InvalidOperationException(
-                $"Đã tồn tại tài liệu '{fileName}.{format}' trong dự án, đang ở khu vực {zone}{revision}. "
-                + huongXuLy);
         }
 
         private async Task<FileVersionState> RequireCurrentStateAsync(Guid fileItemId)

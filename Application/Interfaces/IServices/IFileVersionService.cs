@@ -1,4 +1,5 @@
 using Application.DTOs.RequestDTOs.FileVersion;
+using Application.DTOs.ResponseDTOs.FileItem;
 using Application.DTOs.ResponseDTOs.FileVersion;
 using Domain.Entities;
 
@@ -12,6 +13,11 @@ namespace Application.Interfaces.IServices
         // Upload vào folder: tài liệu mới -> trả P01.01 (chưa lưu, chờ caller tạo FileItem);
         // tài liệu đã tồn tại (trùng Name) -> Working Version +1, lưu dòng state mới kèm dữ liệu file.
         Task<FileVersionResult> GetNextUploadVersionAsync(Guid folderId, string fileName, FileVersionDataDTO? fileData = null);
+
+        // CHỈ ĐỌC: tên tài liệu còn trống không, nếu bận thì tài liệu nào đang giữ và người dùng còn
+        // lựa chọn nào (lên phiên bản / phải đổi tên). Không ném lỗi — luồng upload gọi để hỏi ý
+        // người dùng TRƯỚC khi tải bytes lên, và để dò tên trống khi họ chọn tách tài liệu riêng.
+        Task<NameAvailabilityDTO> CheckNameAvailabilityAsync(Guid folderId, string fileName, string? format);
 
         // CHỈ ĐỌC: nhãn version mà lần upload tới sẽ nhận, dùng để ĐẶT TÊN object cho dễ đọc.
         // Không ghi gì, không kiểm tra nghiệp vụ. Phải có vì luồng upload lưu bytes TRƯỚC khi chốt
