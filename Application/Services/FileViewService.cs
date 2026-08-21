@@ -317,18 +317,18 @@ namespace Application.Services
         public async Task<InlineContentResult> OpenViewContentAsync(
             Guid fileItemId, Guid? versionStateId, Guid actor, CancellationToken ct = default)
         {
-            var fileItem = await RequireViewableFileAsync(fileItemId, actor);
+            var fileItem = await RequireViewableFileAsync(fileItemId, actor, ct);
 
             FileVersionState version;
             if (versionStateId.HasValue)
             {
-                version = await RequireVersionOfFileAsync(fileItem.Id, versionStateId.Value);
+                version = await RequireVersionOfFileAsync(fileItem.Id, versionStateId.Value, ct);
             }
             else
             {
                 if (!fileItem.CurrentVersionId.HasValue)
                     throw new ApiExceptionResponse("File has no content version.", 404);
-                version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
+                version = await _files.GetVersionForUpdateAsync(fileItem.CurrentVersionId.Value, ct)
                     ?? throw new ApiExceptionResponse("Current version not found.", 404);
             }
 
