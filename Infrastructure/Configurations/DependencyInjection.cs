@@ -134,6 +134,7 @@ namespace Infrastructure.Configurations
             services.AddHostedService(sp => sp.GetRequiredService<IngestBackgroundService>());
             services.AddHostedService(sp => sp.GetRequiredService<NameMatchContentBackgroundService>());
             services.AddHostedService<Application.BackgroundServices.IndexReconcileBackgroundService>();
+            services.AddHostedService<Application.BackgroundServices.IssueDueDateBackgroundService>();
 
             // Invitation flow: Manager mời account vô dự án -> accept tạo ProjectParticipant
             services.AddScoped<IInvitationService, InvitationService>();

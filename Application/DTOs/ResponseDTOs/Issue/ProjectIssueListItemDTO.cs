@@ -22,6 +22,7 @@ namespace Application.DTOs.ResponseDTOs.Issue
         public string? AssignedToGroupName { get; set; }
 
         public DateTime? DueDate { get; set; }
+        public IssueAssignmentStatus AssignmentStatus { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
 

@@ -21,6 +21,13 @@ namespace Application.DTOs.ResponseDTOs.Issue
         public Guid? AssignedToGroupId { get; set; }
         public string? AssignedToGroupName { get; set; }
         public DateTime? DueDate { get; set; }
+        public IssueAssignmentStatus AssignmentStatus { get; set; }
+        public Guid? AssignmentRespondedByAccountId { get; set; }
+        public string? AssignmentRespondedByName { get; set; }
+        public DateTime? AssignedAt { get; set; }
+        public DateTime? AssignmentRespondedAt { get; set; }
+        public string? AssignmentRejectReason { get; set; }
+        public bool CanRespondToAssignment { get; set; }
         public Guid? LinkedFileItemId { get; set; }
         public string? ModelLocationJson { get; set; }
         public DateTime? CreatedAt { get; set; }

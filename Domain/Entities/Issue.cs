@@ -19,6 +19,13 @@ namespace Domain.Entities
         public Guid? AssignedToOrganizationId { get; set; }
         public Guid? AssignedToGroupId { get; set; }
         public DateTime? DueDate { get; set; }
+        public IssueAssignmentStatus AssignmentStatus { get; set; }
+        public Guid? AssignmentRespondedByAccountId { get; set; }
+        public DateTime? AssignedAt { get; set; }
+        public DateTime? AssignmentRespondedAt { get; set; }
+        public string? AssignmentRejectReason { get; set; }
+        public DateTime? DueReminderSentAt { get; set; }
+        public DateTime? OverdueNotifiedAt { get; set; }
         public Guid? LinkedFileItemId { get; set; }
         public string? ModelLocationJson { get; set; }   // vị trí trên mô hình 3D
         public DateTime? CreatedAt { get; set; }
