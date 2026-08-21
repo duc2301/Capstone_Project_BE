@@ -30,6 +30,7 @@ namespace Application.Services
         private readonly IFileViewRepository _files;
         private readonly IPermissionCheckingService _permission;
         private readonly IFileStorageService _storage;
+        private readonly ICdeStorageKeyBuilder _storageKey;
         private readonly IOfficeToPdfConverter _officeConverter;
         private readonly IModelTranslationQueue _translationQueue;
         private readonly ILogger<FileViewService> _logger;
@@ -40,6 +41,7 @@ namespace Application.Services
             IFileViewRepository files,
             IPermissionCheckingService permission,
             IFileStorageService storage,
+            ICdeStorageKeyBuilder storageKey,
             IOfficeToPdfConverter officeConverter,
             IModelTranslationQueue translationQueue,
             ILogger<FileViewService> logger,
@@ -49,6 +51,7 @@ namespace Application.Services
             _files = files;
             _permission = permission;
             _storage = storage;
+            _storageKey = storageKey;
             _officeConverter = officeConverter;
             _translationQueue = translationQueue;
             _logger = logger;
@@ -264,7 +267,8 @@ namespace Application.Services
             {
                 await using var source = await _storage.OpenReadAsync(version.StoragePath!, ct);
                 await using var pdf = await _officeConverter.ConvertToPdfAsync(source, ext, ct);
-                var stored = await _storage.SaveAsync(pdf, folder.ProjectId, folder.Id, ".pdf", ct);
+                var objectName = await _storageKey.ForDerivedAsync(folder.Id, DerivedFileKind.Preview, ".pdf", ct);
+                var stored = await _storage.SaveAsync(pdf, objectName, ct);
 
                 version.PreviewStoragePath = stored.RelativePath;   // cache: convert 1 lần
                 await _unitOfWork.CommitAsync();

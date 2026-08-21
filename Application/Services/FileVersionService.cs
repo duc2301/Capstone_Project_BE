@@ -72,6 +72,25 @@ namespace Application.Services
             return ToResult(snapshot);
         }
 
+        // Bản chỉ-đọc của GetNextUploadVersionAsync: cùng công thức đánh số nhưng không ghi gì và
+        // không ném lỗi nghiệp vụ (tài liệu đang Published sẽ bị chặn ở GetNextUploadVersionAsync ngay
+        // sau đó). Mọi đường không xác định được đều trả về nhãn của tài liệu mới.
+        public async Task<string> PeekNextUploadVersionAsync(Guid folderId, string fileName)
+        {
+            var initial = FormatDisplayVersion(VersionStage.Working, workingRevision: 1, workingVersion: 1, publishedRevision: 0);
+
+            if (string.IsNullOrWhiteSpace(fileName)) return initial;
+
+            var existing = await _unitOfWork.FileVersionRepository.FindExistingDocumentAsync(folderId, fileName);
+            if (existing == null) return initial;
+
+            var current = await _unitOfWork.FileVersionRepository.GetCurrentStateAsync(existing.Id);
+            if (current == null) return initial;
+
+            return FormatDisplayVersion(
+                VersionStage.Working, current.WorkingRevision, current.WorkingVersion + 1, current.PublishedRevision);
+        }
+
         public async Task<FileVersionResult> CreateInitialVersionAsync(Guid fileItemId, FileVersionDataDTO? fileData = null)
         {
             var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)

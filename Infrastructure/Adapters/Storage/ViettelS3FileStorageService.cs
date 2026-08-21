@@ -11,7 +11,8 @@ using Microsoft.Extensions.Logging;
 namespace Infrastructure.Adapters.Storage
 {
     // Lưu file lên Viettel Cloud Object Storage (S3-compatible, nền Cloudian HyperStore).
-    // Cấu hình ở "FileStorage:S3:*". StoragePath = object key dạng {projectId}/{folderId}/{guid}{ext}.
+    // Cấu hình ở "FileStorage:S3:*". StoragePath = object key; bố cục key do tầng nghiệp vụ quyết định
+    // (ICdeStorageKeyBuilder) rồi truyền xuống qua StorageObjectName — adapter chỉ ghép chuỗi + ghi bytes.
     public class ViettelS3FileStorageService : IFileStorageService
     {
         private readonly string _endpoint;
@@ -59,15 +60,13 @@ namespace Infrastructure.Adapters.Storage
             }
         }
 
-        public Task<StoredFile> SaveAsync(
-            Stream content, Guid projectId, Guid folderId, string extension, CancellationToken ct = default)
-            => SaveToPrefixAsync(content, $"{projectId}/{folderId}", extension, ct);
-
-        public async Task<StoredFile> SaveToPrefixAsync(
-            Stream content, string prefix, string extension, CancellationToken ct = default)
+        public async Task<StoredFile> SaveAsync(
+            Stream content, StorageObjectName name, CancellationToken ct = default)
         {
-            var ext = NormalizeExt(extension);
-            var key = string.Join('/', NormalizePrefix(prefix), $"{Guid.NewGuid():N}{ext}");
+            var ext = NormalizeExt(name.Extension);
+            var key = string.Join('/',
+                StorageKeyComposer.NormalizePrefix(name.Prefix),
+                StorageKeyComposer.BuildLeafName(name.Stem, ext));
 
             // Đệm vào bộ nhớ để tính SHA-256 + độ dài (S3 cần ContentLength).
             // TODO: file lớn (IFC/CAD) nên chuyển sang multipart/TransferUtility để khỏi nạp hết vào RAM.
@@ -174,25 +173,6 @@ namespace Infrastructure.Adapters.Storage
                     "Object Storage chưa được cấu hình: thiếu FileStorage:S3:Endpoint/AccessKey/SecretKey/Bucket.", 500);
         }
 
-        private static string NormalizePrefix(string prefix)
-        {
-            var segments = prefix
-                .Replace('\\', '/')
-                .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Where(s => s != "." && s != "..")
-                .ToArray();
-
-            if (segments.Length == 0)
-                throw new ApiExceptionResponse("Invalid storage prefix.", 400);
-
-            return string.Join('/', segments);
-        }
-
-        private static string NormalizeExt(string ext)
-        {
-            if (string.IsNullOrWhiteSpace(ext)) return string.Empty;
-            ext = ext.Trim().ToLowerInvariant();
-            return ext.StartsWith('.') ? ext : "." + ext;
-        }
+        private static string NormalizeExt(string ext) => StorageKeyComposer.NormalizeExt(ext);
     }
 }

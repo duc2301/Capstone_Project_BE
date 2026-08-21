@@ -30,6 +30,7 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IPermissionCheckingService _permission;
         private readonly IFileStorageService _storage;
+        private readonly ICdeStorageKeyBuilder _storageKey;
         private readonly IModelTranslationQueue _translationQueue;
         private readonly IMapper _mapper;
         private readonly INamingConventionService _naming;
@@ -39,13 +40,14 @@ namespace Application.Services
         private readonly IAuditLogService _auditLog;
         private readonly IDocumentIndexSyncService _indexSync;
 
-        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, IModelTranslationQueue translationQueue, IMapper mapper, INamingConventionService naming, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService, IFileLinkService fileLink, IAuditLogService auditLog, IPermissionCheckingService permission, IDocumentIndexSyncService indexSync)
+        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, ICdeStorageKeyBuilder storageKey, IModelTranslationQueue translationQueue, IMapper mapper, INamingConventionService naming, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService, IFileLinkService fileLink, IAuditLogService auditLog, IPermissionCheckingService permission, IDocumentIndexSyncService indexSync)
         {
             _indexSync = indexSync;
             _auditLog = auditLog;
             _permission = permission;
             _unitOfWork = unitOfWork;
             _storage = storage;
+            _storageKey = storageKey;
             _translationQueue = translationQueue;
             _mapper = mapper;
             _naming = naming;
@@ -96,8 +98,12 @@ namespace Application.Services
             if (dto.RelatedFileItemIds is { Count: > 0 })
                 await _fileLink.ValidateUploadLinkTargetsAsync(folder, dto.RelatedFileItemIds, actor, ct);
 
-            // ⑦ Lưu nội dung file (đĩa local).
-            var stored = await _storage.SaveAsync(content, folder.ProjectId, folder.Id, ext, ct);
+            // ⑦ Lưu nội dung file. Nhãn version lấy trước chỉ để ĐẶT TÊN object cho dễ đọc trên kho —
+            // số version thật do FileVersionService chốt ở bước ⑤ bên dưới (DB là nguồn sự thật).
+            // Phải peek vì bước ⑤ cần StoragePath nên không thể chạy trước bước lưu file này.
+            var versionLabel = await _fileVersionService.PeekNextUploadVersionAsync(folder.Id, name);
+            var objectName = await _storageKey.ForDocumentAsync(folder.Id, name, versionLabel, ext, ct);
+            var stored = await _storage.SaveAsync(content, objectName, ct);
             var url = await _storage.GetPresignedUrlAsync(stored.RelativePath, 60, ct);
             var now = DateTime.UtcNow;
             var format = ext.TrimStart('.').ToLowerInvariant();

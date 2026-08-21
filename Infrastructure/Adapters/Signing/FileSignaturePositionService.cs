@@ -18,6 +18,7 @@ namespace Infrastructure.Adapters.Signing
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IFileStorageService _storage;
+        private readonly ICdeStorageKeyBuilder _storageKey;
         private readonly IApprovalService _approvalService;
         private readonly IOfficeToPdfConverter _officeConverter;
         private readonly ICadToPdfConverter _cadConverter;
@@ -25,12 +26,14 @@ namespace Infrastructure.Adapters.Signing
         public FileSignaturePositionService(
             IUnitOfWork unitOfWork,
             IFileStorageService storage,
+            ICdeStorageKeyBuilder storageKey,
             IApprovalService approvalService,
             IOfficeToPdfConverter officeConverter,
             ICadToPdfConverter cadConverter)
         {
             _unitOfWork = unitOfWork;
             _storage = storage;
+            _storageKey = storageKey;
             _approvalService = approvalService;
             _officeConverter = officeConverter;
             _cadConverter = cadConverter;
@@ -181,7 +184,8 @@ namespace Infrastructure.Adapters.Signing
 
                 var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
                     ?? throw new ApiExceptionResponse("Folder not found.", 404);
-                var stored = await _storage.SaveAsync(converted, folder.ProjectId, folder.Id, ".pdf");
+                var objectName = await _storageKey.ForDerivedAsync(folder.Id, DerivedFileKind.Preview, ".pdf");
+                var stored = await _storage.SaveAsync(converted, objectName);
                 version.PreviewStoragePath = stored.RelativePath;
                 await _unitOfWork.CommitAsync();
 
