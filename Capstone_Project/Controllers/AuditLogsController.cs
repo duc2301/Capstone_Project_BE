@@ -1,4 +1,4 @@
-using Application.DTOs.ApiResponseDTO;
+﻿using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Audit;
 using Application.Interfaces.IServices;
 using Capstone_Project.Extensions;
@@ -64,14 +64,14 @@ namespace Capstone_Project.Controllers
         [HttpGet("system/export")]
         public async Task<IActionResult> ExportSystem([FromQuery] AuditLogFilterDTO filter)
         {
-            var file = await _auditLogService.ExportCsvAsync(null, filter, User.GetAccountId());
+            var file = await _auditLogService.ExportAsync(null, filter, User.GetAccountId());
             return File(file.Content, file.ContentType, file.FileName);
         }
 
         [HttpGet("projects/{projectId:guid}/export")]
         public async Task<IActionResult> ExportByProject(Guid projectId, [FromQuery] AuditLogFilterDTO filter)
         {
-            var file = await _auditLogService.ExportCsvAsync(projectId, filter, User.GetAccountId());
+            var file = await _auditLogService.ExportAsync(projectId, filter, User.GetAccountId());
             return File(file.Content, file.ContentType, file.FileName);
         }
     }

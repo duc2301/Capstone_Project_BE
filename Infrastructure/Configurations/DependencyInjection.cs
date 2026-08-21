@@ -1,4 +1,4 @@
-using Application.BackgroundServices;
+﻿using Application.BackgroundServices;
 using Application.Interfaces.IBackgroundServices;
 using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
@@ -69,6 +69,7 @@ namespace Infrastructure.Configurations
             else
                 services.AddSingleton<IFileStorageService, LocalFileStorageService>();
             services.AddScoped<IFileUploadService, FileUploadService>();
+            services.AddScoped<IProjectFileBundleService, ProjectFileBundleService>();
             services.AddScoped<IImageUploadService, ImageUploadService>();
             // File Versioning: tính P{Rev}.{Ver} / C{PubRev} tập trung 1 chỗ — Upload/Publish chỉ gọi vào
             // (FileVersionRepository truy cập qua IUnitOfWork.FileVersionRepository, giống FolderPermission)
@@ -133,6 +134,7 @@ namespace Infrastructure.Configurations
             services.AddHostedService(sp => sp.GetRequiredService<IngestBackgroundService>());
             services.AddHostedService(sp => sp.GetRequiredService<NameMatchContentBackgroundService>());
             services.AddHostedService<Application.BackgroundServices.IndexReconcileBackgroundService>();
+            services.AddHostedService<Application.BackgroundServices.IssueDueDateBackgroundService>();
 
             // Invitation flow: Manager mời account vô dự án -> accept tạo ProjectParticipant
             services.AddScoped<IInvitationService, InvitationService>();
@@ -154,7 +156,13 @@ namespace Infrastructure.Configurations
             services.AddScoped<ILoiCheckService, Application.Services.Loi.LoiCheckService>();
             services.AddScoped<ILoiAliasService, Application.Services.Loi.LoiAliasService>();
             services.AddScoped<ILoiRuleRepository, LoiRuleRepository>();
+            services.AddScoped<ILoiCheckRepository, LoiCheckRepository>();
+            services.AddScoped<IMarkupRepository, MarkupRepository>();
+            services.AddScoped<IFileViewRepository, FileViewRepository>();
+            services.AddScoped<IFileLinkRepository, FileLinkRepository>();
+            services.AddScoped<IFileDeletionRepository, FileDeletionRepository>();
             services.AddScoped<ILoiRuleAdminService, Application.Services.Loi.LoiRuleAdminService>();
+            services.AddScoped<IProjectLoiRuleService, Application.Services.Loi.ProjectLoiRuleService>();
             services.AddScoped<ILoiRuleImportService, Application.Services.Loi.LoiRuleImportService>();
             services.AddSingleton<IFileTextExtractor, FileTextExtractorService>();
             services.AddSingleton<ITextChunker, TextChunkerService>();

@@ -11,7 +11,7 @@ namespace Domain.Entities
     /// không phải override. Grant bị thu hồi (hard-delete) khi file RỜI khu vực Shared: chuyển sang
     /// Published (hoàn tất ký — xem ApprovalService.ApproveAsync) hoặc trả về WIP (xem
     /// ZoneReturnRequestService). Bị từ chối duyệt mà file VẪN Ở Shared thì KHÔNG thu hồi (chỉ khi
-    /// thực sự trả về WIP). Độc lập với IssueFileViewGrant: thu hồi grant người ký không đụng grant issue.
+    /// thực sự trả về WIP).
     /// </summary>
     public class FileViewGrant
     {

@@ -1,4 +1,4 @@
-namespace Application.DTOs.ResponseDTOs.Loi
+﻿namespace Application.DTOs.ResponseDTOs.Loi
 {
     public class LoiRuleSetDTO
     {
@@ -7,8 +7,6 @@ namespace Application.DTOs.ResponseDTOs.Loi
         public string Name { get; set; } = string.Empty;
 
         public string? Description { get; set; }
-
-        public bool IsDefault { get; set; }
 
         public bool IsSystem { get; set; }
 
@@ -19,8 +17,6 @@ namespace Application.DTOs.ResponseDTOs.Loi
         public int ParameterCount { get; set; }
 
         public int ProjectCount { get; set; }
-
-        public int InheritingProjectCount { get; set; }
 
         public DateTime? CreatedAt { get; set; }
 

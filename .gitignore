@@ -13,6 +13,7 @@ seed_data_new.sql
 seed_data_no_projects.sql
 seed_loi_rules.sql
 seed_permission_folder.sql
+migrate_project_status.sql
 
 
 

@@ -1,4 +1,4 @@
-using Application.Interfaces.IRepositories;
+﻿using Application.Interfaces.IRepositories;
 using Domain.Entities;
 using Domain.Enum.Loi;
 using Infrastructure.DbContexts;
@@ -131,18 +131,51 @@ namespace Infrastructure.Repositories
                 .CountAsync(p => p.LoiRuleSetId == ruleSetId, ct);
         }
 
-        public async Task<int> CountProjectsInheritingDefaultAsync(CancellationToken ct = default)
-        {
-            return await _context.Projects
-                .AsNoTracking()
-                .CountAsync(p => p.LoiRuleSetId == null, ct);
-        }
-
         public async Task<bool> ParamNameExistsAsync(string paramNameNormalized, CancellationToken ct = default)
         {
             return await _context.LoiParameters
                 .AsNoTracking()
                 .AnyAsync(p => p.NameNormalized == paramNameNormalized, ct);
+        }
+
+        public async Task<bool> RequirementParamExistsAsync(
+            string paramNameNormalized, CancellationToken ct = default)
+        {
+            return await _context.LoiRequirements
+                .AsNoTracking()
+                .AnyAsync(r => r.ParamNameNormalized == paramNameNormalized, ct);
+        }
+
+        public async Task<Project?> GetProjectAsync(Guid projectId, CancellationToken ct = default)
+        {
+            return await _context.Projects
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == projectId, ct);
+        }
+
+        public async Task<IReadOnlyList<LoiFieldAlias>> GetAliasesForProjectAsync(
+            Guid projectId, CancellationToken ct = default)
+        {
+            return await _context.LoiFieldAliases
+                .AsNoTracking()
+                .Where(a => a.ProjectId == null || a.ProjectId == projectId)
+                .ToListAsync(ct);
+        }
+
+        public async Task<LoiFieldAlias?> FindAliasAsync(
+            string aliasNormalized, Guid projectId, CancellationToken ct = default)
+        {
+            return await _context.LoiFieldAliases
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    a => a.AliasNormalized == aliasNormalized
+                      && (a.ProjectId == null || a.ProjectId == projectId), ct);
+        }
+
+        public async Task<LoiFieldAlias?> GetAliasForUpdateAsync(Guid aliasId, CancellationToken ct = default)
+        {
+            return await _context.LoiFieldAliases
+                .FirstOrDefaultAsync(a => a.Id == aliasId, ct);
         }
     }
 }

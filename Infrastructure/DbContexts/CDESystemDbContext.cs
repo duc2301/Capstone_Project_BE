@@ -1,4 +1,4 @@
-using Domain.Entities;
+﻿using Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Pgvector;
@@ -63,7 +63,6 @@ namespace Infrastructure.DbContexts
         public virtual DbSet<Issue> Issues { get; set; }
         public virtual DbSet<IssueAttachment> IssueAttachments { get; set; }
         public virtual DbSet<IssueMention> IssueMentions { get; set; }
-        public virtual DbSet<IssueFileViewGrant> IssueFileViewGrants { get; set; }
 
         // --- Module H: Nhật ký / RAG ---
         public virtual DbSet<AuditLog> AuditLogs { get; set; }
@@ -220,6 +219,26 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(l => l.LinkedFileItemId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // AuditLog: bảng chỉ-ghi-thêm, đọc luôn kèm điều kiện lọc -> phải có index, nếu không
+            // mỗi lần mở tab Nhật ký là một lần quét toàn bảng.
+            // KHÔNG khai FK/nav sang Project/Folder/Account: log phải sống sót khi bản ghi gốc bị xoá.
+            modelBuilder.Entity<AuditLog>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+
+                // 3 view đọc đều lọc theo dự án rồi sắp xếp mới nhất trước (AuditLogRepository).
+                entity.HasIndex(x => new { x.ProjectId, x.CreatedAt });
+
+                // Nhật ký theo từng tệp: GET /api/audit-logs/files/{fileItemId}.
+                entity.HasIndex(x => new { x.EntityType, x.EntityId });
+
+                // Lọc quyền của view "/my" chạy theo FolderId.
+                entity.HasIndex(x => x.FolderId);
+
+                // Tra hoạt động của một tài khoản + kiểm chống ghi trùng khi log hành động Xem.
+                entity.HasIndex(x => new { x.ActorAccountId, x.Action, x.CreatedAt });
+            });
+
             
 
             modelBuilder.Entity<DiscussionMessage>()
@@ -289,32 +308,6 @@ namespace Infrastructure.DbContexts
                     .WithMany()
                     .HasForeignKey(x => x.SourceApprovalRequestId)
                     .OnDelete(DeleteBehavior.SetNull);
-            });
-
-            // Grant xem file sinh ra từ issue (người được giao / thành viên nhóm được giao). Bảng RIÊNG,
-            // tách khỏi FileViewGrant của luồng ký -> không đụng unique index, thu hồi theo IssueId không
-            // bao giờ chạm grant của người ký. Xóa issue hoặc file -> xóa grant (Cascade); Account Restrict.
-            modelBuilder.Entity<IssueFileViewGrant>(entity =>
-            {
-                entity.HasKey(x => x.Id);
-
-                entity.HasIndex(x => new { x.IssueId, x.FileItemId, x.AccountId })
-                    .IsUnique();
-
-                entity.HasOne(x => x.Issue)
-                    .WithMany()
-                    .HasForeignKey(x => x.IssueId)
-                    .OnDelete(DeleteBehavior.Cascade);
-
-                entity.HasOne(x => x.FileItem)
-                    .WithMany()
-                    .HasForeignKey(x => x.FileItemId)
-                    .OnDelete(DeleteBehavior.Cascade);
-
-                entity.HasOne(x => x.Account)
-                    .WithMany()
-                    .HasForeignKey(x => x.AccountId)
-                    .OnDelete(DeleteBehavior.Restrict);
             });
 
             // Joint Venture Member relationships
@@ -584,7 +577,7 @@ namespace Infrastructure.DbContexts
 
             modelBuilder.Entity<LoiRuleSet>(b =>
             {
-                b.HasIndex(x => x.IsDefault);
+                b.HasIndex(x => x.IsSystem);
             });
 
             modelBuilder.Entity<LoiParameter>(b =>

@@ -1,4 +1,4 @@
-using Domain.Entities;
+﻿using Domain.Entities;
 using Domain.Enum.Loi;
 
 namespace Application.Interfaces.IRepositories
@@ -35,8 +35,18 @@ namespace Application.Interfaces.IRepositories
 
         Task<int> CountProjectsUsingAsync(Guid ruleSetId, CancellationToken ct = default);
 
-        Task<int> CountProjectsInheritingDefaultAsync(CancellationToken ct = default);
-
         Task<bool> ParamNameExistsAsync(string paramNameNormalized, CancellationToken ct = default);
+
+        Task<bool> RequirementParamExistsAsync(string paramNameNormalized, CancellationToken ct = default);
+
+        Task<Project?> GetProjectAsync(Guid projectId, CancellationToken ct = default);
+
+        Task<IReadOnlyList<LoiFieldAlias>> GetAliasesForProjectAsync(
+            Guid projectId, CancellationToken ct = default);
+
+        Task<LoiFieldAlias?> FindAliasAsync(
+            string aliasNormalized, Guid projectId, CancellationToken ct = default);
+
+        Task<LoiFieldAlias?> GetAliasForUpdateAsync(Guid aliasId, CancellationToken ct = default);
     }
 }

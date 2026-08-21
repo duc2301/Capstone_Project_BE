@@ -1,9 +1,11 @@
 using Application.DTOs.ResponseDTOs.FileItem;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IBackgroundServices;
+using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
 using Application.Interfaces.IUnitOfWork;
 using Domain.Entities;
+using Domain.Enum.Audit;
 using Domain.Enum.Cde;
 using Domain.Enum.File;
 using Microsoft.Extensions.Logging;
@@ -24,37 +26,45 @@ namespace Application.Services
         private static readonly string[] TextExts = { ".txt", ".csv" };
 
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IFileViewRepository _files;
         private readonly IPermissionCheckingService _permission;
         private readonly IFileStorageService _storage;
         private readonly IOfficeToPdfConverter _officeConverter;
         private readonly IModelTranslationQueue _translationQueue;
         private readonly ILogger<FileViewService> _logger;
+        private readonly IAuditLogService _auditLog;
 
         public FileViewService(
             IUnitOfWork unitOfWork,
+            IFileViewRepository files,
             IPermissionCheckingService permission,
             IFileStorageService storage,
             IOfficeToPdfConverter officeConverter,
             IModelTranslationQueue translationQueue,
-            ILogger<FileViewService> logger)
+            ILogger<FileViewService> logger,
+            IAuditLogService auditLog)
         {
             _unitOfWork = unitOfWork;
+            _files = files;
             _permission = permission;
             _storage = storage;
             _officeConverter = officeConverter;
             _translationQueue = translationQueue;
             _logger = logger;
+            _auditLog = auditLog;
         }
 
         public async Task<FileViewInfoDTO> GetViewInfoAsync(Guid fileItemId, Guid actor, CancellationToken ct = default)
         {
-            var fileItem = await RequireViewableFileAsync(fileItemId, actor);
+            var fileItem = await RequireViewableFileAsync(fileItemId, actor, ct);
 
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
 
-            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
+            var version = await _files.GetVersionForUpdateAsync(fileItem.CurrentVersionId.Value, ct)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
+
+            await LogViewAsync(fileItem, version, actor);
 
             return await BuildViewInfoAsync(fileItem, version, ct);
         }
@@ -62,24 +72,42 @@ namespace Application.Services
         public async Task<FileViewInfoDTO> GetVersionViewInfoAsync(
             Guid fileItemId, Guid versionStateId, Guid actor, CancellationToken ct = default)
         {
-            var fileItem = await RequireViewableFileAsync(fileItemId, actor);
-            var version = await RequireVersionOfFileAsync(fileItem.Id, versionStateId);
+            var fileItem = await RequireViewableFileAsync(fileItemId, actor, ct);
+            var version = await RequireVersionOfFileAsync(fileItem.Id, versionStateId, ct);
+
+            await LogViewAsync(fileItem, version, actor);
 
             return await BuildViewInfoAsync(fileItem, version, ct);
         }
 
-        private async Task<FileItem> RequireViewableFileAsync(Guid fileItemId, Guid actor)
+        // Ghi nhật ký "xem tài liệu". Gọi SAU khi đã qua kiểm quyền (RequireViewableFileAsync) để
+        // không ghi lại những lượt bị từ chối.
+        // Dùng LogThrottledAsync vì đây là luồng chỉ-đọc (không có transaction nghiệp vụ để bám vào)
+        // và vì mở lại cùng một tệp nhiều lần không nên đẻ ra nhiều dòng log.
+        // folderId là bắt buộc: bộ lọc quyền của view "/my" chạy theo FolderId.
+        private async Task LogViewAsync(FileItem fileItem, FileVersionState version, Guid actor)
         {
-            var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
+
+            await _auditLog.LogThrottledAsync(
+                LogScope.Group, AuditAction.View, nameof(FileItem), fileItem.Id.ToString(), actor,
+                detail: $"Xem '{fileItem.Name}' ({version.DisplayVersion})",
+                projectId: folder?.ProjectId, folderId: fileItem.FolderId);
+        }
+
+        private async Task<FileItem> RequireViewableFileAsync(Guid fileItemId, Guid actor, CancellationToken ct)
+        {
+            var fileItem = await _files.GetFileItemAsync(fileItemId, ct)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
             await _permission.CanViewFileAsync(fileItem.Id, actor);
             return fileItem;
         }
 
-        private async Task<FileVersionState> RequireVersionOfFileAsync(Guid fileItemId, Guid versionStateId)
+        private async Task<FileVersionState> RequireVersionOfFileAsync(
+            Guid fileItemId, Guid versionStateId, CancellationToken ct)
         {
-            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(versionStateId)
+            var version = await _files.GetVersionForUpdateAsync(versionStateId, ct)
                 ?? throw new ApiExceptionResponse("Version not found.", 404);
 
             if (version.FileItemId != fileItemId)
@@ -96,7 +124,7 @@ namespace Application.Services
             var fileName = FileDownloadNaming.BuildFileName(fileItem.Name, format);
             var hasStoredContent = !string.IsNullOrWhiteSpace(version.StoragePath);
 
-            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
+            var folder = await _files.GetFolderAsync(fileItem.FolderId, ct)
                 ?? throw new ApiExceptionResponse("File folder not found.", 404);
 
             var info = fileItem.FileType switch
@@ -154,7 +182,7 @@ namespace Application.Services
         // Dịch lại model (khi Failed, hoặc người dùng chủ động làm mới): reset trạng thái + đẩy lại vào hàng đợi nền.
         public async Task RetranslateAsync(Guid fileItemId, Guid actor, CancellationToken ct = default)
         {
-            var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+            var fileItem = await _files.GetFileItemAsync(fileItemId, ct)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
             await _permission.CanViewFileAsync(fileItem.Id, actor);
@@ -165,7 +193,7 @@ namespace Application.Services
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
 
-            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
+            var version = await _files.GetVersionForUpdateAsync(fileItem.CurrentVersionId.Value, ct)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
 
             version.ViewerStatus = ModelViewerStatus.Pending;
@@ -226,7 +254,7 @@ namespace Application.Services
             if (!string.IsNullOrWhiteSpace(version.PreviewStoragePath))
                 return version.PreviewStoragePath;
 
-            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId)
+            var folder = await _files.GetFolderAsync(fileItem.FolderId, ct)
                 ?? throw new ApiExceptionResponse("Folder not found.", 404);
 
             try
@@ -250,7 +278,7 @@ namespace Application.Services
         // ---- Bytes PDF hiệu dụng cho pdf.js (markup 2D) — same-origin, né CORS presigned + hết hạn URL ----
         public async Task<InlinePdfResult> OpenViewPdfAsync(Guid fileItemId, Guid actor, CancellationToken ct = default)
         {
-            var fileItem = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+            var fileItem = await _files.GetFileItemAsync(fileItemId, ct)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
             await _permission.CanViewFileAsync(fileItem.Id, actor);
@@ -258,7 +286,7 @@ namespace Application.Services
             if (!fileItem.CurrentVersionId.HasValue)
                 throw new ApiExceptionResponse("File has no content version.", 404);
 
-            var version = await _unitOfWork.Repository<FileVersionState>().GetByIdAsync(fileItem.CurrentVersionId.Value)
+            var version = await _files.GetVersionForUpdateAsync(fileItem.CurrentVersionId.Value, ct)
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
 
             var format = version.Format ?? string.Empty;
