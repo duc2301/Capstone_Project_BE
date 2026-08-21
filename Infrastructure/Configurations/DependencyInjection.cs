@@ -68,6 +68,11 @@ namespace Infrastructure.Configurations
                 services.AddSingleton<IFileStorageService, ViettelS3FileStorageService>();
             else
                 services.AddSingleton<IFileStorageService, LocalFileStorageService>();
+            // Bố cục key trên kho lưu trữ: quyết định ở tầng nghiệp vụ (cần đọc Project/Folder nên Scoped),
+            // adapter chỉ nhận StorageObjectName rồi ghi bytes. Key sinh ra là BẤT BIẾN — đọc/xoá luôn
+            // dùng StoragePath đã lưu trong DB, KHÔNG bao giờ dựng lại key từ entity.
+            services.AddScoped<IFolderAncestryResolver, Application.Services.Storage.FolderAncestryResolver>();
+            services.AddScoped<ICdeStorageKeyBuilder, Application.Services.Storage.CdeStorageKeyBuilder>();
             services.AddScoped<IFileUploadService, FileUploadService>();
             services.AddScoped<IProjectFileBundleService, ProjectFileBundleService>();
             services.AddScoped<IImageUploadService, ImageUploadService>();

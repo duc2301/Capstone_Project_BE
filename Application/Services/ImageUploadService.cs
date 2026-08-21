@@ -1,5 +1,6 @@
 ﻿using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
+using Microsoft.Extensions.Logging;
 
 namespace Application.Services
 {
@@ -12,10 +13,12 @@ namespace Application.Services
             new(StringComparer.OrdinalIgnoreCase) { ".png", ".jpg", ".jpeg", ".webp", ".gif" };
 
         private readonly IFileStorageService _storage;
+        private readonly ILogger<ImageUploadService> _logger;
 
-        public ImageUploadService(IFileStorageService storage)
+        public ImageUploadService(IFileStorageService storage, ILogger<ImageUploadService> logger)
         {
             _storage = storage;
+            _logger = logger;
         }
 
         public async Task<string> SaveImageAsync(
@@ -33,7 +36,9 @@ namespace Application.Services
                 throw new ApiExceptionResponse(
                     $"Định dạng ảnh không hợp lệ. Chỉ chấp nhận: {string.Join(", ", AllowedExtensions)}.", 400);
 
-            var stored = await _storage.SaveToPrefixAsync(content, prefix, extension, ct);
+            // Ảnh đại diện / ảnh dự án không nằm trong cây tài liệu CDE nên giữ nguyên bố cục phẳng
+            // theo prefix caller truyền vào ("avatars/{accountId}", "project-images/{projectId}").
+            var stored = await _storage.SaveAsync(content, new StorageObjectName(prefix, null, extension), ct);
             return stored.RelativePath;
         }
 
@@ -41,6 +46,22 @@ namespace Application.Services
         {
             if (string.IsNullOrWhiteSpace(storagePath)) return null;
             return await _storage.GetPresignedUrlAsync(storagePath, UrlExpiryMinutes, ct);
+        }
+
+        public async Task DeleteImageAsync(string? storagePath, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(storagePath)) return;
+
+            try
+            {
+                await _storage.DeleteAsync(storagePath, ct);
+            }
+            catch (Exception ex)
+            {
+                // Ảnh mới đã lưu và bản ghi đã commit — người dùng thấy đúng ảnh mới. Xoá được ảnh cũ
+                // hay không chỉ là chuyện dọn rác, không đáng để làm hỏng request.
+                _logger.LogWarning(ex, "Không xoá được ảnh cũ {StoragePath} sau khi thay ảnh.", storagePath);
+            }
         }
     }
 }

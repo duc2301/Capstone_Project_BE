@@ -6,7 +6,8 @@ using Microsoft.Extensions.Configuration;
 namespace Infrastructure.Adapters.Storage
 {
     // Lưu file lên đĩa local. Gốc lưu trữ lấy từ cấu hình "FileStorage:RootPath",
-    // mặc định <BaseDirectory>/App_Data/uploads. Bố cục: {root}/{projectId}/{folderId}/{guid}{ext}
+    // mặc định <BaseDirectory>/App_Data/uploads. Bố cục thư mục con do tầng nghiệp vụ quyết định
+    // (ICdeStorageKeyBuilder) rồi truyền xuống qua StorageObjectName, giống hệt provider S3.
     public class LocalFileStorageService : IFileStorageService
     {
         private readonly string _root;
@@ -19,19 +20,14 @@ namespace Infrastructure.Adapters.Storage
                 : configured;
         }
 
-        public Task<StoredFile> SaveAsync(
-            Stream content, Guid projectId, Guid folderId, string extension, CancellationToken ct = default)
-            => SaveToPrefixAsync(content, $"{projectId}/{folderId}", extension, ct);
-
-        public async Task<StoredFile> SaveToPrefixAsync(
-            Stream content, string prefix, string extension, CancellationToken ct = default)
+        public async Task<StoredFile> SaveAsync(
+            Stream content, StorageObjectName name, CancellationToken ct = default)
         {
-            var safePrefix = NormalizePrefix(prefix);
+            var safePrefix = StorageKeyComposer.NormalizePrefix(name.Prefix);
             var dir = Path.Combine(_root, Path.Combine(safePrefix.Split('/')));
             Directory.CreateDirectory(dir);
 
-            var ext = NormalizeExt(extension);
-            var fileName = $"{Guid.NewGuid():N}{ext}";
+            var fileName = StorageKeyComposer.BuildLeafName(name.Stem, name.Extension);
             var fullPath = Path.Combine(dir, fileName);
 
             long size;
@@ -108,25 +104,6 @@ namespace Infrastructure.Adapters.Storage
             return full;
         }
 
-        private static string NormalizePrefix(string prefix)
-        {
-            var segments = prefix
-                .Replace('\\', '/')
-                .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Where(s => s != "." && s != "..")
-                .ToArray();
-
-            if (segments.Length == 0)
-                throw new ApiExceptionResponse("Invalid storage prefix.", 400);
-
-            return string.Join('/', segments);
-        }
-
-        private static string NormalizeExt(string ext)
-        {
-            if (string.IsNullOrWhiteSpace(ext)) return string.Empty;
-            ext = ext.Trim().ToLowerInvariant();
-            return ext.StartsWith('.') ? ext : "." + ext;
-        }
+        private static string NormalizeExt(string ext) => StorageKeyComposer.NormalizeExt(ext);
     }
 }

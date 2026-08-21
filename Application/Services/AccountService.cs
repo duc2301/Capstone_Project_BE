@@ -299,6 +299,8 @@ namespace Application.Services
             var entity = await _unitOfWork.AccountRepository.GetByIdAsync(id)
                 ?? throw new ApiExceptionResponse($"Account with ID {id} not found.", 404);
 
+            var previousAvatarPath = entity.AvatarStoragePath;
+
             entity.AvatarStoragePath = await _imageUpload.SaveImageAsync(
                 content, fileName, sizeBytes, $"{AvatarPrefix}/{id}", ct);
             entity.UpdatedAt = DateTime.UtcNow;
@@ -310,6 +312,9 @@ namespace Application.Services
                 detail: $"Cập nhật ảnh đại diện tài khoản '{entity.UserName}'");
 
             await _unitOfWork.CommitAsync();
+
+            // Sau commit: bản ghi đã trỏ sang ảnh mới nên ảnh cũ không còn ai tham chiếu.
+            await _imageUpload.DeleteImageAsync(previousAvatarPath, ct);
 
             return await BuildResponseAsync(entity);
         }

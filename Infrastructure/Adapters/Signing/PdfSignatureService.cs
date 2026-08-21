@@ -30,6 +30,7 @@ namespace Infrastructure.Adapters.Signing
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IFileStorageService _storage;
+        private readonly ICdeStorageKeyBuilder _storageKey;
         private readonly IFolderPermissionService _permission;
         private readonly IOfficeToPdfConverter _officeConverter;
         private readonly ICadToPdfConverter _cadConverter;
@@ -39,6 +40,7 @@ namespace Infrastructure.Adapters.Signing
         public PdfSignatureService(
             IUnitOfWork unitOfWork,
             IFileStorageService storage,
+            ICdeStorageKeyBuilder storageKey,
             IFolderPermissionService permission,
             IOfficeToPdfConverter officeConverter,
             ICadToPdfConverter cadConverter,
@@ -47,6 +49,7 @@ namespace Infrastructure.Adapters.Signing
         {
             _unitOfWork = unitOfWork;
             _storage = storage;
+            _storageKey = storageKey;
             _permission = permission;
             _officeConverter = officeConverter;
             _cadConverter = cadConverter;
@@ -215,7 +218,8 @@ namespace Infrastructure.Adapters.Signing
                     Convert.FromBase64String(transaction.SignerCertificateBase64));
 
                 using var output = new MemoryStream(stampedBytes);
-                var stored = await _storage.SaveAsync(output, folder.ProjectId, fileItem.FolderId, signedExtension);
+                var objectName = await _storageKey.ForDerivedAsync(fileItem.FolderId, DerivedFileKind.Signed, signedExtension);
+                var stored = await _storage.SaveAsync(output, objectName);
 
                 var now = DateTime.UtcNow;
 
