@@ -65,35 +65,36 @@ namespace Application.Services
             return _mapper.Map<IEnumerable<GroupFilePermissionResponseDTO>>(items.Values.ToList());
         }
 
-        public async Task<UserPermissionsViewModelDTO> GetDataForUserPermissionUIAsync(Guid fileItemId, Guid callerAccountId)
+        public async Task<MemberPermissionsViewModelDTO> GetMemberPermissionsAsync(Guid fileItemId, Guid callerAccountId)
         {
-            // Universe = users who can see the file via their group. The caller is excluded so they
-            // cannot deny/kick themselves.
-            var audience = await _unitOfWork.FilePermissionRepository.GetAudienceAccountsByFileItemIdAsync(fileItemId);
+            var file = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
+                ?? throw new ApiExceptionResponse("File not found.", 404);
+
+            // Resolve granting groups per the eval fallback: a group's file override wins (incl. deny);
+            // groups without a file override inherit the owning folder's grant.
+            var fileGrants = await _unitOfWork.FilePermissionRepository.GetActiveGroupGrantsByFileItemIdAsync(fileItemId);
+            var folderGrants = await _unitOfWork.FolderPermissionRepository.GetActiveGroupGrantsByFolderIdAsync(file.FolderId);
+
+            var fileByParticipant = fileGrants.ToDictionary(g => g.ParticipantId);
+
+            var effective = new Dictionary<Guid, GroupGrantDTO>();
+            foreach (var g in fileGrants) effective[g.ParticipantId] = g;                 // present-wins
+            foreach (var g in folderGrants)
+                if (!fileByParticipant.ContainsKey(g.ParticipantId))
+                    effective[g.ParticipantId] = g;                                        // inherit folder
+
+            var viewGrantByParticipant = effective
+                .Where(kv => kv.Value.CanView)
+                .ToDictionary(kv => kv.Key, kv => kv.Value);
+
+            var members = await _unitOfWork.FilePermissionRepository
+                .GetActiveMembersByParticipantIdsAsync(viewGrantByParticipant.Keys.ToList());
             var overrides = await _unitOfWork.FilePermissionRepository.GetActiveAccountOverridesByFileItemIdAsync(fileItemId);
+            var blacklistedIds = overrides.Where(kv => !kv.Value.CanView).Select(kv => kv.Key).ToHashSet();
 
-            var selectedUsers = overrides.Values
-                .Where(fp => fp.AccountId!.Value != callerAccountId)
-                .Select(fp => new UserPermissionResponseDTO
-                {
-                    Id = fp.Id,
-                    AccountId = fp.AccountId!.Value,
-                    UserName = fp.Account?.UserName ?? string.Empty,
-                    Email = fp.Account?.Email ?? string.Empty,
-                    CanView = fp.CanView,
-                    CanEdit = fp.CanEdit,
-                    Status = fp.Status
-                })
-                .ToList();
-
-            var availableUsers = audience
-                .Where(a => !overrides.ContainsKey(a.AccountId) && a.AccountId != callerAccountId)
-                .ToList();
-
-            return new UserPermissionsViewModelDTO
+            return new MemberPermissionsViewModelDTO
             {
-                AvailableUsers = availableUsers,
-                SelectedUsers = selectedUsers
+                Members = PermissionRosterBuilder.Build(viewGrantByParticipant, members, blacklistedIds, callerAccountId)
             };
         }
 
@@ -170,6 +171,85 @@ namespace Application.Services
             var permissions = await _unitOfWork.FilePermissionRepository.GetFilePermissionsByParticipantIdsAsync(dto.Id, updatedParticipantIds);
 
             return _mapper.Map<IEnumerable<GroupFilePermissionResponseDTO>>(permissions);
+        }
+
+        public async Task<IEnumerable<UserPermissionResponseDTO>> BulkUpdateFileUserPermissionsAsync(AddUserPermissionsBulkDTO dto, Guid actorId)
+        {
+            var users = dto.UsersPermission ?? new List<AddUserPermissionDTO>();
+            var removeIds = dto.RemoveAccountIds ?? new List<Guid>();
+
+            if (users.Count == 0 && removeIds.Count == 0)
+                throw new ApiExceptionResponse("No changes provided.", 400);
+
+            // A leader cannot override their own access (mirrors the group UI hiding the caller's group).
+            if (users.Any(u => u.AccountId == actorId) || removeIds.Contains(actorId))
+                throw new ApiExceptionResponse("You cannot change your own permission.", 403);
+
+            var accountIds = users.Select(u => u.AccountId).Union(removeIds).ToList();
+
+            var existing = await _unitOfWork.FilePermissionRepository.GetAccountOverridesByFileItemIdAsync(dto.Id, accountIds);
+
+            var updatedAccountIds = new List<Guid>();
+
+            // Remove = trả tài khoản về kế thừa quyền nhóm (dòng Inactive; đường đọc lọc Active nên bỏ qua).
+            foreach (var accountId in removeIds)
+            {
+                if (existing.TryGetValue(accountId, out var perm))
+                {
+                    PermissionLevelMapper.Apply(perm, PermissionLevel.Inherit, isFile: true);
+                    updatedAccountIds.Add(accountId);
+                }
+            }
+
+            var toCreate = new List<FilePermission>();
+            foreach (var u in users)
+            {
+                if (!existing.TryGetValue(u.AccountId, out var permission))
+                {
+                    permission = new FilePermission
+                    {
+                        Id = Guid.NewGuid(),
+                        FileItemId = dto.Id,
+                        AccountId = u.AccountId
+                    };
+                    toCreate.Add(permission);
+                }
+
+                // Override tài khoản LUÔN dùng ngữ nghĩa isFile:true để mức N là dòng Active CHẶN (đè
+                // quyền nhóm). Nếu lưu Inactive, đường đọc (lọc Active) sẽ bỏ sót lệnh chặn.
+                PermissionLevelMapper.Apply(
+                    permission, PermissionLevelMapper.FromFlags(u.CanView, u.CanEdit), isFile: true);
+                updatedAccountIds.Add(u.AccountId);
+            }
+
+            if (toCreate.Any())
+                await _unitOfWork.Repository<FilePermission>().CreateRangeAsync(toCreate);
+
+            var auditFile = await _unitOfWork.Repository<FileItem>().GetByIdAsync(dto.Id);
+            var auditFolder = auditFile == null
+                ? null
+                : await _unitOfWork.Repository<Folder>().GetByIdAsync(auditFile.FolderId);
+            await _auditLog.LogAsync(
+                Domain.Enum.Audit.LogScope.Project, Domain.Enum.Audit.AuditAction.PermissionChange,
+                nameof(FileItem), dto.Id.ToString(), actorId,
+                detail: $"Cập nhật phân quyền người dùng cho tệp '{auditFile?.Name}': {updatedAccountIds.Distinct().Count()} người",
+                projectId: auditFolder?.ProjectId, folderId: auditFile?.FolderId);
+
+            await _unitOfWork.CommitAsync();
+
+            var rows = await _unitOfWork.FilePermissionRepository
+                .GetAccountOverrideRowsByFileItemIdAsync(dto.Id, updatedAccountIds.Distinct().ToList());
+
+            return rows.Select(fp => new UserPermissionResponseDTO
+            {
+                Id = fp.Id,
+                AccountId = fp.AccountId!.Value,
+                UserName = fp.Account?.UserName ?? string.Empty,
+                Email = fp.Account?.Email ?? string.Empty,
+                CanView = fp.CanView,
+                CanEdit = fp.CanEdit,
+                Status = fp.Status
+            }).ToList();
         }
 
         #endregion

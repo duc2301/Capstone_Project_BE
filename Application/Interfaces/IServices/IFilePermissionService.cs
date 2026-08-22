@@ -13,10 +13,16 @@ namespace Application.Interfaces.IServices
         Task<FilePermissionsViewModelDTO> GetDataForPermissionUIAsync(Guid fileItemId, Guid callerAccountId);
 
         /// <summary>
-        /// Dual-list data for the per-user "Phân quyền" dialog on a file: users in the file's group
-        /// audience without an override (left) vs users with an active per-account override (right).
+        /// Roster for the "Phân quyền thành viên" dialog on a file: every member who has access via a
+        /// group, with their inherited level and whether they are blacklisted on this file.
         /// </summary>
-        Task<UserPermissionsViewModelDTO> GetDataForUserPermissionUIAsync(Guid fileItemId, Guid callerAccountId);
+        Task<MemberPermissionsViewModelDTO> GetMemberPermissionsAsync(Guid fileItemId, Guid callerAccountId);
+
+        /// <summary>
+        /// Bulk blacklist/un-blacklist members on a file (the "add-user" save). A blacklist persists as
+        /// an active blocking (deny) override row; un-blacklisted accounts fall back to the group ACL.
+        /// </summary>
+        Task<IEnumerable<UserPermissionResponseDTO>> BulkUpdateFileUserPermissionsAsync(AddUserPermissionsBulkDTO dto, Guid actorId);
 
         Task<IEnumerable<GroupFilePermissionResponseDTO>> GetActiveParticipantsByFileItemId(Guid fileItemId);
 

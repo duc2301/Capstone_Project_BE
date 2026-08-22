@@ -13,10 +13,17 @@ namespace Application.Interfaces.IServices
         Task<FolderPermissionsViewModelDTO> GetDataForPermissionUIAsync(Guid folderId, Guid callerAccountId);
 
         /// <summary>
-        /// Dual-list data for the per-user "Phân quyền" dialog on a folder: users in the folder's
-        /// group audience without an override (left) vs users with an active per-account override (right).
+        /// Roster for the "Phân quyền thành viên" dialog on a folder: every member who has access via
+        /// a group, with their inherited level and whether they are blacklisted on this folder.
         /// </summary>
-        Task<UserPermissionsViewModelDTO> GetDataForUserPermissionUIAsync(Guid folderId, Guid callerAccountId);
+        Task<MemberPermissionsViewModelDTO> GetMemberPermissionsAsync(Guid folderId, Guid callerAccountId);
+
+        /// <summary>
+        /// Bulk blacklist/un-blacklist members on a folder (the "add-user" save). A blacklist persists
+        /// as an active blocking (deny) override row that applies to the whole subtree; un-blacklisted
+        /// accounts fall back to inheriting the group ACL.
+        /// </summary>
+        Task<IEnumerable<UserPermissionResponseDTO>> BulkUpdateFolderUserPermissionsAsync(AddUserPermissionsBulkDTO dto, Guid actorId);
 
         Task<IEnumerable<GroupFolderPermissionResponseDTO>> GetActiveParticipantsByFolderId(Guid folderId);
 

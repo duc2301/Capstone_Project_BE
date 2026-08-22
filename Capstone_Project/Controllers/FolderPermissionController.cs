@@ -44,6 +44,22 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("Active groups retrieved successfully", result));
         }
 
+        // "Phân quyền thành viên": roster of members with group-inherited access + blacklist state.
+        [HttpGet("{folderId:guid}/user-ui")]
+        public async Task<IActionResult> GetFolderMemberPermissions(Guid folderId)
+        {
+            var result = await _folderPermissionService.GetMemberPermissionsAsync(folderId, User.GetAccountId());
+            return Ok(ApiResponse.Success("Members with permission retrieved successfully", result));
+        }
+
+        // Blacklist / un-blacklist members on a folder (blacklist = usersPermission with canView=false).
+        [HttpPost("add-user")]
+        public async Task<IActionResult> SaveFolderUserPermissions([FromBody] AddUserPermissionsBulkDTO dto)
+        {
+            var result = await _folderPermissionService.BulkUpdateFolderUserPermissionsAsync(dto, User.GetAccountId());
+            return Ok(ApiResponse.Success("User permission updated successfully", result));
+        }
+
         [HttpPost("add-group")]
         public async Task<IActionResult> SaveFolderPermissions([FromBody] AddPermissionsBulkDTO dto)
         {

@@ -4,23 +4,34 @@ using System.Collections.Generic;
 
 namespace Application.DTOs.ResponseDTOs.Permission
 {
-    // Dual-list dữ liệu cho hộp thoại "Phân quyền" theo NGƯỜI DÙNG (kiểu Google Drive).
-    // Dùng chung cho cả file và folder (cùng hình dạng, chỉ khác nguồn dữ liệu):
-    //   - AvailableUsers (trái): user đang trong tầm nhìn nhóm của tài nguyên nhưng CHƯA có override.
-    //   - SelectedUsers  (phải): user đã có override riêng (cấp thêm hoặc chặn) trên tài nguyên này.
-    public class UserPermissionsViewModelDTO
+    // Dữ liệu cho hộp thoại "Phân quyền thành viên" (kiểu blacklist).
+    // Một danh sách PHẲNG mọi thành viên đang có quyền trên tài nguyên NHỜ nhóm của họ, kèm mức quyền
+    // kế thừa từ nhóm và trạng thái bị chặn (blacklist). Leader chỉ có thể CHẶN (thu hồi read/write)
+    // từng thành viên; không cấp quyền cho người ngoài từ đây.
+    public class MemberPermissionsViewModelDTO
     {
-        public List<AccountItem> AvailableUsers { get; set; } = new();            // Left panel
-        public List<UserPermissionResponseDTO> SelectedUsers { get; set; } = new(); // Right panel
+        public List<MemberPermissionItemDTO> Members { get; set; } = new();
     }
 
-    public class AccountItem
+    public class MemberPermissionItemDTO
     {
         public Guid AccountId { get; set; }
         public string UserName { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
+
+        // Nhóm nào đang cấp quyền cho thành viên này trên tài nguyên (để hiển thị nguồn quyền).
+        public List<string> Groups { get; set; } = new();
+
+        // Quyền kế thừa từ nhóm (nguồn = ma trận/phân quyền nhóm). Roster chỉ gồm người có View, nên
+        // InheritedCanView luôn true; InheritedCanEdit = true nếu bất kỳ nhóm nào cho Sửa.
+        public bool InheritedCanView { get; set; }
+        public bool InheritedCanEdit { get; set; }
+
+        // Có dòng override CHẶN đang hoạt động trên chính tài nguyên này (thu hồi read/write).
+        public bool IsBlacklisted { get; set; }
     }
 
+    // Kết quả trả về của đường lưu (giữ nguyên): các dòng override đã đụng tới sau khi lưu.
     public class UserPermissionResponseDTO
     {
         public Guid Id { get; set; }
@@ -30,5 +41,25 @@ namespace Application.DTOs.ResponseDTOs.Permission
         public bool CanView { get; set; }
         public bool CanEdit { get; set; }
         public PermissionStatus Status { get; set; }
+    }
+
+    // ===== Hợp đồng nội bộ repo -> service để dựng roster =====
+
+    // Một dòng cấp quyền nhóm (file hoặc folder) đã resolve, kèm tên nhóm.
+    public class GroupGrantDTO
+    {
+        public Guid ParticipantId { get; set; }
+        public string GroupName { get; set; } = string.Empty;
+        public bool CanView { get; set; }
+        public bool CanEdit { get; set; }
+    }
+
+    // Một thành viên đang hoạt động của một ProjectParticipant (để bung nhóm -> người).
+    public class MemberOfParticipantDTO
+    {
+        public Guid ParticipantId { get; set; }
+        public Guid AccountId { get; set; }
+        public string UserName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
     }
 }

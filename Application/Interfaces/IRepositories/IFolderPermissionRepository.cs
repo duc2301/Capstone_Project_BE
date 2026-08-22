@@ -17,21 +17,30 @@ namespace Application.Interfaces.IRepositories
         Task<IEnumerable<ParticipantItems>> GetAllParticipantsByFolderIdAsync(Guid folderId);
         Task<HashSet<Guid>> GetCallerParticipantIdsByFolderIdAsync(Guid folderId, Guid accountId);
 
-        // ===== Per-account override UI (Google-Drive style) =====
+        // ===== Per-user "Phân quyền thành viên" (blacklist) UI =====
 
         /// <summary>
-        /// Distinct accounts that currently have VIEW access to the folder through their group ACL —
-        /// the population shown in the per-user "Phân quyền" dialog.
+        /// Active group grants on this folder (view-granting rows), one per participant with its level
+        /// and group name — the folder side of the roster resolution.
         /// </summary>
-        Task<List<AccountItem>> GetAudienceAccountsByFolderIdAsync(Guid folderId);
+        Task<List<GroupGrantDTO>> GetActiveGroupGrantsByFolderIdAsync(Guid folderId);
+
+        /// <summary>Active members of the given participants (group -> people), for building the roster.</summary>
+        Task<List<MemberOfParticipantDTO>> GetActiveMembersByParticipantIdsAsync(List<Guid> participantIds);
 
         /// <summary>
-        /// Active per-account override rows on this folder (AccountId-keyed), with the Account
-        /// included, indexed by AccountId — the "selected users" side of the dialog.
+        /// Active per-account override rows on this folder (AccountId-keyed), indexed by AccountId —
+        /// used to flag which roster members are blacklisted.
         /// </summary>
         Task<Dictionary<Guid, FolderPermission>> GetActiveAccountOverridesByFolderIdAsync(Guid folderId);
 
         /// <summary>Existing per-account override rows for the given accounts (tracked, for bulk upsert).</summary>
         Task<Dictionary<Guid, FolderPermission>> GetAccountOverridesByFolderIdAsync(Guid folderId, List<Guid> accountIds);
+
+        /// <summary>
+        /// Per-account override rows for the given accounts, any status, with the Account included
+        /// (no tracking) — used to build the bulk-save response after commit.
+        /// </summary>
+        Task<List<FolderPermission>> GetAccountOverrideRowsByFolderIdAsync(Guid folderId, List<Guid> accountIds);
     }
 }
