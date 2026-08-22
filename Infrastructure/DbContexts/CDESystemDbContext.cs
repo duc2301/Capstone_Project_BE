@@ -159,16 +159,41 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(fp => fp.ProjectParticipantId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // Override riêng theo tài khoản (kiểu Google Drive). Account tham chiếu Restrict để tránh
+            // nhiều đường cascade (xóa Folder đã Cascade các dòng phân quyền của nó).
+            modelBuilder.Entity<FolderPermission>()
+                .HasOne(fp => fp.Account)
+                .WithMany()
+                .HasForeignKey(fp => fp.AccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             modelBuilder.Entity<FolderPermission>(entity =>
             {
                 entity.HasKey(x => x.Id);
 
+                // Mỗi nhóm chỉ 1 dòng / thư mục. Lọc theo dòng nhóm để dòng override tài khoản
+                // (ProjectParticipantId NULL) không rơi vào ràng buộc này.
                 entity.HasIndex(x => new
                 {
                     x.FolderId,
                     x.ProjectParticipantId
                 })
-                .IsUnique();
+                .IsUnique()
+                .HasFilter("\"ProjectParticipantId\" IS NOT NULL");
+
+                // Mỗi tài khoản chỉ 1 dòng override / thư mục (phục vụ upsert khi phân quyền user).
+                entity.HasIndex(x => new
+                {
+                    x.FolderId,
+                    x.AccountId
+                })
+                .IsUnique()
+                .HasFilter("\"AccountId\" IS NOT NULL");
+
+                // Đúng một chủ thể: hoặc nhóm, hoặc tài khoản — không cả hai, không cả không.
+                entity.ToTable(t => t.HasCheckConstraint(
+                    "CK_FolderPermission_OneSubject",
+                    "(\"ProjectParticipantId\" IS NOT NULL) <> (\"AccountId\" IS NOT NULL)"));
             });
 
             // ACL thư mục: xóa File -> xóa các dòng phân quyền của nó.
@@ -185,16 +210,41 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(fp => fp.ProjectParticipantId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // Override riêng theo tài khoản (kiểu Google Drive). Account tham chiếu Restrict để tránh
+            // nhiều đường cascade (xóa File đã Cascade các dòng phân quyền của nó).
+            modelBuilder.Entity<FilePermission>()
+                .HasOne(fp => fp.Account)
+                .WithMany()
+                .HasForeignKey(fp => fp.AccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             modelBuilder.Entity<FilePermission>(entity =>
             {
                 entity.HasKey(x => x.Id);
 
+                // Mỗi nhóm chỉ 1 dòng / file. Lọc theo dòng nhóm để dòng override tài khoản
+                // (ProjectParticipantId NULL) không rơi vào ràng buộc này.
                 entity.HasIndex(x => new
                 {
                     x.FileItemId,
                     x.ProjectParticipantId
                 })
-                .IsUnique();
+                .IsUnique()
+                .HasFilter("\"ProjectParticipantId\" IS NOT NULL");
+
+                // Mỗi tài khoản chỉ 1 dòng override / file (phục vụ upsert khi phân quyền user).
+                entity.HasIndex(x => new
+                {
+                    x.FileItemId,
+                    x.AccountId
+                })
+                .IsUnique()
+                .HasFilter("\"AccountId\" IS NOT NULL");
+
+                // Đúng một chủ thể: hoặc nhóm, hoặc tài khoản — không cả hai, không cả không.
+                entity.ToTable(t => t.HasCheckConstraint(
+                    "CK_FilePermission_OneSubject",
+                    "(\"ProjectParticipantId\" IS NOT NULL) <> (\"AccountId\" IS NOT NULL)"));
             });
 
             modelBuilder.Entity<FileLink>(entity =>

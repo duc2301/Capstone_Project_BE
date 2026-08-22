@@ -76,54 +76,44 @@ namespace Application.Services
 
         public async Task<NotificationPageDTO> GetMyAsync(Guid accountId, NotificationFilterDTO filter)
         {
-            var all = (await _unitOfWork.Repository<Notification>()
-                    .FindAsync(n => n.AccountId == accountId))
-                .OrderByDescending(n => n.SendAt)
-                .ToList();
-
-            var unreadCount = all.Count(n => !n.IsRead);
-            var matched = all.Where(n => Matches(n, filter)).ToList();
-
             var safePage = filter.Page < 1 ? 1 : filter.Page;
-            var safeSize = filter.PageSize < 1 || filter.PageSize > MaxPageSize
+            var safeSize = filter.PageSize < 1
                 ? DefaultPageSize
-                : filter.PageSize;
+                : filter.PageSize > MaxPageSize ? MaxPageSize : filter.PageSize;
+
+            // Chuẩn hoá filter thành biến cục bộ để EF dịch được sang SQL (tránh lọc trong bộ nhớ).
+            var unreadOnly = filter.UnreadOnly == true;
+            var linkType = string.IsNullOrWhiteSpace(filter.LinkType) ? null : filter.LinkType.Trim().ToLower();
+            var from = filter.From.HasValue ? DateTime.SpecifyKind(filter.From.Value, DateTimeKind.Utc) : (DateTime?)null;
+            var to = filter.To.HasValue ? DateTime.SpecifyKind(filter.To.Value, DateTimeKind.Utc) : (DateTime?)null;
+            var search = string.IsNullOrWhiteSpace(filter.Search) ? null : filter.Search.Trim().ToLower();
+
+            var repo = _unitOfWork.Repository<Notification>();
+
+            var (pageItems, total) = await repo.GetPagedAsync(
+                safePage,
+                safeSize,
+                predicate: n => n.AccountId == accountId
+                    && (!unreadOnly || !n.IsRead)
+                    && (linkType == null || (n.LinkType != null && n.LinkType.ToLower() == linkType))
+                    && (from == null || n.SendAt >= from)
+                    && (to == null || n.SendAt < to)
+                    && (search == null
+                        || (n.Message != null && n.Message.ToLower().Contains(search))
+                        || (n.SenderName != null && n.SenderName.ToLower().Contains(search))),
+                orderBy: q => q.OrderByDescending(n => n.SendAt));
+
+            // Số chưa đọc tính trên toàn bộ thông báo của tài khoản, độc lập với filter của trang.
+            var unreadCount = await repo.CountAsync(n => n.AccountId == accountId && !n.IsRead);
 
             return new NotificationPageDTO
             {
-                Items = matched.Skip((safePage - 1) * safeSize).Take(safeSize).Select(ToDto).ToList(),
-                Total = matched.Count,
+                Items = pageItems.Select(ToDto).ToList(),
+                Total = total,
                 UnreadCount = unreadCount,
                 Page = safePage,
                 PageSize = safeSize
             };
-        }
-
-        private static bool Matches(Notification noti, NotificationFilterDTO filter)
-        {
-            if (filter.UnreadOnly == true && noti.IsRead) return false;
-
-            if (!string.IsNullOrWhiteSpace(filter.LinkType)
-                && !string.Equals(noti.LinkType, filter.LinkType, StringComparison.OrdinalIgnoreCase))
-                return false;
-
-            if (filter.From.HasValue
-                && noti.SendAt < DateTime.SpecifyKind(filter.From.Value, DateTimeKind.Utc))
-                return false;
-
-            if (filter.To.HasValue
-                && noti.SendAt >= DateTime.SpecifyKind(filter.To.Value, DateTimeKind.Utc))
-                return false;
-
-            if (!string.IsNullOrWhiteSpace(filter.Search))
-            {
-                var term = filter.Search.Trim();
-                var inMessage = noti.Message?.Contains(term, StringComparison.OrdinalIgnoreCase) == true;
-                var inSender = noti.SenderName?.Contains(term, StringComparison.OrdinalIgnoreCase) == true;
-                if (!inMessage && !inSender) return false;
-            }
-
-            return true;
         }
 
         public async Task<int> MarkAllReadAsync(Guid accountId)

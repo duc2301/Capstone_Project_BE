@@ -35,18 +35,22 @@ namespace Application.Services
 
         public async Task<PagedResult<ContractPackageResponseDTO>> GetAllAsync(int page, int pageSize)
         {
-            var packages = (await _unitOfWork.Repository<ContractPackage>().GetAllAsync(ProjectInclude))
-                .OrderByDescending(p => p.CreatedAt)
-                .ToList();
-
             var safePage = page < 1 ? 1 : page;
-            var safeSize = pageSize < 1 || pageSize > MaxPackagePageSize ? DefaultPackagePageSize : pageSize;
-            var pagePackages = packages.Skip((safePage - 1) * safeSize).Take(safeSize).ToList();
+            var safeSize = pageSize < 1
+                ? DefaultPackagePageSize
+                : pageSize > MaxPackagePageSize ? MaxPackagePageSize : pageSize;
+
+            var (pagePackages, totalCount) = await _unitOfWork.Repository<ContractPackage>()
+                .GetPagedAsync(
+                    safePage,
+                    safeSize,
+                    orderBy: q => q.OrderByDescending(p => p.CreatedAt),
+                    includeProperties: ProjectInclude);
 
             var result = _mapper.Map<List<ContractPackageResponseDTO>>(pagePackages);
             await AttachAssignmentsAsync(result);
 
-            return new PagedResult<ContractPackageResponseDTO>(result, packages.Count, safePage, safeSize);
+            return new PagedResult<ContractPackageResponseDTO>(result, totalCount, safePage, safeSize);
         }
 
         public async Task<IEnumerable<ContractPackageResponseDTO>> GetMineAsync(Guid accountId)

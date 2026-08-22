@@ -29,13 +29,16 @@ namespace Application.Services
 
         public async Task<PagedResult<OrganizationResponseDTO>> GetAllAsync(int page, int pageSize)
         {
-            var entities = (await _unitOfWork.Repository<Organization>().GetAllAsync())
-                .OrderByDescending(o => o.CreatedAt)
-                .ToList();
-
             var safePage = page < 1 ? 1 : page;
-            var safeSize = pageSize < 1 || pageSize > MaxOrganizationPageSize ? DefaultOrganizationPageSize : pageSize;
-            var pageEntities = entities.Skip((safePage - 1) * safeSize).Take(safeSize).ToList();
+            var safeSize = pageSize < 1
+                ? DefaultOrganizationPageSize
+                : pageSize > MaxOrganizationPageSize ? MaxOrganizationPageSize : pageSize;
+
+            var (pageEntities, totalCount) = await _unitOfWork.Repository<Organization>()
+                .GetPagedAsync(
+                    safePage,
+                    safeSize,
+                    orderBy: q => q.OrderByDescending(o => o.CreatedAt));
 
             var result = _mapper.Map<List<OrganizationResponseDTO>>(pageEntities);
             var orgIds = result.Select(dto => dto.Id).ToList();
@@ -55,7 +58,7 @@ namespace Application.Services
                 dto.ParticipatingProjectsCount = counts.GetValueOrDefault(dto.Id);
             }
 
-            return new PagedResult<OrganizationResponseDTO>(result, entities.Count, safePage, safeSize);
+            return new PagedResult<OrganizationResponseDTO>(result, totalCount, safePage, safeSize);
         }
 
         public async Task<OrganizationResponseDTO?> GetByIdAsync(Guid id)

@@ -133,5 +133,77 @@ namespace Infrastructure.Repositories
                 .AsNoTracking()
                 .SingleOrDefaultAsync();
         }
+
+        // ===== Per-user "Phân quyền thành viên" (blacklist) UI =====
+
+        public async Task<List<GroupGrantDTO>> GetActiveGroupGrantsByFileItemIdAsync(Guid fileItemId)
+        {
+            // ALL active file group rows (incl. denies), so present-wins can be resolved in the service.
+            return await _context.FilePermissions
+                .Where(fp => fp.FileItemId == fileItemId
+                          && fp.Status == PermissionStatus.Active
+                          && fp.ProjectParticipant != null
+                          && fp.ProjectParticipant.Status == ProjectParticipantStatus.Active)
+                .Select(fp => new GroupGrantDTO
+                {
+                    ParticipantId = fp.ProjectParticipantId!.Value,
+                    GroupName = fp.ProjectParticipant!.Group.Name,
+                    CanView = fp.CanView,
+                    CanEdit = fp.CanEdit
+                })
+                .AsNoTracking()
+                .ToListAsync();
+        }
+
+        public async Task<List<MemberOfParticipantDTO>> GetActiveMembersByParticipantIdsAsync(List<Guid> participantIds)
+        {
+            if (participantIds.Count == 0) return new List<MemberOfParticipantDTO>();
+
+            return await _context.ProjectParticipants
+                .Where(pp => participantIds.Contains(pp.Id))
+                .SelectMany(pp => pp.Group.Members
+                    .Where(m => m.Status == GroupMemberStatus.Active)
+                    .Select(m => new MemberOfParticipantDTO
+                    {
+                        ParticipantId = pp.Id,
+                        AccountId = m.AccountId,
+                        UserName = m.Account.UserName,
+                        Email = m.Account.Email
+                    }))
+                .AsNoTracking()
+                .ToListAsync();
+        }
+
+        public async Task<Dictionary<Guid, FilePermission>> GetActiveAccountOverridesByFileItemIdAsync(Guid fileItemId)
+        {
+            return await _context.FilePermissions
+                .Where(fp => fp.FileItemId == fileItemId
+                          && fp.AccountId != null
+                          && fp.Status == PermissionStatus.Active)
+                .Include(fp => fp.Account)
+                .AsNoTracking()
+                .ToDictionaryAsync(fp => fp.AccountId!.Value, fp => fp);
+        }
+
+        public async Task<Dictionary<Guid, FilePermission>> GetAccountOverridesByFileItemIdAsync(Guid fileItemId, List<Guid> accountIds)
+        {
+            return await _context.FilePermissions
+                .Where(fp => fp.FileItemId == fileItemId
+                          && fp.AccountId != null
+                          && accountIds.Contains(fp.AccountId.Value))
+                .ToDictionaryAsync(fp => fp.AccountId!.Value, fp => fp);
+        }
+
+        public async Task<List<FilePermission>> GetAccountOverrideRowsByFileItemIdAsync(Guid fileItemId, List<Guid> accountIds)
+        {
+            return await _context.FilePermissions
+                .Where(fp => fp.FileItemId == fileItemId
+                          && fp.AccountId != null
+                          && accountIds.Contains(fp.AccountId.Value))
+                .Include(fp => fp.Account)
+                .AsNoTracking()
+                .ToListAsync();
+        }
+
     }
 }

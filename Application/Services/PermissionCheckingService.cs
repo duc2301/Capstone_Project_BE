@@ -254,7 +254,9 @@ namespace Application.Services
 
         /// <summary>
         /// Allowed when: system admin, the project manager, or ProjectAdmin (PM) of the folder's
-        /// project, or the user's active FolderPermission grants the requested flag.
+        /// project; otherwise a per-account override (this folder or the nearest ancestor with one)
+        /// decides — winning over the group ACL; otherwise the user's active FolderPermission (group)
+        /// grants the requested flag.
         /// </summary>
         private async Task<bool> EvaluateFolderAsync(
             Guid folderId, Guid accountId, Func<FolderPermission, bool> hasPermission)
@@ -263,6 +265,23 @@ namespace Application.Services
             if (await _permissionCheckingRepository.IsProjectManagerByFolderAsync(folderId, accountId)) return true;
             if (await _permissionCheckingRepository.HasProjectAdminAccessByFolderAsync(folderId, accountId)) return true;
 
+            // Per-account override (grant/deny) wins over the group ACL. Nearest ancestor with an
+            // override decides, so a folder-level deny hides the whole subtree.
+            var accountOverride = await _permissionCheckingRepository
+                .GetNearestFolderAccountOverrideByFolderAsync(folderId, accountId);
+            if (accountOverride != null) return hasPermission(accountOverride);
+
+            return await EvaluateFolderGroupAsync(folderId, accountId, hasPermission);
+        }
+
+        /// <summary>
+        /// Group-only folder ACL, with the full-access bypass and the per-account override layer
+        /// already resolved by the caller. Kept separate so the file fallback does not re-run the
+        /// bypass checks or the ancestor override walk it already performed.
+        /// </summary>
+        private async Task<bool> EvaluateFolderGroupAsync(
+            Guid folderId, Guid accountId, Func<FolderPermission, bool> hasPermission)
+        {
             var permission = await _permissionCheckingRepository
                 .GetUserFolderPermissionAsync(folderId, accountId);
 
@@ -273,9 +292,13 @@ namespace Application.Services
 
         /// <summary>
         /// Full-access bypass first (system admin / project manager / PM of the file's project).
-        /// Then a FilePermission record acts as a per-file override: present -> it decides
-        /// (present-but-denying wins); absent -> defer to the owning folder's ACL, the one that IS
-        /// bootstrapped.
+        /// Then the per-account override layer (Google-Drive style) — the file's own account override,
+        /// then the nearest ancestor folder's account override — decides and wins over the group ACL.
+        /// Then a group FilePermission record acts as a per-file override: present -> it decides
+        /// (present-but-denying wins); absent -> defer to the owning folder's group ACL, the one that
+        /// IS bootstrapped.
+        /// Note: the additive view grants (FileViewGrant / issue stakeholder) are resolved before this
+        /// method in CanViewFileAsync/HasViewFileAsync, so a required signer is never hidden by a deny.
         /// </summary>
         private async Task<FileEval> EvaluateFileAsync(
             Guid fileItemId,
@@ -289,6 +312,18 @@ namespace Application.Services
             if (await _permissionCheckingRepository.HasProjectAdminAccessByFileAsync(fileItemId, accountId))
                 return FileEval.Allowed;
 
+            // Per-account override wins over the group ACL: the file's own override first, then the
+            // nearest ancestor folder that carries one (so a folder deny hides files inside it too).
+            var fileAccountOverride = await _permissionCheckingRepository
+                .GetUserFileAccountOverrideAsync(fileItemId, accountId);
+            if (fileAccountOverride != null)
+                return hasFilePermission(fileAccountOverride) ? FileEval.Allowed : FileEval.Denied;
+
+            var folderAccountOverride = await _permissionCheckingRepository
+                .GetNearestFolderAccountOverrideByFileAsync(fileItemId, accountId);
+            if (folderAccountOverride != null)
+                return hasFolderPermission(folderAccountOverride) ? FileEval.Allowed : FileEval.Denied;
+
             var filePermission = await _permissionCheckingRepository
                 .GetUserFilePermissionAsync(fileItemId, accountId);
 
@@ -298,7 +333,9 @@ namespace Application.Services
             var fileItem = await _permissionCheckingRepository.GetFileItemAsync(fileItemId);
             if (fileItem == null) return FileEval.NotFound;
 
-            return await EvaluateFolderAsync(fileItem.FolderId, accountId, hasFolderPermission)
+            // Bypass and the account-override layer are already resolved above, so fall back to the
+            // group-only folder ACL to avoid re-running them.
+            return await EvaluateFolderGroupAsync(fileItem.FolderId, accountId, hasFolderPermission)
                 ? FileEval.Allowed : FileEval.Denied;
         }
 

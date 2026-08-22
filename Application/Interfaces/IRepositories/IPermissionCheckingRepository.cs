@@ -20,6 +20,29 @@ namespace Application.Interfaces.IRepositories
         /// </summary>
         Task<FilePermission?> GetUserFilePermissionAsync(Guid fileItemId, Guid accountId);
 
+        // ===== Per-account overrides (Google-Drive style user grant/deny) =====
+        // These target FilePermission/FolderPermission rows keyed by AccountId (not a group).
+        // An active row is an OVERRIDE that decides on its own: CanView=false = an explicit deny
+        // that wins over the group ACL. Absent = no opinion (fall through to the group ACL).
+
+        /// <summary>
+        /// The account's own active override row on this file (AccountId-keyed), or null.
+        /// </summary>
+        Task<FilePermission?> GetUserFileAccountOverrideAsync(Guid fileItemId, Guid accountId);
+
+        /// <summary>
+        /// Walking up from the file's owning folder (inclusive), the nearest folder that carries an
+        /// active per-account override for this user, or null. Lets a folder-level grant/deny apply
+        /// to the whole subtree, including files added later.
+        /// </summary>
+        Task<FolderPermission?> GetNearestFolderAccountOverrideByFileAsync(Guid fileItemId, Guid accountId);
+
+        /// <summary>
+        /// Walking up from this folder (inclusive), the nearest folder that carries an active
+        /// per-account override for this user, or null.
+        /// </summary>
+        Task<FolderPermission?> GetNearestFolderAccountOverrideByFolderAsync(Guid folderId, Guid accountId);
+
         // ===== Project-admin (PM) full access =====
         // Reimplemented here rather than reused from FolderTreeRepository so the permission module
         // owns its own data access (FolderTreeService keeps its own copies of these queries).
