@@ -27,7 +27,14 @@ namespace Application.DTOs.ResponseDTOs.Permission
         public bool InheritedCanView { get; set; }
         public bool InheritedCanEdit { get; set; }
 
-        // Có dòng override CHẶN đang hoạt động trên chính tài nguyên này (thu hồi read/write).
+        // Mức override riêng của tài khoản trên CHÍNH tài nguyên này (điều khiển selector trên UI):
+        //   "None"    = không có override -> kế thừa quyền nhóm
+        //   "View"    = cấp Xem riêng     (override CanView=true, CanEdit=false)
+        //   "Edit"    = cấp Sửa riêng     (override CanView=true, CanEdit=true)
+        //   "Blocked" = chặn              (override CanView=false)
+        public string OverrideLevel { get; set; } = "None";
+
+        // Tiện ích tương thích ngược: = (OverrideLevel == "Blocked").
         public bool IsBlacklisted { get; set; }
     }
 

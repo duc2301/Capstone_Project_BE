@@ -1,4 +1,5 @@
 using Application.DTOs.ResponseDTOs.Permission;
+using Domain.Entities;
 
 namespace Application.Services
 {
@@ -12,7 +13,7 @@ namespace Application.Services
         public static List<MemberPermissionItemDTO> Build(
             Dictionary<Guid, GroupGrantDTO> viewGrantByParticipant,
             List<MemberOfParticipantDTO> members,
-            HashSet<Guid> blacklistedAccountIds,
+            Dictionary<Guid, IPermissionAcl> overrideByAccount,
             Guid callerAccountId)
         {
             return members
@@ -26,6 +27,8 @@ namespace Application.Services
                         .ToList();
                     var first = g.First();
 
+                    var overrideLevel = ResolveOverrideLevel(overrideByAccount, first.AccountId);
+
                     return new MemberPermissionItemDTO
                     {
                         AccountId = first.AccountId,
@@ -34,11 +37,22 @@ namespace Application.Services
                         Groups = memberGrants.Select(x => x.GroupName).Distinct().ToList(),
                         InheritedCanView = true,                          // roster = chỉ người có View
                         InheritedCanEdit = memberGrants.Any(x => x.CanEdit),
-                        IsBlacklisted = blacklistedAccountIds.Contains(first.AccountId)
+                        OverrideLevel = overrideLevel,
+                        IsBlacklisted = overrideLevel == "Blocked"
                     };
                 })
                 .OrderBy(x => x.UserName)
                 .ToList();
+        }
+
+        // Dịch dòng override (nếu có) sang mức hiển thị trên UI. Không có dòng = "None" (kế thừa nhóm).
+        private static string ResolveOverrideLevel(Dictionary<Guid, IPermissionAcl> overrideByAccount, Guid accountId)
+        {
+            if (!overrideByAccount.TryGetValue(accountId, out var acl))
+                return "None";
+            if (!acl.CanView)
+                return "Blocked";
+            return acl.CanEdit ? "Edit" : "View";
         }
     }
 }

@@ -90,11 +90,11 @@ namespace Application.Services
             var members = await _unitOfWork.FilePermissionRepository
                 .GetActiveMembersByParticipantIdsAsync(viewGrantByParticipant.Keys.ToList());
             var overrides = await _unitOfWork.FilePermissionRepository.GetActiveAccountOverridesByFileItemIdAsync(fileItemId);
-            var blacklistedIds = overrides.Where(kv => !kv.Value.CanView).Select(kv => kv.Key).ToHashSet();
+            var overrideByAccount = overrides.ToDictionary(kv => kv.Key, kv => (IPermissionAcl)kv.Value);
 
             return new MemberPermissionsViewModelDTO
             {
-                Members = PermissionRosterBuilder.Build(viewGrantByParticipant, members, blacklistedIds, callerAccountId)
+                Members = PermissionRosterBuilder.Build(viewGrantByParticipant, members, overrideByAccount, callerAccountId)
             };
         }
 
