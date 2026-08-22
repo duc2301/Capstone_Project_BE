@@ -30,6 +30,7 @@ namespace Application.Services
         private readonly INotificationService _notification;
         private readonly IIssueBroadcaster _issueBroadcaster;
         private readonly IFileStorageService _storage;
+        private readonly ICdeStorageKeyBuilder _storageKey;
         // Data-only folder-tree access (project existence, folder names). Permission decisions go
         // through _permission.
         private readonly IFolderTreeRepository _folderTreeRepository;
@@ -45,6 +46,7 @@ namespace Application.Services
             INotificationService notification,
             IIssueBroadcaster issueBroadcaster,
             IFileStorageService storage,
+            ICdeStorageKeyBuilder storageKey,
             IFolderTreeRepository folderTreeRepository,
             IPermissionCheckingService permission,
             IAuditLogService auditLog,
@@ -58,6 +60,7 @@ namespace Application.Services
             _notification = notification;
             _issueBroadcaster = issueBroadcaster;
             _storage = storage;
+            _storageKey = storageKey;
             _folderTreeRepository = folderTreeRepository;
             _permission = permission;
             _projectFlow = projectFlow;
@@ -897,8 +900,8 @@ namespace Application.Services
                 throw new ApiExceptionResponse("Issue has no linked file to store attachment.", 400);
             }
 
-            var extension = Path.GetExtension(fileName);
-            var stored = await _storage.SaveAsync(content, folder.ProjectId, folder.Id, extension);
+            var objectName = await _storageKey.ForIssueAttachmentAsync(folder.Id, issueId, fileName);
+            var stored = await _storage.SaveAsync(content, objectName);
 
             var attachment = new IssueAttachment
             {

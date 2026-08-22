@@ -84,6 +84,8 @@ namespace Application.Services
             var account = await _unitOfWork.AccountRepository.GetByIdAsync(accountId)
                 ?? throw new ApiExceptionResponse("Account not found.", 404);
 
+            var previousAvatarPath = account.AvatarStoragePath;
+
             account.AvatarStoragePath = await _imageUpload.SaveImageAsync(
                 content, fileName, sizeBytes, $"{AvatarPrefix}/{accountId}", ct);
             account.UpdatedAt = DateTime.UtcNow;
@@ -95,6 +97,9 @@ namespace Application.Services
                 detail: "Cập nhật ảnh đại diện cá nhân");
 
             await _unitOfWork.CommitAsync();
+
+            // Sau commit: bản ghi đã trỏ sang ảnh mới nên ảnh cũ không còn ai tham chiếu.
+            await _imageUpload.DeleteImageAsync(previousAvatarPath, ct);
 
             return await BuildAsync(account);
         }

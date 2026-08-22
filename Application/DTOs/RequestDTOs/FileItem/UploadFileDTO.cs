@@ -24,5 +24,9 @@ namespace Application.DTOs.RequestDTOs.FileItem
         public string? NamingSelections { get; set; }
 
         public bool BypassNamingConvention { get; set; }
+
+        // Trùng tên trong thư mục đích thì làm gì. Bỏ trống = chưa hỏi người dùng -> BE từ chối (409)
+        // chứ KHÔNG tự lên phiên bản: đè lên tài liệu của người khác phải là một lựa chọn có ý thức.
+        public UploadDuplicateAction DuplicateAction { get; set; } = UploadDuplicateAction.None;
     }
 }

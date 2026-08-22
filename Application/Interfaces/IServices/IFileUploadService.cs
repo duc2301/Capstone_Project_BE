@@ -13,6 +13,12 @@ namespace Application.Interfaces.IServices
             UploadFileDTO dto, Stream content, string originalFileName, Guid actorId, bool isSystemAdmin,
             CancellationToken ct = default);
 
+        // Hỏi TRƯỚC khi tải bytes: tên tài liệu này còn trống không, bận thì bận ở đâu, và người dùng
+        // còn lựa chọn nào (lên phiên bản / tách tài liệu riêng kèm tên gợi ý). Không ghi gì.
+        Task<NameAvailabilityDTO> CheckNameAvailabilityAsync(
+            Guid folderId, string name, string format, bool bypassNamingConvention,
+            Guid actorId, bool isSystemAdmin, CancellationToken ct = default);
+
         // Tải file về: kiểm tra quyền Download rồi mở luồng đọc phiên bản hiện hành.
         Task<DownloadFileResult> OpenDownloadAsync(Guid fileItemId, Guid actorId, CancellationToken ct = default);
 

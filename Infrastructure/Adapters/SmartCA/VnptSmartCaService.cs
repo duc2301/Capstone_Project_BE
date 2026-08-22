@@ -36,6 +36,7 @@ namespace Infrastructure.Adapters.SmartCA
         private readonly IPdfSignatureService _pdfSignatureService;
         private readonly IApprovalService _approvalService;
         private readonly IFileStorageService _storage;
+        private readonly ICdeStorageKeyBuilder _storageKey;
         private readonly INotificationService _notification;
         private readonly IApprovalRealtimeNotifier _approvalRealtime;
         private readonly VnptSmartCaOptions _options;
@@ -54,6 +55,7 @@ namespace Infrastructure.Adapters.SmartCA
             IPdfSignatureService pdfSignatureService,
             IApprovalService approvalService,
             IFileStorageService storage,
+            ICdeStorageKeyBuilder storageKey,
             INotificationService notification,
             IApprovalRealtimeNotifier approvalRealtime,
             IOptions<VnptSmartCaOptions> options,
@@ -66,6 +68,7 @@ namespace Infrastructure.Adapters.SmartCA
             _pdfSignatureService = pdfSignatureService;
             _approvalService = approvalService;
             _storage = storage;
+            _storageKey = storageKey;
             _notification = notification;
             _approvalRealtime = approvalRealtime;
             _options = options.Value;
@@ -196,7 +199,8 @@ namespace Infrastructure.Adapters.SmartCA
             }
 
             using var preparedStream = new MemoryStream(prepared.PreparedPdfBytes);
-            var storedPrepared = await _storage.SaveAsync(preparedStream, context.Folder.ProjectId, context.FileItem.FolderId, ".pdf");
+            var preparedName = await _storageKey.ForDerivedAsync(context.FileItem.FolderId, DerivedFileKind.Prepared, ".pdf");
+            var storedPrepared = await _storage.SaveAsync(preparedStream, preparedName);
 
             var dataToBeSigned = Convert.ToHexString(prepared.HashToSign).ToLowerInvariant();
 
