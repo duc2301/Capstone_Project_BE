@@ -14,6 +14,9 @@ namespace Application.Interfaces.IRepositories
             Expression<Func<T, bool>>? predicate = null,
             Func<IQueryable<T>, IOrderedQueryable<T>>? orderBy = null,
             string includeProperties = "");
+
+        // Đếm ở tầng DB (COUNT), không nạp bản ghi vào bộ nhớ.
+        Task<int> CountAsync(Expression<Func<T, bool>>? predicate = null);
         Task<T?> GetByIdAsync(Guid? id);
         Task CreateAsync(T entity);
         void Update(T entity);

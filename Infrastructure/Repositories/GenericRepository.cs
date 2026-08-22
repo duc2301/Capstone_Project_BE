@@ -86,6 +86,14 @@ namespace Infrastructure.Repositories
             return (items, totalCount);
         }
 
+        public async Task<int> CountAsync(Expression<Func<T, bool>>? predicate = null)
+        {
+            IQueryable<T> query = _context.Set<T>();
+            if (predicate != null)
+                query = query.Where(predicate);
+            return await query.CountAsync();
+        }
+
         public async Task<T?> GetByIdAsync(Guid? id)
         {
             return await _context.Set<T>().FindAsync(id);
