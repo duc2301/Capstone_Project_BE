@@ -60,6 +60,38 @@ namespace Application.Services
             return _mapper.Map<IEnumerable<GroupFolderPermissionResponseDTO>>(items.Values.ToList());
         }
 
+        public async Task<UserPermissionsViewModelDTO> GetDataForUserPermissionUIAsync(Guid folderId, Guid callerAccountId)
+        {
+            // Universe = users who can see the folder via their group. The caller is excluded so they
+            // cannot deny/kick themselves.
+            var audience = await _unitOfWork.FolderPermissionRepository.GetAudienceAccountsByFolderIdAsync(folderId);
+            var overrides = await _unitOfWork.FolderPermissionRepository.GetActiveAccountOverridesByFolderIdAsync(folderId);
+
+            var selectedUsers = overrides.Values
+                .Where(fp => fp.AccountId!.Value != callerAccountId)
+                .Select(fp => new UserPermissionResponseDTO
+                {
+                    Id = fp.Id,
+                    AccountId = fp.AccountId!.Value,
+                    UserName = fp.Account?.UserName ?? string.Empty,
+                    Email = fp.Account?.Email ?? string.Empty,
+                    CanView = fp.CanView,
+                    CanEdit = fp.CanEdit,
+                    Status = fp.Status
+                })
+                .ToList();
+
+            var availableUsers = audience
+                .Where(a => !overrides.ContainsKey(a.AccountId) && a.AccountId != callerAccountId)
+                .ToList();
+
+            return new UserPermissionsViewModelDTO
+            {
+                AvailableUsers = availableUsers,
+                SelectedUsers = selectedUsers
+            };
+        }
+
         #endregion
 
         #region Create/Update permissions theo bulk

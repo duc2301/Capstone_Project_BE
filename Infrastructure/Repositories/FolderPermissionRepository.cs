@@ -136,5 +136,61 @@ namespace Infrastructure.Repositories
 
             return participantIds.ToHashSet();
         }
+
+        // ===== Per-account override UI (Google-Drive style) =====
+
+        public async Task<List<AccountItem>> GetAudienceAccountsByFolderIdAsync(Guid folderId)
+        {
+            var viewParticipantIds = await _context.FolderPermissions
+                .Where(fp => fp.FolderId == folderId
+                          && fp.Status == PermissionStatus.Active
+                          && fp.CanView
+                          && fp.ProjectParticipant != null
+                          && fp.ProjectParticipant.Status == ProjectParticipantStatus.Active)
+                .Select(fp => fp.ProjectParticipantId!.Value)
+                .Distinct()
+                .ToListAsync();
+
+            return await GetAccountsByParticipantIdsAsync(viewParticipantIds);
+        }
+
+        public async Task<Dictionary<Guid, FolderPermission>> GetActiveAccountOverridesByFolderIdAsync(Guid folderId)
+        {
+            return await _context.FolderPermissions
+                .Where(fp => fp.FolderId == folderId
+                          && fp.AccountId != null
+                          && fp.Status == PermissionStatus.Active)
+                .Include(fp => fp.Account)
+                .AsNoTracking()
+                .ToDictionaryAsync(fp => fp.AccountId!.Value, fp => fp);
+        }
+
+        public async Task<Dictionary<Guid, FolderPermission>> GetAccountOverridesByFolderIdAsync(Guid folderId, List<Guid> accountIds)
+        {
+            return await _context.FolderPermissions
+                .Where(fp => fp.FolderId == folderId
+                          && fp.AccountId != null
+                          && accountIds.Contains(fp.AccountId.Value))
+                .ToDictionaryAsync(fp => fp.AccountId!.Value, fp => fp);
+        }
+
+        private async Task<List<AccountItem>> GetAccountsByParticipantIdsAsync(List<Guid> participantIds)
+        {
+            if (participantIds.Count == 0) return new List<AccountItem>();
+
+            var accounts = await _context.ProjectParticipants
+                .Where(pp => participantIds.Contains(pp.Id))
+                .SelectMany(pp => pp.Group.Members
+                    .Where(m => m.Status == GroupMemberStatus.Active)
+                    .Select(m => m.Account))
+                .Select(a => new { a.Id, a.UserName, a.Email })
+                .Distinct()
+                .AsNoTracking()
+                .ToListAsync();
+
+            return accounts
+                .Select(a => new AccountItem { AccountId = a.Id, UserName = a.UserName, Email = a.Email })
+                .ToList();
+        }
     }
 }

@@ -133,5 +133,96 @@ namespace Infrastructure.Repositories
                 .AsNoTracking()
                 .SingleOrDefaultAsync();
         }
+
+        // ===== Per-account override UI (Google-Drive style) =====
+
+        public async Task<List<AccountItem>> GetAudienceAccountsByFileItemIdAsync(Guid fileItemId)
+        {
+            var folderId = await _context.FileItems
+                .Where(fi => fi.Id == fileItemId)
+                .Select(fi => (Guid?)fi.FolderId)
+                .FirstOrDefaultAsync();
+            if (folderId == null) return new List<AccountItem>();
+
+            // Groups whose file-level override is PRESENT (grant or deny) — for these the folder ACL
+            // is ignored (present-wins), mirroring EvaluateFileAsync.
+            var fileOverrideParticipantIds = (await _context.FilePermissions
+                .Where(fp => fp.FileItemId == fileItemId
+                          && fp.Status == PermissionStatus.Active
+                          && fp.ProjectParticipant != null
+                          && fp.ProjectParticipant.Status == ProjectParticipantStatus.Active)
+                .Select(fp => fp.ProjectParticipantId!.Value)
+                .Distinct()
+                .ToListAsync())
+                .ToHashSet();
+
+            // Groups granted VIEW via the file override.
+            var fileGrantParticipantIds = await _context.FilePermissions
+                .Where(fp => fp.FileItemId == fileItemId
+                          && fp.Status == PermissionStatus.Active
+                          && fp.CanView
+                          && fp.ProjectParticipant != null
+                          && fp.ProjectParticipant.Status == ProjectParticipantStatus.Active)
+                .Select(fp => fp.ProjectParticipantId!.Value)
+                .Distinct()
+                .ToListAsync();
+
+            // Groups granted VIEW via the owning folder (used only where no file override exists).
+            var folderGrantParticipantIds = await _context.FolderPermissions
+                .Where(fp => fp.FolderId == folderId.Value
+                          && fp.Status == PermissionStatus.Active
+                          && fp.CanView
+                          && fp.ProjectParticipant != null
+                          && fp.ProjectParticipant.Status == ProjectParticipantStatus.Active)
+                .Select(fp => fp.ProjectParticipantId!.Value)
+                .Distinct()
+                .ToListAsync();
+
+            var viewParticipantIds = fileGrantParticipantIds
+                .Concat(folderGrantParticipantIds.Where(id => !fileOverrideParticipantIds.Contains(id)))
+                .Distinct()
+                .ToList();
+
+            return await GetAccountsByParticipantIdsAsync(viewParticipantIds);
+        }
+
+        public async Task<Dictionary<Guid, FilePermission>> GetActiveAccountOverridesByFileItemIdAsync(Guid fileItemId)
+        {
+            return await _context.FilePermissions
+                .Where(fp => fp.FileItemId == fileItemId
+                          && fp.AccountId != null
+                          && fp.Status == PermissionStatus.Active)
+                .Include(fp => fp.Account)
+                .AsNoTracking()
+                .ToDictionaryAsync(fp => fp.AccountId!.Value, fp => fp);
+        }
+
+        public async Task<Dictionary<Guid, FilePermission>> GetAccountOverridesByFileItemIdAsync(Guid fileItemId, List<Guid> accountIds)
+        {
+            return await _context.FilePermissions
+                .Where(fp => fp.FileItemId == fileItemId
+                          && fp.AccountId != null
+                          && accountIds.Contains(fp.AccountId.Value))
+                .ToDictionaryAsync(fp => fp.AccountId!.Value, fp => fp);
+        }
+
+        private async Task<List<AccountItem>> GetAccountsByParticipantIdsAsync(List<Guid> participantIds)
+        {
+            if (participantIds.Count == 0) return new List<AccountItem>();
+
+            var accounts = await _context.ProjectParticipants
+                .Where(pp => participantIds.Contains(pp.Id))
+                .SelectMany(pp => pp.Group.Members
+                    .Where(m => m.Status == GroupMemberStatus.Active)
+                    .Select(m => m.Account))
+                .Select(a => new { a.Id, a.UserName, a.Email })
+                .Distinct()
+                .AsNoTracking()
+                .ToListAsync();
+
+            return accounts
+                .Select(a => new AccountItem { AccountId = a.Id, UserName = a.UserName, Email = a.Email })
+                .ToList();
+        }
     }
 }
