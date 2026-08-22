@@ -49,6 +49,74 @@ namespace Infrastructure.Repositories
                 .FirstOrDefaultAsync();
         }
 
+        // ===== Per-account overrides (Google-Drive style user grant/deny) =====
+
+        public async Task<FilePermission?> GetUserFileAccountOverrideAsync(Guid fileItemId, Guid accountId)
+        {
+            return await _context.FilePermissions
+                .Where(fp => fp.FileItemId == fileItemId
+                          && fp.AccountId == accountId
+                          && fp.Status == PermissionStatus.Active)
+                .AsNoTracking()
+                .FirstOrDefaultAsync();
+        }
+
+        public async Task<FolderPermission?> GetNearestFolderAccountOverrideByFileAsync(Guid fileItemId, Guid accountId)
+        {
+            var info = await _context.FileItems
+                .Where(fi => fi.Id == fileItemId)
+                .Select(fi => new { fi.FolderId, fi.Folder.ProjectId })
+                .FirstOrDefaultAsync();
+            if (info == null) return null;
+
+            return await WalkNearestFolderAccountOverrideAsync(info.ProjectId, info.FolderId, accountId);
+        }
+
+        public async Task<FolderPermission?> GetNearestFolderAccountOverrideByFolderAsync(Guid folderId, Guid accountId)
+        {
+            var projectId = await _context.Folders
+                .Where(f => f.Id == folderId)
+                .Select(f => (Guid?)f.ProjectId)
+                .FirstOrDefaultAsync();
+            if (projectId == null) return null;
+
+            return await WalkNearestFolderAccountOverrideAsync(projectId.Value, folderId, accountId);
+        }
+
+        /// <summary>
+        /// Walk from startFolderId up the parent chain (inclusive) and return the first folder that
+        /// carries an active per-account override for this user. Fast path: if the user has no folder
+        /// override anywhere in the project, skip loading the tree entirely.
+        /// </summary>
+        private async Task<FolderPermission?> WalkNearestFolderAccountOverrideAsync(
+            Guid projectId, Guid startFolderId, Guid accountId)
+        {
+            var overrides = await _context.FolderPermissions
+                .Where(fp => fp.AccountId == accountId
+                          && fp.Status == PermissionStatus.Active
+                          && fp.Folder.ProjectId == projectId)
+                .AsNoTracking()
+                .ToListAsync();
+            if (overrides.Count == 0) return null;
+
+            var overrideByFolder = overrides.ToDictionary(fp => fp.FolderId);
+
+            var parentByFolder = await _context.Folders
+                .Where(f => f.ProjectId == projectId)
+                .Select(f => new { f.Id, f.ParentFolderId })
+                .ToDictionaryAsync(f => f.Id, f => f.ParentFolderId);
+
+            Guid? current = startFolderId;
+            var visited = new HashSet<Guid>();
+            while (current.HasValue && visited.Add(current.Value))
+            {
+                if (overrideByFolder.TryGetValue(current.Value, out var acl))
+                    return acl;
+                current = parentByFolder.TryGetValue(current.Value, out var parent) ? parent : null;
+            }
+            return null;
+        }
+
         // ===== Project-admin (PM) full access =====
         // Mirrors FolderTreeRepository.HasFullAccessAsync / GetViewableFolderIdsAsync. Kept as a
         // separate copy so the permission module does not depend on the folder-tree module.
@@ -110,7 +178,7 @@ namespace Infrastructure.Repositories
 
         public async Task<HashSet<Guid>> GetViewableFolderIdsAsync(Guid projectId, Guid accountId)
         {
-            var folderIds = await _context.FolderPermissions
+            var groupViewable = (await _context.FolderPermissions
                 .Where(fp => fp.Folder.ProjectId == projectId
                           && fp.Status == PermissionStatus.Active
                           && fp.CanView
@@ -120,9 +188,55 @@ namespace Infrastructure.Repositories
                                 m.AccountId == accountId && m.Status == GroupMemberStatus.Active))
                 .Select(fp => fp.FolderId)
                 .Distinct()
-                .ToListAsync();
+                .ToListAsync())
+                .ToHashSet();
 
-            return folderIds.ToHashSet();
+            // Per-account overrides adjust the group result: an override grants/denies the folder AND
+            // its subtree (nearest-ancestor wins), matching the eval-time walk. Fast path: no override
+            // in the project -> group result is final, no tree load.
+            var overrides = await _context.FolderPermissions
+                .Where(fp => fp.AccountId == accountId
+                          && fp.Status == PermissionStatus.Active
+                          && fp.Folder.ProjectId == projectId)
+                .Select(fp => new { fp.FolderId, fp.CanView })
+                .ToListAsync();
+            if (overrides.Count == 0) return groupViewable;
+
+            var overrideByFolder = overrides.ToDictionary(o => o.FolderId, o => o.CanView);
+
+            var folders = await _context.Folders
+                .Where(f => f.ProjectId == projectId)
+                .Select(f => new { f.Id, f.ParentFolderId })
+                .ToListAsync();
+            var parentByFolder = folders.ToDictionary(f => f.Id, f => f.ParentFolderId);
+
+            var result = new HashSet<Guid>();
+            foreach (var f in folders)
+            {
+                // Nearest-ancestor (inclusive) account override decides; else fall back to the group ACL.
+                bool? overrideDecision = null;
+                Guid? current = f.Id;
+                var visited = new HashSet<Guid>();
+                while (current.HasValue && visited.Add(current.Value))
+                {
+                    if (overrideByFolder.TryGetValue(current.Value, out var canView))
+                    {
+                        overrideDecision = canView;
+                        break;
+                    }
+                    current = parentByFolder.TryGetValue(current.Value, out var parent) ? parent : null;
+                }
+
+                if (overrideDecision.HasValue)
+                {
+                    if (overrideDecision.Value) result.Add(f.Id);
+                }
+                else if (groupViewable.Contains(f.Id))
+                {
+                    result.Add(f.Id);
+                }
+            }
+            return result;
         }
 
         public async Task<bool> HasActiveFileViewGrantAsync(Guid fileItemId, Guid accountId)
