@@ -1,4 +1,4 @@
-﻿using Application.BackgroundServices;
+using Application.BackgroundServices;
 using Application.Interfaces.IBackgroundServices;
 using Application.Interfaces.IRepositories;
 using Application.Interfaces.IServices;
@@ -75,6 +75,7 @@ namespace Infrastructure.Configurations
             services.AddScoped<ICdeStorageKeyBuilder, Application.Services.Storage.CdeStorageKeyBuilder>();
             services.AddScoped<IFileUploadService, FileUploadService>();
             services.AddScoped<IProjectFileBundleService, ProjectFileBundleService>();
+            services.AddScoped<IProjectImportService, ProjectImportService>();
             services.AddScoped<IImageUploadService, ImageUploadService>();
             // File Versioning: tính P{Rev}.{Ver} / C{PubRev} tập trung 1 chỗ — Upload/Publish chỉ gọi vào
             // (FileVersionRepository truy cập qua IUnitOfWork.FileVersionRepository, giống FolderPermission)
@@ -194,6 +195,13 @@ namespace Infrastructure.Configurations
                 var baseUrl = config["ConvertApi:BaseUrl"] ?? "https://v2.convertapi.com";
                 client.BaseAddress = new Uri(baseUrl);
                 client.Timeout = TimeSpan.FromMinutes(5);
+            });
+
+            services.AddHttpClient<IGeocodingService, Adapters.Geo.OpenStreetMapGeocodingService>((sp, client) =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(12);
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(
+                    Adapters.Geo.OpenStreetMapGeocodingService.DefaultUserAgent);
             });
 
             return services;
