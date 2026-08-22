@@ -105,13 +105,10 @@ namespace Application.Services
                 400);
         }
 
-        private static IWorksheet? FindSheet(IWorkbook workbook, string name)
-        {
-            foreach (IWorksheet sheet in workbook.Worksheets)
-                if (string.Equals(sheet.Name, name, StringComparison.OrdinalIgnoreCase))
-                    return sheet;
-            return null;
-        }
+        private static IWorksheet? FindSheet(IWorkbook workbook, string name) =>
+            workbook.Worksheets
+                .Cast<IWorksheet>()
+                .FirstOrDefault(sheet => string.Equals(sheet.Name, name, StringComparison.OrdinalIgnoreCase));
 
         private static string? CellText(IWorksheet sheet, int row, int column)
         {
@@ -169,7 +166,7 @@ namespace Application.Services
         }
 
         private static string OrganizationLabel(Organization organization) =>
-            string.IsNullOrWhiteSpace(organization.DisplayName) ? organization.LegalName : organization.DisplayName!;
+            string.IsNullOrWhiteSpace(organization.DisplayName) ? organization.LegalName : organization.DisplayName;
 
         private static Dictionary<string, int> MapHeaderColumns(IWorksheet sheet)
         {
@@ -283,55 +280,82 @@ namespace Application.Services
                     continue;
                 }
 
-                var package = new ProjectImportPackageDTO
-                {
-                    Code = ColumnText(sheet, columns, ProjectImportSheet.ColumnPackageCode, row),
-                    Name = name,
-                    Description = ColumnText(sheet, columns, ProjectImportSheet.ColumnPackageDescription, row),
-                    WorkTypes = NormalizeWorkTypes(
-                        ColumnText(sheet, columns, ProjectImportSheet.ColumnWorkTypes, row)),
-                    ScopeDescription = ColumnText(sheet, columns, ProjectImportSheet.ColumnScope, row),
-                    Currency = ColumnText(sheet, columns, ProjectImportSheet.ColumnCurrency, row),
-                    ContractNumber = ColumnText(sheet, columns, ProjectImportSheet.ColumnContractNumber, row),
-                    ContractJobTitle = ColumnText(sheet, columns, ProjectImportSheet.ColumnJobTitle, row),
-                    Notes = ColumnText(sheet, columns, ProjectImportSheet.ColumnNotes, row),
-                    StartDate = ReadColumnDate(sheet, columns, ProjectImportSheet.ColumnStartDate, row),
-                    EndDate = ReadColumnDate(sheet, columns, ProjectImportSheet.ColumnEndDate, row),
-                    ContractSignDate = ReadColumnDate(sheet, columns, ProjectImportSheet.ColumnContractSignDate, row)
-                };
-
-                if (TryReadColumnDecimal(sheet, columns, ProjectImportSheet.ColumnContractValue, row, out var value))
-                    package.ContractValue = value;
-                if (TryReadColumnDecimal(sheet, columns, ProjectImportSheet.ColumnTaxRate, row, out var taxRate))
-                    package.TaxRate = taxRate;
-
-                var contractorText = ColumnText(sheet, columns, ProjectImportSheet.ColumnContractorTaxCode, row);
-                var contractor = MatchOrganization(contractorText, organizations);
-                if (contractor is not null)
-                {
-                    package.ContractorOrganizationId = contractor.Id;
-                    package.ContractorOrganizationName = OrganizationLabel(contractor);
-                }
-                else if (!string.IsNullOrWhiteSpace(contractorText))
-                {
-                    result.Warnings.Add(
-                        $"{ProjectImportSheet.Packages} dòng {row}: không tìm thấy nhà thầu \"{contractorText}\" — hãy chọn lại ở bước 3.");
-                }
-
-                var representativeEmail = ColumnText(sheet, columns, ProjectImportSheet.ColumnRepresentativeEmail, row);
-                var representative = MatchAccount(representativeEmail, accounts);
-                if (representative is not null)
-                {
-                    package.RepresentativeAccountId = representative.Id;
-                    package.RepresentativeAccountName = representative.UserName;
-                }
-                else if (!string.IsNullOrWhiteSpace(representativeEmail))
-                {
-                    result.Warnings.Add(
-                        $"{ProjectImportSheet.Packages} dòng {row}: không tìm thấy người đại diện \"{representativeEmail}\" — hãy chọn lại ở bước 3.");
-                }
-
+                var package = BuildPackage(sheet, columns, row, name);
+                ResolvePackageContractor(sheet, columns, row, package, organizations, result);
+                ResolvePackageRepresentative(sheet, columns, row, package, accounts, result);
                 result.Packages.Add(package);
+            }
+        }
+
+        private static ProjectImportPackageDTO BuildPackage(
+            IWorksheet sheet, Dictionary<string, int> columns, int row, string name)
+        {
+            var package = new ProjectImportPackageDTO
+            {
+                Code = ColumnText(sheet, columns, ProjectImportSheet.ColumnPackageCode, row),
+                Name = name,
+                Description = ColumnText(sheet, columns, ProjectImportSheet.ColumnPackageDescription, row),
+                WorkTypes = NormalizeWorkTypes(
+                    ColumnText(sheet, columns, ProjectImportSheet.ColumnWorkTypes, row)),
+                ScopeDescription = ColumnText(sheet, columns, ProjectImportSheet.ColumnScope, row),
+                Currency = ColumnText(sheet, columns, ProjectImportSheet.ColumnCurrency, row),
+                ContractNumber = ColumnText(sheet, columns, ProjectImportSheet.ColumnContractNumber, row),
+                ContractJobTitle = ColumnText(sheet, columns, ProjectImportSheet.ColumnJobTitle, row),
+                Notes = ColumnText(sheet, columns, ProjectImportSheet.ColumnNotes, row),
+                StartDate = ReadColumnDate(sheet, columns, ProjectImportSheet.ColumnStartDate, row),
+                EndDate = ReadColumnDate(sheet, columns, ProjectImportSheet.ColumnEndDate, row),
+                ContractSignDate = ReadColumnDate(sheet, columns, ProjectImportSheet.ColumnContractSignDate, row)
+            };
+
+            if (TryReadColumnDecimal(sheet, columns, ProjectImportSheet.ColumnContractValue, row, out var value))
+                package.ContractValue = value;
+            if (TryReadColumnDecimal(sheet, columns, ProjectImportSheet.ColumnTaxRate, row, out var taxRate))
+                package.TaxRate = taxRate;
+
+            return package;
+        }
+
+        private static void ResolvePackageContractor(
+            IWorksheet sheet,
+            Dictionary<string, int> columns,
+            int row,
+            ProjectImportPackageDTO package,
+            List<Organization> organizations,
+            ProjectImportPreviewDTO result)
+        {
+            var contractorText = ColumnText(sheet, columns, ProjectImportSheet.ColumnContractorTaxCode, row);
+            var contractor = MatchOrganization(contractorText, organizations);
+            if (contractor is not null)
+            {
+                package.ContractorOrganizationId = contractor.Id;
+                package.ContractorOrganizationName = OrganizationLabel(contractor);
+            }
+            else if (!string.IsNullOrWhiteSpace(contractorText))
+            {
+                result.Warnings.Add(
+                    $"{ProjectImportSheet.Packages} dòng {row}: không tìm thấy nhà thầu \"{contractorText}\" — hãy chọn lại ở bước 3.");
+            }
+        }
+
+        private static void ResolvePackageRepresentative(
+            IWorksheet sheet,
+            Dictionary<string, int> columns,
+            int row,
+            ProjectImportPackageDTO package,
+            List<Account> accounts,
+            ProjectImportPreviewDTO result)
+        {
+            var representativeEmail = ColumnText(sheet, columns, ProjectImportSheet.ColumnRepresentativeEmail, row);
+            var representative = MatchAccount(representativeEmail, accounts);
+            if (representative is not null)
+            {
+                package.RepresentativeAccountId = representative.Id;
+                package.RepresentativeAccountName = representative.UserName;
+            }
+            else if (!string.IsNullOrWhiteSpace(representativeEmail))
+            {
+                result.Warnings.Add(
+                    $"{ProjectImportSheet.Packages} dòng {row}: không tìm thấy người đại diện \"{representativeEmail}\" — hãy chọn lại ở bước 3.");
             }
         }
 
