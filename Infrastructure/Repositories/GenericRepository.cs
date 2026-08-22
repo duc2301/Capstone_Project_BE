@@ -51,6 +51,49 @@ namespace Infrastructure.Repositories
             return await query.ToListAsync();
         }
 
+        public async Task<(IReadOnlyList<T> Items, int TotalCount)> GetPagedAsync(
+            int page,
+            int pageSize,
+            Expression<Func<T, bool>>? predicate = null,
+            Func<IQueryable<T>, IOrderedQueryable<T>>? orderBy = null,
+            string includeProperties = "")
+        {
+            IQueryable<T> query = _context.Set<T>();
+
+            if (predicate != null)
+                query = query.Where(predicate);
+
+            foreach (var includeProperty in includeProperties.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                query = query.Include(includeProperty);
+            }
+
+            // Đếm tổng trước khi phân trang (áp dụng cả predicate, bỏ qua Skip/Take).
+            var totalCount = await query.CountAsync();
+
+            if (orderBy != null)
+                query = orderBy(query);
+
+            // Chốt chặn an toàn: page/pageSize hợp lệ để Skip không âm và Take không rỗng.
+            var safePage = page < 1 ? 1 : page;
+            var safeSize = pageSize < 1 ? 1 : pageSize;
+
+            var items = await query
+                .Skip((safePage - 1) * safeSize)
+                .Take(safeSize)
+                .ToListAsync();
+
+            return (items, totalCount);
+        }
+
+        public async Task<int> CountAsync(Expression<Func<T, bool>>? predicate = null)
+        {
+            IQueryable<T> query = _context.Set<T>();
+            if (predicate != null)
+                query = query.Where(predicate);
+            return await query.CountAsync();
+        }
+
         public async Task<T?> GetByIdAsync(Guid? id)
         {
             return await _context.Set<T>().FindAsync(id);

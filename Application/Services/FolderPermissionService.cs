@@ -60,6 +60,22 @@ namespace Application.Services
             return _mapper.Map<IEnumerable<GroupFolderPermissionResponseDTO>>(items.Values.ToList());
         }
 
+        public async Task<MemberPermissionsViewModelDTO> GetMemberPermissionsAsync(Guid folderId, Guid callerAccountId)
+        {
+            var grants = await _unitOfWork.FolderPermissionRepository.GetActiveGroupGrantsByFolderIdAsync(folderId);
+            var grantByParticipant = grants.ToDictionary(g => g.ParticipantId);
+
+            var members = await _unitOfWork.FolderPermissionRepository
+                .GetActiveMembersByParticipantIdsAsync(grantByParticipant.Keys.ToList());
+            var overrides = await _unitOfWork.FolderPermissionRepository.GetActiveAccountOverridesByFolderIdAsync(folderId);
+            var overrideByAccount = overrides.ToDictionary(kv => kv.Key, kv => (IPermissionAcl)kv.Value);
+
+            return new MemberPermissionsViewModelDTO
+            {
+                Members = PermissionRosterBuilder.Build(grantByParticipant, members, overrideByAccount, callerAccountId)
+            };
+        }
+
         #endregion
 
         #region Create/Update permissions theo bulk
@@ -130,6 +146,82 @@ namespace Application.Services
             var permissions = await _unitOfWork.FolderPermissionRepository.GetFolderPermissionsByParticipantIdsAsync(dto.Id, updatedParticipantIds);
 
             return _mapper.Map<IEnumerable<GroupFolderPermissionResponseDTO>>(permissions);
+        }
+
+        public async Task<IEnumerable<UserPermissionResponseDTO>> BulkUpdateFolderUserPermissionsAsync(AddUserPermissionsBulkDTO dto, Guid actorId)
+        {
+            var users = dto.UsersPermission ?? new List<AddUserPermissionDTO>();
+            var removeIds = dto.RemoveAccountIds ?? new List<Guid>();
+
+            if (users.Count == 0 && removeIds.Count == 0)
+                throw new ApiExceptionResponse("No changes provided.", 400);
+
+            // A leader cannot override their own access (mirrors the group UI hiding the caller's group).
+            if (users.Any(u => u.AccountId == actorId) || removeIds.Contains(actorId))
+                throw new ApiExceptionResponse("You cannot change your own permission.", 403);
+
+            var accountIds = users.Select(u => u.AccountId).Union(removeIds).ToList();
+
+            var existing = await _unitOfWork.FolderPermissionRepository.GetAccountOverridesByFolderIdAsync(dto.Id, accountIds);
+
+            var updatedAccountIds = new List<Guid>();
+
+            // Remove = trả tài khoản về kế thừa quyền nhóm (dòng Inactive; đường đọc lọc Active nên bỏ qua).
+            foreach (var accountId in removeIds)
+            {
+                if (existing.TryGetValue(accountId, out var perm))
+                {
+                    PermissionLevelMapper.Apply(perm, PermissionLevel.Inherit, isFile: true);
+                    updatedAccountIds.Add(accountId);
+                }
+            }
+
+            var toCreate = new List<FolderPermission>();
+            foreach (var u in users)
+            {
+                if (!existing.TryGetValue(u.AccountId, out var permission))
+                {
+                    permission = new FolderPermission
+                    {
+                        Id = Guid.NewGuid(),
+                        FolderId = dto.Id,
+                        AccountId = u.AccountId
+                    };
+                    toCreate.Add(permission);
+                }
+
+                // Override tài khoản LUÔN dùng ngữ nghĩa isFile:true để mức N là dòng Active CHẶN (đè
+                // quyền nhóm), áp cho cả cây con. Nếu lưu Inactive, đường đọc (lọc Active) sẽ bỏ sót chặn.
+                PermissionLevelMapper.Apply(
+                    permission, PermissionLevelMapper.FromFlags(u.CanView, u.CanEdit), isFile: true);
+                updatedAccountIds.Add(u.AccountId);
+            }
+
+            if (toCreate.Any())
+                await _unitOfWork.Repository<FolderPermission>().CreateRangeAsync(toCreate);
+
+            var auditFolder = await _unitOfWork.Repository<Folder>().GetByIdAsync(dto.Id);
+            await _auditLog.LogAsync(
+                Domain.Enum.Audit.LogScope.Project, Domain.Enum.Audit.AuditAction.PermissionChange,
+                nameof(Folder), dto.Id.ToString(), actorId,
+                detail: $"Cập nhật phân quyền người dùng cho thư mục '{auditFolder?.Name}': {updatedAccountIds.Distinct().Count()} người",
+                projectId: auditFolder?.ProjectId, folderId: dto.Id);
+
+            await _unitOfWork.CommitAsync();
+
+            var rows = await _unitOfWork.FolderPermissionRepository
+                .GetAccountOverrideRowsByFolderIdAsync(dto.Id, updatedAccountIds.Distinct().ToList());
+
+            return rows.Select(fp => new UserPermissionResponseDTO
+            {
+                Id = fp.Id,
+                AccountId = fp.AccountId!.Value,
+                UserName = fp.Account?.UserName ?? string.Empty,
+                Email = fp.Account?.Email ?? string.Empty,
+                CanView = fp.CanView,
+                CanEdit = fp.CanEdit,
+                Status = fp.Status
+            }).ToList();
         }
 
         #endregion

@@ -6,11 +6,16 @@ using System.Text;
 
 namespace Domain.Entities
 {
+    // ACL trên file. Mỗi dòng gán cho ĐÚNG MỘT chủ thể:
+    //   - Nhóm (ProjectParticipantId): override quyền nhóm cho file (đè quyền thư mục); hoặc
+    //   - Tài khoản (AccountId): override riêng theo người dùng (kiểu Google Drive) — cấp/chặn một
+    //     user cụ thể trên file này. Ràng buộc CHECK: đúng một trong hai cột được đặt.
     public class FilePermission : IPermissionAcl
     {
         public Guid Id { get; set; }
         public Guid FileItemId { get; set; }
         public Guid? ProjectParticipantId { get; set; }
+        public Guid? AccountId { get; set; }
 
         public bool CanView { get; set; }
         public bool CanEdit { get; set; }       // Sửa
@@ -23,5 +28,6 @@ namespace Domain.Entities
 
         public FileItem FileItem { get; set; } = null!;
         public ProjectParticipant? ProjectParticipant { get; set; }
+        public Account? Account { get; set; }
     }
 }

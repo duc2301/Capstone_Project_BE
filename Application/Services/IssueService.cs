@@ -918,20 +918,23 @@ namespace Application.Services
         public async Task<PagedResult<ProjectIssueListItemDTO>> GetAssignedToMeAsync(Guid accountId, int page, int pageSize)
         {
             var accountGroupIds = await GetActiveGroupIdsOfAccountAsync(accountId);
-            var issues = (await _unitOfWork.Repository<Issue>().FindAsync(
-                    i => i.Status != IssueStatus.Closed
-                      && (i.AssignedToAccountId == accountId
-                          || (i.AssignedToGroupId != null && accountGroupIds.Contains(i.AssignedToGroupId.Value)))))
-                .OrderByDescending(i => i.CreatedAt)
-                .ToList();
 
             var safePage = page < 1 ? 1 : page;
-            var safeSize = pageSize < 1 || pageSize > MaxIssuePageSize ? DefaultIssuePageSize : pageSize;
+            var safeSize = pageSize < 1
+                ? DefaultIssuePageSize
+                : pageSize > MaxIssuePageSize ? MaxIssuePageSize : pageSize;
 
-            if (issues.Count == 0)
-                return new PagedResult<ProjectIssueListItemDTO>(new List<ProjectIssueListItemDTO>(), 0, safePage, safeSize);
+            var (pageIssues, totalCount) = await _unitOfWork.Repository<Issue>()
+                .GetPagedAsync(
+                    safePage,
+                    safeSize,
+                    predicate: i => i.Status != IssueStatus.Closed
+                        && (i.AssignedToAccountId == accountId
+                            || (i.AssignedToGroupId != null && accountGroupIds.Contains(i.AssignedToGroupId.Value))),
+                    orderBy: q => q.OrderByDescending(i => i.CreatedAt));
 
-            var pageIssues = issues.Skip((safePage - 1) * safeSize).Take(safeSize).ToList();
+            if (pageIssues.Count == 0)
+                return new PagedResult<ProjectIssueListItemDTO>(new List<ProjectIssueListItemDTO>(), totalCount, safePage, safeSize);
 
             var fileIds = pageIssues.Where(i => i.LinkedFileItemId.HasValue)
                 .Select(i => i.LinkedFileItemId!.Value).ToHashSet();
@@ -990,7 +993,7 @@ namespace Application.Services
                 };
             }).ToList();
 
-            return new PagedResult<ProjectIssueListItemDTO>(items, issues.Count, safePage, safeSize);
+            return new PagedResult<ProjectIssueListItemDTO>(items, totalCount, safePage, safeSize);
         }
 
         public async Task<IEnumerable<Guid>> GetOpenIssueFileIdsForAccountAsync(
