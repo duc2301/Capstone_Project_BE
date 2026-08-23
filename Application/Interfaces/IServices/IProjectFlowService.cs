@@ -1,5 +1,7 @@
+using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Project;
 using Application.DTOs.ResponseDTOs.Project;
+using Domain.Enum.Project;
 
 namespace Application.Interfaces.IServices
 {
@@ -18,5 +20,14 @@ namespace Application.Interfaces.IServices
 
         // Danh sách dự án người dùng hiện tại đang tham gia (qua group) hoặc làm PM.
         Task<List<ProjectResponseDTO>> GetMyProjectsAsync(Guid actorId);
+
+        // Bản phân trang của GetMyProjectsAsync, kèm search/filter server-side.
+        Task<PagedResult<ProjectResponseDTO>> GetMyProjectsPagedAsync(
+            Guid actorId,
+            int page,
+            int pageSize,
+            string? search = null,
+            ProjectStatus? status = null,
+            Guid? ownerOrganizationId = null);
     }
 }
