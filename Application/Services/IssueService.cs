@@ -145,8 +145,19 @@ namespace Application.Services
             if (!await _folderTreeRepository.ProjectExistsAsync(projectId))
                 throw new ApiExceptionResponse("Project not found.", 404);
 
-            var (visible, fileById, folderNameById) = await ResolveVisibleProjectIssuesAsync(projectId, null, accountId);
-            return await PageProjectIssuesAsync(visible, fileById, folderNameById, page, pageSize);
+            var safePage = page < 1 ? 1 : page;
+            var safeSize = pageSize < 1 || pageSize > MaxIssuePageSize ? DefaultIssuePageSize : pageSize;
+
+            var (pageIssues, totalCount) = await _unitOfWork.Repository<Issue>().GetPagedAsync(
+                safePage, safeSize,
+                predicate: i => i.ProjectId == projectId,
+                orderBy: q => q.OrderByDescending(i => i.CreatedAt));
+
+            var (visible, fileById, folderNameById) = await FilterVisibleIssuesAsync(
+                projectId, null, accountId, pageIssues.ToList());
+
+            var items = await BuildProjectIssueDtosAsync(visible, fileById, folderNameById);
+            return new PagedResult<ProjectIssueListItemDTO>(items, totalCount, safePage, safeSize);
         }
 
         public async Task<PagedResult<ProjectIssueListItemDTO>> GetForMyProjectsAsync(Guid accountId, int page, int pageSize)
@@ -155,27 +166,45 @@ namespace Application.Services
             if (myProjects.Count == 0)
                 return new PagedResult<ProjectIssueListItemDTO>(new List<ProjectIssueListItemDTO>(), 0, 1, pageSize);
 
+            var myProjectIds = myProjects.Select(p => p.Id).ToHashSet();
+            var projectNameById = myProjects.ToDictionary(p => p.Id, p => p.ProjectName);
+
+            var safePage = page < 1 ? 1 : page;
+            var safeSize = pageSize < 1 || pageSize > MaxIssuePageSize ? DefaultIssuePageSize : pageSize;
+
+            var (pageIssues, totalCount) = await _unitOfWork.Repository<Issue>().GetPagedAsync(
+                safePage, safeSize,
+                predicate: i => myProjectIds.Contains(i.ProjectId),
+                orderBy: q => q.OrderByDescending(i => i.CreatedAt));
+
             var allVisible = new List<VisibleProjectIssue>();
             var fileById = new Dictionary<Guid, FileItem>();
             var folderNameById = new Dictionary<Guid, string>();
 
-            foreach (var project in myProjects)
+            // Trang có thể gộp issue từ nhiều dự án khác nhau -> lọc quyền theo từng dự án xuất hiện
+            // trong trang đó (context quyền - viewableFolderIds, hasFullAccess... - gắn theo dự án).
+            foreach (var group in pageIssues.GroupBy(i => i.ProjectId))
             {
+                var projectName = projectNameById.GetValueOrDefault(group.Key);
                 var (visible, projectFileById, projectFolderNameById) =
-                    await ResolveVisibleProjectIssuesAsync(project.Id, project.ProjectName, accountId);
+                    await FilterVisibleIssuesAsync(group.Key, projectName, accountId, group.ToList());
                 allVisible.AddRange(visible);
                 foreach (var kv in projectFileById) fileById[kv.Key] = kv.Value;
                 foreach (var kv in projectFolderNameById) folderNameById[kv.Key] = kv.Value;
             }
 
             var ordered = allVisible.OrderByDescending(v => v.Issue.CreatedAt).ToList();
-            return await PageProjectIssuesAsync(ordered, fileById, folderNameById, page, pageSize);
+            var items = await BuildProjectIssueDtosAsync(ordered, fileById, folderNameById);
+            return new PagedResult<ProjectIssueListItemDTO>(items, totalCount, safePage, safeSize);
         }
 
+        /// <summary>
+        /// Lọc quyền xem + gom dữ liệu tên file/folder cho ĐÚNG tập issue truyền vào (thường là 1 trang
+        /// đã Skip/Take ở DB - xem GetByProjectAsync/GetForMyProjectsAsync), không tự fetch issue nữa.
+        /// </summary>
         private async Task<(List<VisibleProjectIssue> Visible, Dictionary<Guid, FileItem> FileById, Dictionary<Guid, string> FolderNameById)>
-            ResolveVisibleProjectIssuesAsync(Guid projectId, string? projectName, Guid accountId)
+            FilterVisibleIssuesAsync(Guid projectId, string? projectName, Guid accountId, List<Issue> issues)
         {
-            var issues = (await _unitOfWork.Repository<Issue>().FindAsync(i => i.ProjectId == projectId)).ToList();
             if (issues.Count == 0)
                 return (new List<VisibleProjectIssue>(), new Dictionary<Guid, FileItem>(), new Dictionary<Guid, string>());
 
@@ -228,21 +257,6 @@ namespace Application.Services
                 .ToList();
 
             return (visible, fileById, folderNameById);
-        }
-
-        private async Task<PagedResult<ProjectIssueListItemDTO>> PageProjectIssuesAsync(
-            List<VisibleProjectIssue> visible,
-            IReadOnlyDictionary<Guid, FileItem> fileById,
-            IReadOnlyDictionary<Guid, string> folderNameById,
-            int page,
-            int pageSize)
-        {
-            var safePage = page < 1 ? 1 : page;
-            var safeSize = pageSize < 1 || pageSize > MaxIssuePageSize ? DefaultIssuePageSize : pageSize;
-            var pageItems = visible.Skip((safePage - 1) * safeSize).Take(safeSize).ToList();
-
-            var items = await BuildProjectIssueDtosAsync(pageItems, fileById, folderNameById);
-            return new PagedResult<ProjectIssueListItemDTO>(items, visible.Count, safePage, safeSize);
         }
 
         private async Task<List<ProjectIssueListItemDTO>> BuildProjectIssueDtosAsync(
