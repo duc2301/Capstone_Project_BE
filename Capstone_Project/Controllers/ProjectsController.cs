@@ -1,4 +1,4 @@
-﻿using Application.DTOs.ApiResponseDTO;
+using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Project;
 using Application.DTOs.ResponseDTOs.Project;
 using Application.ExceptionMiddleware;
@@ -16,22 +16,29 @@ namespace Capstone_Project.Controllers
     {
         private const string BundleContentType = "application/zip";
         private const int BundleBufferSize = 81_920;
+        private const string SpreadsheetContentType =
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        private const string ImportTemplateFileName = "khoi-tao-du-an-mau.xlsx";
+        private const int ImportMaxBytes = 5_242_880;
 
         private readonly IProjectFlowService _projectFlow;
         private readonly IProjectService _projectService;
         private readonly IProjectFileBundleService _bundle;
         private readonly IAIService _ai;
+        private readonly IProjectImportService _import;
 
         public ProjectsController(
             IProjectFlowService projectFlow,
             IProjectService projectService,
             IProjectFileBundleService bundle,
-            IAIService ai)
+            IAIService ai,
+            IProjectImportService import)
         {
             _projectFlow = projectFlow;
             _projectService = projectService;
             _bundle = bundle;
             _ai = ai;
+            _import = import;
         }
 
         // Khởi tạo nhanh: tải file BEP (PDF/DOCX) -> AI đọc -> trả các field prefill cho stepper.
@@ -50,6 +57,30 @@ namespace Capstone_Project.Controllers
             await using var stream = file.OpenReadStream();
             var result = await _ai.ParseBepAsync(stream, ext, ct);
             return Ok(ApiResponse.Success("BEP parsed", result));
+        }
+
+
+        [HttpGet("import-template")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> DownloadImportTemplate(CancellationToken ct)
+        {
+            var content = await _import.GenerateTemplateAsync(ct);
+            return File(content, SpreadsheetContentType, ImportTemplateFileName);
+        }
+
+        [HttpPost("import-preview")]
+        [Authorize(Roles = "Admin")]
+        [Consumes("multipart/form-data")]
+        [RequestSizeLimit(ImportMaxBytes)]
+        [RequestFormLimits(MultipartBodyLengthLimit = ImportMaxBytes)]
+        public async Task<IActionResult> ImportPreview(IFormFile file, CancellationToken ct)
+        {
+            if (file == null || file.Length == 0)
+                throw new ApiExceptionResponse("Chưa chọn file.", 400);
+
+            await using var stream = file.OpenReadStream();
+            var result = await _import.ParseAsync(stream, ct);
+            return Ok(ApiResponse.Success("Project import parsed", result));
         }
 
 
