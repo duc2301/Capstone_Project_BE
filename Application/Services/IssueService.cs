@@ -225,38 +225,52 @@ namespace Application.Services
             var accountGroupIds = await GetActiveGroupIdsOfAccountAsync(accountId);
             var mentionedIssueIds = await GetMentionedIssueIdsAsync(issues.Select(i => i.Id), accountId);
 
-            Guid? FolderOf(Issue issue)
-                => issue.LinkedFileItemId.HasValue && fileById.TryGetValue(issue.LinkedFileItemId.Value, out var file)
-                    ? file.FolderId
-                    : null;
+            var visibilityContext = new IssueVisibilityContext(
+                accountId, fileById, folderAreaById, viewableFolderIds, accountGroupIds,
+                mentionedIssueIds, hasFullAccess, isSystemAdmin);
 
-            bool IsStakeholder(Issue issue)
-                => issue.RaisedByAccountId == accountId
-                   || issue.AssignedToAccountId == accountId
-                   || (issue.AssignedToGroupId.HasValue && accountGroupIds.Contains(issue.AssignedToGroupId.Value))
-                   || mentionedIssueIds.Contains(issue.Id);
-
-            bool CanSee(Issue issue)
-            {
-                if (isSystemAdmin) return true;
-
-                var folderId = FolderOf(issue);
-                if (!folderId.HasValue)
-                    return IsStakeholder(issue);
-
-                if (viewableFolderIds.Contains(folderId.Value)) return true;
-
-                var isWip = !folderAreaById.TryGetValue(folderId.Value, out var area) || area == CdeArea.Wip;
-                if (!isWip && IsStakeholder(issue)) return true;
-
-                return hasFullAccess && !isWip;
-            }
-
-            var visible = issues.Where(CanSee)
+            var visible = issues.Where(i => CanSeeIssue(i, visibilityContext))
                 .Select(i => new VisibleProjectIssue(i, projectName))
                 .ToList();
 
             return (visible, fileById, folderNameById);
+        }
+
+        private sealed record IssueVisibilityContext(
+            Guid AccountId,
+            Dictionary<Guid, FileItem> FileById,
+            Dictionary<Guid, CdeArea> FolderAreaById,
+            HashSet<Guid> ViewableFolderIds,
+            HashSet<Guid> AccountGroupIds,
+            HashSet<Guid> MentionedIssueIds,
+            bool HasFullAccess,
+            bool IsSystemAdmin);
+
+        private static Guid? FolderOfIssue(Issue issue, Dictionary<Guid, FileItem> fileById)
+            => issue.LinkedFileItemId.HasValue && fileById.TryGetValue(issue.LinkedFileItemId.Value, out var file)
+                ? file.FolderId
+                : null;
+
+        private static bool IsIssueStakeholder(Issue issue, IssueVisibilityContext ctx)
+            => issue.RaisedByAccountId == ctx.AccountId
+               || issue.AssignedToAccountId == ctx.AccountId
+               || (issue.AssignedToGroupId.HasValue && ctx.AccountGroupIds.Contains(issue.AssignedToGroupId.Value))
+               || ctx.MentionedIssueIds.Contains(issue.Id);
+
+        private static bool CanSeeIssue(Issue issue, IssueVisibilityContext ctx)
+        {
+            if (ctx.IsSystemAdmin) return true;
+
+            var folderId = FolderOfIssue(issue, ctx.FileById);
+            if (!folderId.HasValue)
+                return IsIssueStakeholder(issue, ctx);
+
+            if (ctx.ViewableFolderIds.Contains(folderId.Value)) return true;
+
+            var isWip = !ctx.FolderAreaById.TryGetValue(folderId.Value, out var area) || area == CdeArea.Wip;
+            if (!isWip && IsIssueStakeholder(issue, ctx)) return true;
+
+            return ctx.HasFullAccess && !isWip;
         }
 
         private async Task<List<ProjectIssueListItemDTO>> BuildProjectIssueDtosAsync(
