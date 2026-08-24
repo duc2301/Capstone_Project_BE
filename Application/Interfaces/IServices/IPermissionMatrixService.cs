@@ -1,6 +1,5 @@
 using Application.DTOs.RequestDTOs.PermissionMatrix;
 using Application.DTOs.ResponseDTOs.PermissionMatrix;
-using Domain.Enum.Cde;
 
 namespace Application.Interfaces.IServices
 {
@@ -12,7 +11,7 @@ namespace Application.Interfaces.IServices
     public interface IPermissionMatrixService
     {
         Task<PermissionMatrixResponseDTO> GetMatrixAsync(
-            Guid projectId, Guid accountId, bool isSystemAdmin, CdeArea? area = null);
+            Guid projectId, Guid accountId, bool isSystemAdmin, PermissionMatrixFilterDTO? filter = null);
 
         Task<List<MatrixCellResultDTO>> SaveMatrixAsync(
             Guid projectId, SavePermissionMatrixDTO dto, Guid accountId, bool isSystemAdmin);

@@ -96,7 +96,7 @@ namespace Application.Services
                 await using var target = archiveEntry.Open();
 
                 // Watermark như /download — tránh tải cả gói để né watermark từng file.
-                var isProtectedZone = entry.Area is CdeArea.Shared or CdeArea.Published;
+                var isProtectedZone = entry.Area is CdeArea.Shared or CdeArea.Published or CdeArea.Archived;
                 var watermarked = !isProtectedZone || actorAccount == null
                     ? source
                     : _watermark.Stamp(source, entry.Format, WatermarkLabelBuilder.Build(actorAccount));

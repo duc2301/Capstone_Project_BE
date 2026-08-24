@@ -2,7 +2,6 @@ using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.PermissionMatrix;
 using Application.Interfaces.IServices;
 using Capstone_Project.Extensions;
-using Domain.Enum.Cde;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -24,11 +23,13 @@ namespace Capstone_Project.Controllers
             _permissionMatrixService = permissionMatrixService;
         }
 
+        // Bộ lọc tìm kiếm (tùy chọn) bind từ query: ?area=..&groupIds=..&folderIds=..&fileIds=..
+        // Rỗng = trả về toàn bộ ma trận như trước.
         [HttpGet]
-        public async Task<IActionResult> GetMatrix(Guid projectId, [FromQuery] CdeArea? area)
+        public async Task<IActionResult> GetMatrix(Guid projectId, [FromQuery] PermissionMatrixFilterDTO filter)
         {
             var result = await _permissionMatrixService.GetMatrixAsync(
-                projectId, User.GetAccountId(), User.IsAdmin(), area);
+                projectId, User.GetAccountId(), User.IsAdmin(), filter);
             return Ok(ApiResponse.Success("Permission matrix retrieved", result));
         }
 

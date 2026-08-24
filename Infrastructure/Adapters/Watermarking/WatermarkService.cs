@@ -44,7 +44,7 @@ namespace Infrastructure.Adapters.Watermarking
 
         public async Task<Stream> ApplyAsync(Stream input, string format, CdeArea? area, Guid actorId, CancellationToken ct = default)
         {
-            if (area is not (CdeArea.Shared or CdeArea.Published))
+            if (area is not (CdeArea.Shared or CdeArea.Published or CdeArea.Archived))
                 return input;
 
             var account = await _unitOfWork.Repository<Account>().GetByIdAsync(actorId);
