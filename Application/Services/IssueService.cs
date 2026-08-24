@@ -145,8 +145,19 @@ namespace Application.Services
             if (!await _folderTreeRepository.ProjectExistsAsync(projectId))
                 throw new ApiExceptionResponse("Project not found.", 404);
 
-            var (visible, fileById, folderNameById) = await ResolveVisibleProjectIssuesAsync(projectId, null, accountId);
-            return await PageProjectIssuesAsync(visible, fileById, folderNameById, page, pageSize);
+            var safePage = page < 1 ? 1 : page;
+            var safeSize = pageSize < 1 || pageSize > MaxIssuePageSize ? DefaultIssuePageSize : pageSize;
+
+            var (pageIssues, totalCount) = await _unitOfWork.Repository<Issue>().GetPagedAsync(
+                safePage, safeSize,
+                predicate: i => i.ProjectId == projectId,
+                orderBy: q => q.OrderByDescending(i => i.CreatedAt));
+
+            var (visible, fileById, folderNameById) = await FilterVisibleIssuesAsync(
+                projectId, null, accountId, pageIssues.ToList());
+
+            var items = await BuildProjectIssueDtosAsync(visible, fileById, folderNameById);
+            return new PagedResult<ProjectIssueListItemDTO>(items, totalCount, safePage, safeSize);
         }
 
         public async Task<PagedResult<ProjectIssueListItemDTO>> GetForMyProjectsAsync(Guid accountId, int page, int pageSize)
@@ -155,27 +166,45 @@ namespace Application.Services
             if (myProjects.Count == 0)
                 return new PagedResult<ProjectIssueListItemDTO>(new List<ProjectIssueListItemDTO>(), 0, 1, pageSize);
 
+            var myProjectIds = myProjects.Select(p => p.Id).ToHashSet();
+            var projectNameById = myProjects.ToDictionary(p => p.Id, p => p.ProjectName);
+
+            var safePage = page < 1 ? 1 : page;
+            var safeSize = pageSize < 1 || pageSize > MaxIssuePageSize ? DefaultIssuePageSize : pageSize;
+
+            var (pageIssues, totalCount) = await _unitOfWork.Repository<Issue>().GetPagedAsync(
+                safePage, safeSize,
+                predicate: i => myProjectIds.Contains(i.ProjectId),
+                orderBy: q => q.OrderByDescending(i => i.CreatedAt));
+
             var allVisible = new List<VisibleProjectIssue>();
             var fileById = new Dictionary<Guid, FileItem>();
             var folderNameById = new Dictionary<Guid, string>();
 
-            foreach (var project in myProjects)
+            // Trang có thể gộp issue từ nhiều dự án khác nhau -> lọc quyền theo từng dự án xuất hiện
+            // trong trang đó (context quyền - viewableFolderIds, hasFullAccess... - gắn theo dự án).
+            foreach (var group in pageIssues.GroupBy(i => i.ProjectId))
             {
+                var projectName = projectNameById.GetValueOrDefault(group.Key);
                 var (visible, projectFileById, projectFolderNameById) =
-                    await ResolveVisibleProjectIssuesAsync(project.Id, project.ProjectName, accountId);
+                    await FilterVisibleIssuesAsync(group.Key, projectName, accountId, group.ToList());
                 allVisible.AddRange(visible);
                 foreach (var kv in projectFileById) fileById[kv.Key] = kv.Value;
                 foreach (var kv in projectFolderNameById) folderNameById[kv.Key] = kv.Value;
             }
 
             var ordered = allVisible.OrderByDescending(v => v.Issue.CreatedAt).ToList();
-            return await PageProjectIssuesAsync(ordered, fileById, folderNameById, page, pageSize);
+            var items = await BuildProjectIssueDtosAsync(ordered, fileById, folderNameById);
+            return new PagedResult<ProjectIssueListItemDTO>(items, totalCount, safePage, safeSize);
         }
 
+        /// <summary>
+        /// Lọc quyền xem + gom dữ liệu tên file/folder cho ĐÚNG tập issue truyền vào (thường là 1 trang
+        /// đã Skip/Take ở DB - xem GetByProjectAsync/GetForMyProjectsAsync), không tự fetch issue nữa.
+        /// </summary>
         private async Task<(List<VisibleProjectIssue> Visible, Dictionary<Guid, FileItem> FileById, Dictionary<Guid, string> FolderNameById)>
-            ResolveVisibleProjectIssuesAsync(Guid projectId, string? projectName, Guid accountId)
+            FilterVisibleIssuesAsync(Guid projectId, string? projectName, Guid accountId, List<Issue> issues)
         {
-            var issues = (await _unitOfWork.Repository<Issue>().FindAsync(i => i.ProjectId == projectId)).ToList();
             if (issues.Count == 0)
                 return (new List<VisibleProjectIssue>(), new Dictionary<Guid, FileItem>(), new Dictionary<Guid, string>());
 
@@ -196,53 +225,52 @@ namespace Application.Services
             var accountGroupIds = await GetActiveGroupIdsOfAccountAsync(accountId);
             var mentionedIssueIds = await GetMentionedIssueIdsAsync(issues.Select(i => i.Id), accountId);
 
-            Guid? FolderOf(Issue issue)
-                => issue.LinkedFileItemId.HasValue && fileById.TryGetValue(issue.LinkedFileItemId.Value, out var file)
-                    ? file.FolderId
-                    : null;
+            var visibilityContext = new IssueVisibilityContext(
+                accountId, fileById, folderAreaById, viewableFolderIds, accountGroupIds,
+                mentionedIssueIds, hasFullAccess, isSystemAdmin);
 
-            bool IsStakeholder(Issue issue)
-                => issue.RaisedByAccountId == accountId
-                   || issue.AssignedToAccountId == accountId
-                   || (issue.AssignedToGroupId.HasValue && accountGroupIds.Contains(issue.AssignedToGroupId.Value))
-                   || mentionedIssueIds.Contains(issue.Id);
-
-            bool CanSee(Issue issue)
-            {
-                if (isSystemAdmin) return true;
-
-                var folderId = FolderOf(issue);
-                if (!folderId.HasValue)
-                    return IsStakeholder(issue);
-
-                if (viewableFolderIds.Contains(folderId.Value)) return true;
-
-                var isWip = !folderAreaById.TryGetValue(folderId.Value, out var area) || area == CdeArea.Wip;
-                if (!isWip && IsStakeholder(issue)) return true;
-
-                return hasFullAccess && !isWip;
-            }
-
-            var visible = issues.Where(CanSee)
+            var visible = issues.Where(i => CanSeeIssue(i, visibilityContext))
                 .Select(i => new VisibleProjectIssue(i, projectName))
                 .ToList();
 
             return (visible, fileById, folderNameById);
         }
 
-        private async Task<PagedResult<ProjectIssueListItemDTO>> PageProjectIssuesAsync(
-            List<VisibleProjectIssue> visible,
-            IReadOnlyDictionary<Guid, FileItem> fileById,
-            IReadOnlyDictionary<Guid, string> folderNameById,
-            int page,
-            int pageSize)
-        {
-            var safePage = page < 1 ? 1 : page;
-            var safeSize = pageSize < 1 || pageSize > MaxIssuePageSize ? DefaultIssuePageSize : pageSize;
-            var pageItems = visible.Skip((safePage - 1) * safeSize).Take(safeSize).ToList();
+        private sealed record IssueVisibilityContext(
+            Guid AccountId,
+            Dictionary<Guid, FileItem> FileById,
+            Dictionary<Guid, CdeArea> FolderAreaById,
+            HashSet<Guid> ViewableFolderIds,
+            HashSet<Guid> AccountGroupIds,
+            HashSet<Guid> MentionedIssueIds,
+            bool HasFullAccess,
+            bool IsSystemAdmin);
 
-            var items = await BuildProjectIssueDtosAsync(pageItems, fileById, folderNameById);
-            return new PagedResult<ProjectIssueListItemDTO>(items, visible.Count, safePage, safeSize);
+        private static Guid? FolderOfIssue(Issue issue, Dictionary<Guid, FileItem> fileById)
+            => issue.LinkedFileItemId.HasValue && fileById.TryGetValue(issue.LinkedFileItemId.Value, out var file)
+                ? file.FolderId
+                : null;
+
+        private static bool IsIssueStakeholder(Issue issue, IssueVisibilityContext ctx)
+            => issue.RaisedByAccountId == ctx.AccountId
+               || issue.AssignedToAccountId == ctx.AccountId
+               || (issue.AssignedToGroupId.HasValue && ctx.AccountGroupIds.Contains(issue.AssignedToGroupId.Value))
+               || ctx.MentionedIssueIds.Contains(issue.Id);
+
+        private static bool CanSeeIssue(Issue issue, IssueVisibilityContext ctx)
+        {
+            if (ctx.IsSystemAdmin) return true;
+
+            var folderId = FolderOfIssue(issue, ctx.FileById);
+            if (!folderId.HasValue)
+                return IsIssueStakeholder(issue, ctx);
+
+            if (ctx.ViewableFolderIds.Contains(folderId.Value)) return true;
+
+            var isWip = !ctx.FolderAreaById.TryGetValue(folderId.Value, out var area) || area == CdeArea.Wip;
+            if (!isWip && IsIssueStakeholder(issue, ctx)) return true;
+
+            return ctx.HasFullAccess && !isWip;
         }
 
         private async Task<List<ProjectIssueListItemDTO>> BuildProjectIssueDtosAsync(
