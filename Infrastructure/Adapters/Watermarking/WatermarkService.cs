@@ -186,7 +186,7 @@ namespace Infrastructure.Adapters.Watermarking
                             if (handledHeaderIds.Add(existingId)
                                 && mainPart.GetPartById(existingId) is HeaderPart existingHeaderPart)
                             {
-                                existingHeaderPart.Header.Append((W.Paragraph)watermarkParagraph.CloneNode(true));
+                                existingHeaderPart.Header.AppendChild((W.Paragraph)watermarkParagraph.CloneNode(true));
                                 existingHeaderPart.Header.Save();
                             }
                         }
@@ -316,7 +316,7 @@ namespace Infrastructure.Adapters.Watermarking
             if (followingSibling != null)
                 worksheet.InsertBefore(picture, followingSibling);
             else
-                worksheet.Append(picture);
+                worksheet.AppendChild(picture);
         }
 
         private static byte[] RenderExcelWatermarkImage(string label)
@@ -371,8 +371,8 @@ namespace Infrastructure.Adapters.Watermarking
                 PropertyId = nextId,
                 Name = WatermarkMarkerKey
             };
-            property.Append(new VTLPWSTR { Text = "1" });
-            part.Properties.Append(property);
+            property.AppendChild(new VTLPWSTR { Text = "1" });
+            part.Properties.AppendChild(property);
             part.Properties.Save();
         }
 
