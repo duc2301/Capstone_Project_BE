@@ -92,6 +92,58 @@ namespace Application.Services
                || await _permissionCheckingRepository.HasIssueStakeholderFileAccessAsync(fileItemId, accountId)
                || await EvaluateFileAsync(fileItemId, accountId, fp => fp.CanView, fp => fp.CanView) == FileEval.Allowed;
 
+        // Không có đường "grant cộng thêm" cho quyền GHI — FileViewGrant/issue chỉ cấp XEM.
+        public async Task<bool> HasEditFileAsync(Guid fileItemId, Guid accountId)
+            => await EvaluateFileAsync(fileItemId, accountId, fp => fp.CanEdit, fp => fp.CanEdit) == FileEval.Allowed;
+
+        public async Task<HashSet<Guid>> GetEditableFileIdsAsync(
+            Guid accountId, IReadOnlyCollection<Guid> fileItemIds)
+        {
+            var editable = new HashSet<Guid>();
+            foreach (var fileId in fileItemIds)
+            {
+                if (await HasEditFileAsync(fileId, accountId))
+                    editable.Add(fileId);
+            }
+            return editable;
+        }
+
+        public async Task<HashSet<Guid>> GetEditableFolderIdsAsync(
+            Guid accountId, IReadOnlyCollection<Guid> folderIds)
+        {
+            var editable = new HashSet<Guid>();
+            foreach (var folderId in folderIds)
+            {
+                if (await HasEditFolderAsync(folderId, accountId))
+                    editable.Add(folderId);
+            }
+            return editable;
+        }
+
+        public async Task<HashSet<Guid>> GetViewableFolderIdsAmongAsync(
+            Guid accountId, IReadOnlyCollection<Guid> folderIds)
+        {
+            var viewable = new HashSet<Guid>();
+            foreach (var folderId in folderIds)
+            {
+                if (await HasViewFolderAsync(folderId, accountId))
+                    viewable.Add(folderId);
+            }
+            return viewable;
+        }
+
+        public async Task<HashSet<Guid>> GetViewableFileIdsAmongAsync(
+            Guid accountId, IReadOnlyCollection<Guid> fileItemIds)
+        {
+            var viewable = new HashSet<Guid>();
+            foreach (var fileId in fileItemIds)
+            {
+                if (await HasViewFileAsync(fileId, accountId))
+                    viewable.Add(fileId);
+            }
+            return viewable;
+        }
+
         // ===== Project-scoped =====
 
         public async Task<bool> HasSystemAdminAsync(Guid accountId)

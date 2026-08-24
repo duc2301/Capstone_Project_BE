@@ -46,13 +46,6 @@ namespace Application.Interfaces.IRepositories
         Task<List<FolderPermission>> GetActiveFolderPermissionsByFolderIdsAsync(IReadOnlyCollection<Guid> folderIds);
         Task<List<FilePermission>> GetActiveFilePermissionsByFileIdsAsync(IReadOnlyCollection<Guid> fileIds);
 
-        // ===== Tập được sửa của leader =====
-        /// <summary>Id các ProjectParticipant của leader trong dự án (nhóm mà account là Leader đang hoạt động).</summary>
-        Task<List<Guid>> GetLeaderParticipantIdsAsync(Guid projectId, Guid accountId);
-
-        /// <summary>FolderId có bất kỳ FolderPermission Active nào cho các participant cho trước (folder được giao).</summary>
-        Task<HashSet<Guid>> GetFolderIdsWithActivePermissionForParticipantsAsync(IReadOnlyCollection<Guid> participantIds);
-
         // ===== Lưu: nạp CÓ tracking để cập nhật =====
         /// <summary>FolderPermission (mọi Status) theo cặp folder × participant — tracking để sửa.</summary>
         Task<List<FolderPermission>> GetFolderPermissionsForUpdateAsync(
