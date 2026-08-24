@@ -1,3 +1,4 @@
+using Application.DTOs.ApiResponseDTO;
 using Application.DTOs.RequestDTOs.Project;
 using Application.DTOs.ResponseDTOs.Project;
 using Application.ExceptionMiddleware;
@@ -163,6 +164,26 @@ namespace Application.Services
 
         public async Task<List<ProjectResponseDTO>> GetMyProjectsAsync(Guid actor)
         {
+            var projectIds = await ResolveMyProjectIdsAsync(actor);
+            return await _projectService.GetByIdsAsync(projectIds);
+        }
+
+        public async Task<PagedResult<ProjectResponseDTO>> GetMyProjectsPagedAsync(
+            Guid actor,
+            int page,
+            int pageSize,
+            string? search = null,
+            ProjectStatus? status = null,
+            Guid? ownerOrganizationId = null)
+        {
+            var projectIds = await ResolveMyProjectIdsAsync(actor);
+            return await _projectService.GetByIdsPagedAsync(
+                projectIds, page, pageSize, search, status, ownerOrganizationId);
+        }
+
+        // Tập id dự án user đang tham gia (qua group Active) hoặc làm PM.
+        private async Task<List<Guid>> ResolveMyProjectIdsAsync(Guid actor)
+        {
             var myGroupIds = (await _unitOfWork.Repository<GroupMember>()
                     .FindAsync(gm => gm.AccountId == actor && gm.Status == GroupMemberStatus.Active))
                 .Select(gm => gm.GroupId)
@@ -173,12 +194,10 @@ namespace Application.Services
                 .Select(pp => pp.ProjectId)
                 .ToHashSet();
 
-            var projectIds = (await _unitOfWork.Repository<Project>()
+            return (await _unitOfWork.Repository<Project>()
                     .FindAsync(p => participantProjectIds.Contains(p.Id) || p.ManagerAccountId == actor))
                 .Select(p => p.Id)
                 .ToList();
-
-            return await _projectService.GetByIdsAsync(projectIds);
         }
 
         public async Task<List<ParticipantResponseDTO>> GetParticipantsAsync(Guid projectId)

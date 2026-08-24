@@ -5,6 +5,7 @@ using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
 using Capstone_Project.Extensions;
 using Domain.Entities;
+using Domain.Enum.Project;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -145,9 +146,14 @@ namespace Capstone_Project.Controllers
 
         [HttpGet]
         [Authorize]
-        public async Task<IActionResult> GetAll()
+        public async Task<IActionResult> GetAll(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            [FromQuery] string? search = null,
+            [FromQuery] ProjectStatus? status = null,
+            [FromQuery] Guid? ownerOrganizationId = null)
         {
-            var result = await _projectService.GetAllAsync();
+            var result = await _projectService.GetAllAsync(page, pageSize, search, status, ownerOrganizationId);
             return Ok(ApiResponse.Success("Projects retrieved", result));
         }
 
@@ -163,9 +169,15 @@ namespace Capstone_Project.Controllers
         // Dự án người dùng hiện tại đang tham gia (qua group) hoặc làm PM.
         [HttpGet("mine")]
         [Authorize]
-        public async Task<IActionResult> GetMine()
+        public async Task<IActionResult> GetMine(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            [FromQuery] string? search = null,
+            [FromQuery] ProjectStatus? status = null,
+            [FromQuery] Guid? ownerOrganizationId = null)
         {
-            var result = await _projectFlow.GetMyProjectsAsync(User.GetAccountId());
+            var result = await _projectFlow.GetMyProjectsPagedAsync(
+                User.GetAccountId(), page, pageSize, search, status, ownerOrganizationId);
             return Ok(ApiResponse.Success("My projects retrieved", result));
         }
 

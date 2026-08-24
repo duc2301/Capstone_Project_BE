@@ -1,4 +1,5 @@
-﻿using Application.DTOs.RequestDTOs.Project;
+﻿using Application.DTOs.ApiResponseDTO;
+using Application.DTOs.RequestDTOs.Project;
 using Application.DTOs.ResponseDTOs.Project;
 using Application.ExceptionMiddleware;
 using Application.Interfaces.IServices;
@@ -7,6 +8,7 @@ using AutoMapper;
 
 using Domain.Entities;
 using Domain.Enum.Audit;
+using Domain.Enum.Project;
 
 namespace Application.Services
 {
@@ -31,10 +33,40 @@ namespace Application.Services
         private const string OwnerInclude = "OwnerOrganization";
         private const string ProjectImagePrefix = "project-images";
 
-        public async Task<IEnumerable<ProjectResponseDTO>> GetAllAsync()
+        private const int DefaultProjectPageSize = 20;
+        private const int MaxProjectPageSize = 500;
+
+        public async Task<PagedResult<ProjectResponseDTO>> GetAllAsync(
+            int page,
+            int pageSize,
+            string? search = null,
+            ProjectStatus? status = null,
+            Guid? ownerOrganizationId = null)
         {
-            var entities = (await _unitOfWork.Repository<Project>().GetAllAsync(OwnerInclude)).ToList();
-            return await BuildListAsync(entities);
+            var safePage = page < 1 ? 1 : page;
+            var safeSize = pageSize < 1
+                ? DefaultProjectPageSize
+                : pageSize > MaxProjectPageSize ? MaxProjectPageSize : pageSize;
+
+            // Chuẩn hoá search thành biến cục bộ để EF dịch được sang SQL (tránh lọc trong bộ nhớ).
+            var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim().ToLower();
+
+            var (pageEntities, totalCount) = await _unitOfWork.Repository<Project>()
+                .GetPagedAsync(
+                    safePage,
+                    safeSize,
+                    predicate: p =>
+                        (term == null
+                            || (p.ProjectName != null && p.ProjectName.ToLower().Contains(term))
+                            || (p.ProjectCode != null && p.ProjectCode.ToLower().Contains(term)))
+                        && (status == null || p.Status == status)
+                        && (ownerOrganizationId == null || p.OwnerOrganizationId == ownerOrganizationId),
+                    orderBy: q => q.OrderByDescending(p => p.CreatedAt),
+                    includeProperties: OwnerInclude);
+
+            var result = await BuildListAsync(pageEntities.ToList());
+
+            return new PagedResult<ProjectResponseDTO>(result, totalCount, safePage, safeSize);
         }
 
         public async Task<List<ProjectResponseDTO>> GetByIdsAsync(IReadOnlyCollection<Guid> ids)
@@ -46,6 +78,44 @@ namespace Application.Services
                 .ToList();
 
             return await BuildListAsync(entities);
+        }
+
+        // Phân trang trong phạm vi một tập project id cho trước (vd: dự án của tôi), kèm search/filter.
+        public async Task<PagedResult<ProjectResponseDTO>> GetByIdsPagedAsync(
+            IReadOnlyCollection<Guid> ids,
+            int page,
+            int pageSize,
+            string? search = null,
+            ProjectStatus? status = null,
+            Guid? ownerOrganizationId = null)
+        {
+            var safePage = page < 1 ? 1 : page;
+            var safeSize = pageSize < 1
+                ? DefaultProjectPageSize
+                : pageSize > MaxProjectPageSize ? MaxProjectPageSize : pageSize;
+
+            if (ids.Count == 0)
+                return new PagedResult<ProjectResponseDTO>(new List<ProjectResponseDTO>(), 0, safePage, safeSize);
+
+            var idList = ids as List<Guid> ?? ids.ToList();
+            var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim().ToLower();
+
+            var (pageEntities, totalCount) = await _unitOfWork.Repository<Project>()
+                .GetPagedAsync(
+                    safePage,
+                    safeSize,
+                    predicate: p => idList.Contains(p.Id)
+                        && (term == null
+                            || (p.ProjectName != null && p.ProjectName.ToLower().Contains(term))
+                            || (p.ProjectCode != null && p.ProjectCode.ToLower().Contains(term)))
+                        && (status == null || p.Status == status)
+                        && (ownerOrganizationId == null || p.OwnerOrganizationId == ownerOrganizationId),
+                    orderBy: q => q.OrderByDescending(p => p.CreatedAt),
+                    includeProperties: OwnerInclude);
+
+            var result = await BuildListAsync(pageEntities.ToList());
+
+            return new PagedResult<ProjectResponseDTO>(result, totalCount, safePage, safeSize);
         }
 
         private async Task<List<ProjectResponseDTO>> BuildListAsync(List<Project> entities)
