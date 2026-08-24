@@ -112,6 +112,18 @@ namespace Application.Services
             if (dto.RelatedFileItemIds is { Count: > 0 })
                 await _fileLink.ValidateUploadLinkTargetsAsync(folder, dto.RelatedFileItemIds, actor, ct);
 
+            // ⑤bis "Lên phiên bản" = SỬA chính tài liệu đang có -> phải có quyền Sửa trên FILE đó,
+            // không chỉ quyền upload vào THƯ MỤC. Quyền upload thư mục (CanUploadToFolderAsync ở trên)
+            // không xét override/khoá cấp file, nên nếu bỏ qua bước này, người bị chặn/chỉ-đọc trên
+            // đúng tài liệu vẫn đè được phiên bản mới lên. Chốt TRƯỚC khi lưu bytes để không sinh object mồ côi.
+            // (Nhánh "tài liệu riêng" tạo FileItem MỚI -> quyền thư mục là đủ, không xét ở đây.)
+            if (!isSystemAdmin && dto.DuplicateAction == UploadDuplicateAction.NewVersion)
+            {
+                var conflict = await _fileVersionService.CheckNameAvailabilityAsync(folder.Id, name, format);
+                if (conflict.Scope == NameConflictScope.SameFolder && conflict.ConflictFileItemId.HasValue)
+                    await _permission.CanEditFileAsync(conflict.ConflictFileItemId.Value, actor);
+            }
+
             // ⑥ Trùng tên trong thư mục đích: hệ thống KHÔNG tự quyết nữa. Người dùng phải chọn lên
             // phiên bản của tài liệu đang có hay tách thành tài liệu riêng (đổi tên). Chốt TRƯỚC khi
             // lưu bytes vì lựa chọn "tài liệu riêng" đổi luôn tên -> đổi cả tên object trên kho.
