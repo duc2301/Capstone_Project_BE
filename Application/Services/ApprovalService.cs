@@ -177,11 +177,15 @@ namespace Application.Services
         /// </summary>
         public async Task<PagedResult<ApprovalRequestResponseDTO>> GetAllAsync(Guid actorId, int page, int pageSize)
         {
-            var requests = (await _unitOfWork.Repository<ApprovalRequest>().GetAllAsync())
-                .OrderByDescending(a => a.CreatedAt)
-                .ToList();
+            var safePage = page < 1 ? 1 : page;
+            var safeSize = pageSize < 1 || pageSize > MaxPageSize ? DefaultPageSize : pageSize;
 
-            return await BuildPagedResponseAsync(requests, actorId, page, pageSize);
+            var (requests, totalCount) = await _unitOfWork.Repository<ApprovalRequest>().GetPagedAsync(
+                safePage, safeSize,
+                predicate: null,
+                orderBy: q => q.OrderByDescending(a => a.CreatedAt));
+
+            return await BuildPagedResponseAsync(requests, totalCount, actorId, safePage, safeSize);
         }
 
         /// <summary>
@@ -189,12 +193,15 @@ namespace Application.Services
         /// </summary>
         public async Task<PagedResult<ApprovalRequestResponseDTO>> GetPendingAsync(Guid actorId, int page, int pageSize)
         {
-            var pendingRequests = (await _unitOfWork.Repository<ApprovalRequest>().FindAsync(
-                    a => a.Status == ApprovalRequestStatus.Pending))
-                .OrderByDescending(a => a.CreatedAt)
-                .ToList();
+            var safePage = page < 1 ? 1 : page;
+            var safeSize = pageSize < 1 || pageSize > MaxPageSize ? DefaultPageSize : pageSize;
 
-            return await BuildPagedResponseAsync(pendingRequests, actorId, page, pageSize);
+            var (pendingRequests, totalCount) = await _unitOfWork.Repository<ApprovalRequest>().GetPagedAsync(
+                safePage, safeSize,
+                predicate: a => a.Status == ApprovalRequestStatus.Pending,
+                orderBy: q => q.OrderByDescending(a => a.CreatedAt));
+
+            return await BuildPagedResponseAsync(pendingRequests, totalCount, actorId, safePage, safeSize);
         }
 
         /// <summary>
@@ -1026,45 +1033,61 @@ namespace Application.Services
 
         #region Tạo response
 
+        /// <summary>
+        /// Lọc quyền xem + build DTO cho ĐÚNG 1 trang ApprovalRequest đã được Skip/Take ở DB
+        /// (xem GetAllAsync/GetPendingAsync). Vì lọc quyền xảy ra sau khi lấy trang, trang trả về có
+        /// thể có ít hơn pageSize item nếu 1 số bản ghi trong trang đó actor không có quyền xem —
+        /// đổi lại không còn phải load toàn bộ bảng vào bộ nhớ chỉ để lọc rồi cắt trang.
+        /// </summary>
         private async Task<PagedResult<ApprovalRequestResponseDTO>> BuildPagedResponseAsync(
-            IEnumerable<ApprovalRequest> requests,
+            IReadOnlyList<ApprovalRequest> pageRequests,
+            int totalCount,
             Guid actor,
             int page,
             int pageSize)
         {
+            // Lấy FileItem của cả trang trong 1 query (thay vì gọi GetFileItemAsync riêng cho từng dòng).
+            var fileItemIds = pageRequests.Select(r => r.FileItemId).Distinct().ToList();
+            var fileItemById = fileItemIds.Count == 0
+                ? new Dictionary<Guid, FileItem>()
+                : (await _unitOfWork.Repository<FileItem>().FindAsync(f => fileItemIds.Contains(f.Id)))
+                    .ToDictionary(f => f.Id);
+
             var visible = new List<(ApprovalRequest Request, FileItem FileItem)>();
-            foreach (var request in requests)
+            foreach (var request in pageRequests)
             {
-                try
-                {
-                    var fileItem = await GetFileItemAsync(request.FileItemId);
-                    if (await CanViewRequestAsync(actor, request, fileItem))
-                        visible.Add((request, fileItem));
-                }
-                catch (ApiExceptionResponse ex) when (ex.StatusCode == 404)
+                if (!fileItemById.TryGetValue(request.FileItemId, out var fileItem))
                 {
                     _logger.LogWarning(
-                        ex,
                         "Skipping approval request {ApprovalRequestId} because file item {FileItemId} was not found.",
                         request.Id,
                         request.FileItemId);
+                    continue;
                 }
+
+                if (await CanViewRequestAsync(actor, request, fileItem))
+                    visible.Add((request, fileItem));
             }
 
-            var safePage = page < 1 ? 1 : page;
-            var safeSize = pageSize < 1 || pageSize > MaxPageSize ? DefaultPageSize : pageSize;
-            var pageItems = visible.Skip((safePage - 1) * safeSize).Take(safeSize).ToList();
+            var (accounts, groups) = await BuildLookupsForAsync(visible);
 
-            var (accounts, groups) = await BuildLookupsForAsync(pageItems);
+            // Lấy Folder của các FileItem còn lại (sau lọc quyền) trong 1 query, thay vì GetFolderAsync riêng.
+            var folderIds = visible.Select(v => v.FileItem.FolderId).Distinct().ToList();
+            var folderById = folderIds.Count == 0
+                ? new Dictionary<Guid, Folder>()
+                : (await _unitOfWork.Repository<Folder>().FindAsync(f => folderIds.Contains(f.Id)))
+                    .ToDictionary(f => f.Id);
 
             var items = new List<ApprovalRequestResponseDTO>();
-            foreach (var (request, fileItem) in pageItems)
+            foreach (var (request, fileItem) in visible)
             {
-                var folder = await GetFolderAsync(fileItem.FolderId);
+                if (!folderById.TryGetValue(fileItem.FolderId, out var folder))
+                    throw new ApiExceptionResponse("File folder not found.", 404);
+
                 items.Add(await BuildResponseAsync(request, fileItem, accounts, groups, folder));
             }
 
-            return new PagedResult<ApprovalRequestResponseDTO>(items, visible.Count, safePage, safeSize);
+            return new PagedResult<ApprovalRequestResponseDTO>(items, totalCount, page, pageSize);
         }
 
         private async Task<ApprovalRequestResponseDTO> BuildResponseAsync(ApprovalRequest request, FileItem? fileItem = null)
