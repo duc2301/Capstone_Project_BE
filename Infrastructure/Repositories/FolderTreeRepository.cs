@@ -155,7 +155,8 @@ namespace Infrastructure.Repositories
         {
             return await _context.FileItems
                 .Where(fi => fi.FolderId == folderId)
-                .OrderBy(fi => fi.Name)
+                .OrderByDescending(fi => fi.CreatedAt)
+                .ThenBy(fi => fi.Id)
                 .AsNoTracking()
                 .ToListAsync();
         }
@@ -171,7 +172,8 @@ namespace Infrastructure.Repositories
         {
             return await _context.FileItems
                 .Where(fi => fi.FolderId == folderId)
-                .OrderBy(fi => fi.Name)
+                .OrderByDescending(fi => fi.CreatedAt)
+                .ThenBy(fi => fi.Id)
                 .Skip(skip)
                 .Take(take)
                 .AsNoTracking()

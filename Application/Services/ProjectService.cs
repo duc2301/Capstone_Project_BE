@@ -61,7 +61,7 @@ namespace Application.Services
                             || (p.ProjectCode != null && p.ProjectCode.ToLower().Contains(term)))
                         && (status == null || p.Status == status)
                         && (ownerOrganizationId == null || p.OwnerOrganizationId == ownerOrganizationId),
-                    orderBy: q => q.OrderByDescending(p => p.CreatedAt),
+                    orderBy: q => q.OrderByDescending(p => p.CreatedAt).ThenBy(p => p.Id),
                     includeProperties: OwnerInclude);
 
             var result = await BuildListAsync(pageEntities.ToList());
@@ -110,7 +110,7 @@ namespace Application.Services
                             || (p.ProjectCode != null && p.ProjectCode.ToLower().Contains(term)))
                         && (status == null || p.Status == status)
                         && (ownerOrganizationId == null || p.OwnerOrganizationId == ownerOrganizationId),
-                    orderBy: q => q.OrderByDescending(p => p.CreatedAt),
+                    orderBy: q => q.OrderByDescending(p => p.CreatedAt).ThenBy(p => p.Id),
                     includeProperties: OwnerInclude);
 
             var result = await BuildListAsync(pageEntities.ToList());
