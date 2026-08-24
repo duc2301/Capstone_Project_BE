@@ -34,6 +34,7 @@ namespace Application.Services
         private readonly IModelTranslationQueue _translationQueue;
         private readonly ILogger<FileViewService> _logger;
         private readonly IAuditLogService _auditLog;
+        private readonly IWatermarkService _watermark;
 
         public FileViewService(
             IUnitOfWork unitOfWork,
@@ -44,7 +45,8 @@ namespace Application.Services
             IOfficeToPdfConverter officeConverter,
             IModelTranslationQueue translationQueue,
             ILogger<FileViewService> logger,
-            IAuditLogService auditLog)
+            IAuditLogService auditLog,
+            IWatermarkService watermark)
         {
             _unitOfWork = unitOfWork;
             _files = files;
@@ -55,6 +57,7 @@ namespace Application.Services
             _translationQueue = translationQueue;
             _logger = logger;
             _auditLog = auditLog;
+            _watermark = watermark;
         }
 
         public async Task<FileViewInfoDTO> GetViewInfoAsync(Guid fileItemId, Guid actor, CancellationToken ct = default)
@@ -312,6 +315,16 @@ namespace Application.Services
             }
 
             var stream = await _storage.OpenReadAsync(storagePath, ct);
+
+            // Watermark giống /view-content và /download — tránh mở tool markup này để né watermark.
+            var folder = await _files.GetFolderAsync(fileItem.FolderId, ct);
+            var watermarked = await _watermark.ApplyAsync(stream, "pdf", folder?.Area, actor, ct);
+            if (!ReferenceEquals(watermarked, stream))
+            {
+                await stream.DisposeAsync();
+                stream = watermarked;
+            }
+
             return new InlinePdfResult(stream, $"{fileItem.Name}.pdf");
         }
 
@@ -371,6 +384,19 @@ namespace Application.Services
             }
 
             var stream = await _storage.OpenReadAsync(storagePath, ct);
+
+            // Watermark cả lúc xem online, không chỉ lúc tải — ảnh/txt/csv thì bỏ qua vì không hỗ trợ.
+            if (contentType == "application/pdf")
+            {
+                var folder = await _files.GetFolderAsync(fileItem.FolderId, ct);
+                var watermarked = await _watermark.ApplyAsync(stream, "pdf", folder?.Area, actor, ct);
+                if (!ReferenceEquals(watermarked, stream))
+                {
+                    await stream.DisposeAsync();
+                    stream = watermarked;
+                }
+            }
+
             return new InlineContentResult(stream, contentType, fileName);
         }
 
