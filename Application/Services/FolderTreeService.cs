@@ -12,6 +12,9 @@ namespace Application.Services
 {
     public class FolderTreeService : IFolderTreeService
     {
+        private const int DefaultFolderContentsPageSize = 20;
+        private const int MaxFolderContentsPageSize = 500;
+
         private readonly IFolderTreeRepository _folderTreeRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
@@ -136,8 +139,9 @@ namespace Application.Services
             return await EnrichWithVersionInfoAsync(_mapper.Map<List<FileItemResponseDTO>>(files));
         }
 
-        // get folder contents (subfolders + files) for a given folder, with permission checks
-        public async Task<FolderContentsDTO> GetFolderContentsAsync(Guid folderId, Guid accountId, bool isSystemAdmin)
+        // get folder contents (all subfolders + one page of files) for a folder, with permission checks
+        public async Task<FolderContentsPagedDTO> GetFolderContentsAsync(
+            Guid folderId, Guid accountId, bool isSystemAdmin, int page, int pageSize)
         {
             var folder = await _folderTreeRepository.GetFolderByIdAsync(folderId)
                 ?? throw new ApiExceptionResponse("Folder not found.", 404);
@@ -156,6 +160,7 @@ namespace Application.Services
             if (!canViewFolder && folder.ParentFolderId != null)
                 throw new ApiExceptionResponse("You do not have permission to view this folder.", 403);
 
+            // --- Subfolder: TOÀN BỘ, không phân trang (giữ nguyên hành vi cũ) ---
             var children = await _folderTreeRepository.GetChildFoldersAsync(folderId);
 
             // Subfolder cũng lọc theo quyền View — user chỉ thấy nhánh mình được phép vào.
@@ -176,25 +181,43 @@ namespace Application.Services
             }).ToList();
             SortRecursive(subfolders);
 
-            // Không có quyền View trên khu vực gốc thì ẩn file, chỉ thấy subfolder được phép.
-            var files = canViewFolder
-                ? await _folderTreeRepository.GetFilesByFolderIdAsync(folderId)
+            // --- File của chính folder: phần DUY NHẤT được phân trang ---
+            var safePage = page < 1 ? 1 : page;
+            var safeSize = pageSize < 1 || pageSize > MaxFolderContentsPageSize
+                ? DefaultFolderContentsPageSize
+                : pageSize;
+
+            // Không có quyền View trên khu vực gốc thì ẩn file (fileCount = 0), chỉ thấy subfolder được phép.
+            var fileCount = canViewFolder
+                ? await _folderTreeRepository.CountFilesByFolderIdAsync(folderId)
+                : 0;
+
+            var pageFiles = canViewFolder && fileCount > 0
+                ? await _folderTreeRepository.GetFilesByFolderIdPagedAsync(
+                    folderId, (safePage - 1) * safeSize, safeSize)
                 : new List<Domain.Entities.FileItem>();
 
             // Kéo file được cấp quyền riêng (folder chứa không View được) lên folder đang mở nếu đây là
-            // tổ tiên gần nhất còn View được. viewableIds != null ⟺ user không có full access.
+            // tổ tiên gần nhất còn View được — mảng riêng, KHÔNG phân trang để offset file luôn chính xác.
+            // viewableIds != null ⟺ user không có full access.
+            var hoistedFiles = new List<FileItemResponseDTO>();
             if (viewableIds != null)
             {
                 var hoisted = await BuildHoistedFilesByAnchorAsync(folder.ProjectId, accountId, viewableIds);
                 if (hoisted.TryGetValue(folderId, out var extra))
-                    files = files.Concat(extra).ToList();
+                    hoistedFiles = await EnrichWithVersionInfoAsync(_mapper.Map<List<FileItemResponseDTO>>(extra));
             }
 
-            return new FolderContentsDTO
+            return new FolderContentsPagedDTO
             {
                 Id = folderId,
                 Subfolders = subfolders,
-                Files = await EnrichWithVersionInfoAsync(_mapper.Map<List<FileItemResponseDTO>>(files))
+                Files = await EnrichWithVersionInfoAsync(_mapper.Map<List<FileItemResponseDTO>>(pageFiles)),
+                HoistedFiles = hoistedFiles,
+                FolderCount = subfolders.Count,
+                PageNumber = safePage,
+                PageSize = safeSize,
+                TotalCount = fileCount
             };
         }
 
