@@ -46,6 +46,14 @@ namespace Application.Interfaces.IServices
         /// <summary>FolderIds in the project the account can View — for building filtered list views.</summary>
         Task<HashSet<Guid>> GetViewableFolderIdsAsync(Guid projectId, Guid accountId);
 
+        /// <summary>
+        /// Among the files in one folder, the FileItemIds this account is DENIED view on — for
+        /// filtering a folder listing so a file blocked at the file level (group or per-account
+        /// override) stops appearing, not just stops opening. Decided through HasViewFileAsync (the
+        /// single authority), so grants-win and the full override precedence are never re-derived.
+        /// </summary>
+        Task<HashSet<Guid>> GetDeniedViewFileIdsInFolderAsync(Guid folderId, Guid accountId);
+
         // ===== Current-user permission retrieval (viewing only, no authorization) =====
 
         /// <summary>Every folder/file permission the current user has, with the full user -> group -> participant chain.</summary>

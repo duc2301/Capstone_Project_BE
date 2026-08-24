@@ -34,10 +34,13 @@ namespace Application.Interfaces.IRepositories
         Task<List<FileItem>> GetFilesByFolderIdAsync(Guid folderId);
 
         // Tổng số file của 1 folder — cơ sở phân trang cho nội dung folder.
-        Task<int> CountFilesByFolderIdAsync(Guid folderId);
+        // excludeFileIds: bỏ qua các file bị từ chối xem ở cấp file (để đếm khớp phần đã lọc).
+        Task<int> CountFilesByFolderIdAsync(Guid folderId, IReadOnlyCollection<Guid>? excludeFileIds = null);
 
         // 1 trang file của 1 folder (sắp theo Name tại DB, khớp GetFilesByFolderIdAsync).
-        Task<List<FileItem>> GetFilesByFolderIdPagedAsync(Guid folderId, int skip, int take);
+        // excludeFileIds: loại các file bị từ chối xem TRƯỚC khi phân trang để offset luôn chính xác.
+        Task<List<FileItem>> GetFilesByFolderIdPagedAsync(
+            Guid folderId, int skip, int take, IReadOnlyCollection<Guid>? excludeFileIds = null);
 
         Task<HashSet<Guid>> GetWarningFolderIdsAsync(Guid projectId);
 
