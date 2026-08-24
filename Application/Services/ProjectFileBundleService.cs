@@ -25,20 +25,17 @@ namespace Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IFileStorageService _storage;
         private readonly IAuditLogService _auditLog;
-        private readonly IWatermarkService _watermark;
         private readonly ILogger<ProjectFileBundleService> _logger;
 
         public ProjectFileBundleService(
             IUnitOfWork unitOfWork,
             IFileStorageService storage,
             IAuditLogService auditLog,
-            IWatermarkService watermark,
             ILogger<ProjectFileBundleService> logger)
         {
             _unitOfWork = unitOfWork;
             _storage = storage;
             _auditLog = auditLog;
-            _watermark = watermark;
             _logger = logger;
         }
 
@@ -66,9 +63,6 @@ namespace Application.Services
                 LogScope.Project, AuditAction.Download, nameof(Project), projectId.ToString(), actorId,
                 $"Tải toàn bộ tài liệu dự án ({entries.Count} tệp)", projectId);
 
-            // Cùng 1 actor cho cả gói -> lấy tài khoản 1 lần, dùng chung cho mọi entry cần watermark.
-            var actorAccount = await _unitOfWork.Repository<Account>().GetByIdAsync(actorId);
-
             var failures = new List<string>();
 
             using var archive = new ZipArchive(destination, ZipArchiveMode.Create, true, Encoding.UTF8);
@@ -79,7 +73,7 @@ namespace Application.Services
             foreach (var entry in entries)
             {
                 ct.ThrowIfCancellationRequested();
-                await CopyIntoArchiveAsync(archive, entry, actorAccount, failures, ct);
+                await CopyIntoArchiveAsync(archive, entry, failures, ct);
             }
 
             if (failures.Count > 0)
@@ -87,23 +81,14 @@ namespace Application.Services
         }
 
         private async Task CopyIntoArchiveAsync(
-            ZipArchive archive, BundleEntry entry, Account? actorAccount, List<string> failures, CancellationToken ct)
+            ZipArchive archive, BundleEntry entry, List<string> failures, CancellationToken ct)
         {
             try
             {
                 await using var source = await _storage.OpenReadAsync(entry.StoragePath, ct);
                 var archiveEntry = archive.CreateEntry(entry.EntryName, CompressionLevel.Fastest);
                 await using var target = archiveEntry.Open();
-
-                // Watermark như /download — tránh tải cả gói để né watermark từng file.
-                var isProtectedZone = entry.Area is CdeArea.Shared or CdeArea.Published;
-                var watermarked = !isProtectedZone || actorAccount == null
-                    ? source
-                    : _watermark.Stamp(source, entry.Format, WatermarkLabelBuilder.Build(actorAccount));
-
-                await watermarked.CopyToAsync(target, ct);
-                if (!ReferenceEquals(watermarked, source))
-                    await watermarked.DisposeAsync();
+                await source.CopyToAsync(target, ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -126,7 +111,6 @@ namespace Application.Services
             List<Folder> folders, Dictionary<Guid, string> folderPaths)
         {
             var folderIds = folders.Select(f => f.Id).ToHashSet();
-            var areaByFolderId = folders.ToDictionary(f => f.Id, f => f.Area);
             var fileItems = (await _unitOfWork.Repository<FileItem>()
                     .FindAsync(f => folderIds.Contains(f.FolderId) && f.CurrentVersionId != null))
                 .ToList();
@@ -147,11 +131,9 @@ namespace Application.Services
 
                 var fileName = SanitizeName(
                     FileDownloadNaming.BuildFileName(fileItem.Name, version.Format), fileItem.Id.ToString());
-                var area = areaByFolderId.GetValueOrDefault(fileItem.FolderId);
 
                 entries.Add(new BundleEntry(
-                    MakeUniqueEntryName($"{folderPath}/{fileName}", usedNames),
-                    version.StoragePath, version.Format ?? string.Empty, area));
+                    MakeUniqueEntryName($"{folderPath}/{fileName}", usedNames), version.StoragePath));
             }
 
             return entries;
@@ -220,6 +202,6 @@ namespace Application.Services
             await _unitOfWork.Repository<Project>().GetByIdAsync(projectId)
             ?? throw new ApiExceptionResponse("Project not found.", 404);
 
-        private sealed record BundleEntry(string EntryName, string StoragePath, string Format, CdeArea Area);
+        private sealed record BundleEntry(string EntryName, string StoragePath);
     }
 }
