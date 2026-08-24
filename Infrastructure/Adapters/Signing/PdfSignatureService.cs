@@ -8,6 +8,7 @@ using Application.Services.Signing;
 using Domain.Entities;
 using Domain.Enum.Cde;
 using Domain.Enum.File;
+using Infrastructure.Adapters;
 using iText.IO.Font;
 using iText.Kernel.Colors;
 using iText.Kernel.Font;
@@ -477,24 +478,12 @@ namespace Infrastructure.Adapters.Signing
         private static bool IsExplicitSignerApproval(ApprovalRequest approval)
             => approval.FromZone == CdeArea.Shared && approval.TargetZone == CdeArea.Published;
 
-        private static readonly Lazy<byte[]> _regularFontBytes = new(() => LoadEmbeddedFontBytes("NotoSans-Regular.ttf"));
-        private static readonly Lazy<byte[]> _boldFontBytes = new(() => LoadEmbeddedFontBytes("NotoSans-Bold.ttf"));
+        private static readonly Lazy<byte[]> _regularFontBytes = new(() => EmbeddedResourceLoader.LoadFontBytes("NotoSans-Regular.ttf"));
+        private static readonly Lazy<byte[]> _boldFontBytes = new(() => EmbeddedResourceLoader.LoadFontBytes("NotoSans-Bold.ttf"));
 
         // Font Helvetica mac dinh cua iText khong co dau tieng Viet -> phai nhung font Unicode (NotoSans) rieng.
         private static PdfFont GetRegularFont() => PdfFontFactory.CreateFont(_regularFontBytes.Value, PdfEncodings.IDENTITY_H);
         private static PdfFont GetBoldFont() => PdfFontFactory.CreateFont(_boldFontBytes.Value, PdfEncodings.IDENTITY_H);
-
-        private static byte[] LoadEmbeddedFontBytes(string fileName)
-        {
-            // Font nhúng giờ nằm cùng assembly Infrastructure (đã dời từ Application sang cùng adapter iText).
-            var assembly = typeof(PdfSignatureService).Assembly;
-            var resourceName = $"Infrastructure.Resources.Fonts.{fileName}";
-            using var stream = assembly.GetManifestResourceStream(resourceName)
-                ?? throw new InvalidOperationException($"Embedded font resource not found: {resourceName}");
-            using var buffer = new MemoryStream();
-            stream.CopyTo(buffer);
-            return buffer.ToArray();
-        }
 
         internal static void DrawSignatureStamp(
             iText.Kernel.Pdf.Canvas.PdfCanvas pdfCanvas,

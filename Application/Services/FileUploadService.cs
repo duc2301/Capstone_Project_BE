@@ -50,12 +50,14 @@ namespace Application.Services
         private readonly IFileLinkService _fileLink;
         private readonly IAuditLogService _auditLog;
         private readonly IDocumentIndexSyncService _indexSync;
+        private readonly IWatermarkService _watermark;
         private readonly ILogger<FileUploadService> _logger;
 
-        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, ICdeStorageKeyBuilder storageKey, IModelTranslationQueue translationQueue, IMapper mapper, INamingConventionService naming, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService, IFileLinkService fileLink, IAuditLogService auditLog, IPermissionCheckingService permission, IDocumentIndexSyncService indexSync, ILogger<FileUploadService> logger)
+        public FileUploadService(IUnitOfWork unitOfWork, IFileStorageService storage, ICdeStorageKeyBuilder storageKey, IModelTranslationQueue translationQueue, IMapper mapper, INamingConventionService naming, INameMatchContentBackgroundService nameMatchContentBackgroundService, IFileVersionService fileVersionService, IFileLinkService fileLink, IAuditLogService auditLog, IPermissionCheckingService permission, IDocumentIndexSyncService indexSync, IWatermarkService watermark, ILogger<FileUploadService> logger)
         {
             _logger = logger;
             _indexSync = indexSync;
+            _watermark = watermark;
             _auditLog = auditLog;
             _permission = permission;
             _unitOfWork = unitOfWork;
@@ -446,6 +448,7 @@ namespace Application.Services
 
             var stream = await _storage.OpenReadAsync(version.StoragePath, ct);
             var downloadName = FileDownloadNaming.BuildFileName(fileItem.Name, version.Format);
+            var contentType = _storage.GetContentType(version.Format);
 
             // Luồng chỉ-đọc: không có transaction nghiệp vụ để bám vào -> ghi + commit riêng.
             var downloadFolder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
@@ -454,7 +457,16 @@ namespace Application.Services
                 detail: $"Tải về '{downloadName}' ({version.DisplayVersion})",
                 projectId: downloadFolder?.ProjectId, folderId: fileItem.FolderId);
 
-            return new DownloadFileResult(stream, downloadName, _storage.GetContentType(version.Format));
+            // Watermark truy vết người tải nếu file bị phát tán ra ngoài (chính sách "vùng nào" nằm
+            // trong WatermarkService.ApplyAsync, dùng chung với FileViewService/ProjectFileBundleService).
+            var watermarked = await _watermark.ApplyAsync(stream, version.Format, downloadFolder?.Area, actor, ct);
+            if (!ReferenceEquals(watermarked, stream))
+            {
+                await stream.DisposeAsync();
+                stream = watermarked;
+            }
+
+            return new DownloadFileResult(stream, downloadName, contentType);
         }
 
         public async Task<string?> GetViewUrlAsync(Guid fileItemId, Guid actor, int minutes = 60, CancellationToken ct = default)
