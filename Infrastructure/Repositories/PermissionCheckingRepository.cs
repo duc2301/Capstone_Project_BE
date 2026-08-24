@@ -268,6 +268,18 @@ namespace Infrastructure.Repositories
                             m.IssueId == i.Id && m.MentionedAccountId == accountId)));
         }
 
+        public async Task<List<Guid>> GetFileIdsWithActivePermissionByFolderAsync(Guid folderId)
+        {
+            // Cả override nhóm (ProjectParticipantId) lẫn override cá nhân (AccountId) đều là dòng
+            // FilePermission -> chỉ những file có dòng Active mới có thể khác quyền so với folder.
+            return await _context.FilePermissions
+                .Where(fp => fp.FileItem.FolderId == folderId
+                          && fp.Status == PermissionStatus.Active)
+                .Select(fp => fp.FileItemId)
+                .Distinct()
+                .ToListAsync();
+        }
+
         // ===== Current-user permission retrieval (viewing only) =====
 
         public async Task<Account?> GetAccountAsync(Guid accountId)

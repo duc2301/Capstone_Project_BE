@@ -36,6 +36,40 @@ namespace Application.Interfaces.IServices
         Task<bool> HasEditFolderAsync(Guid folderId, Guid accountId);
         Task<bool> HasViewFileAsync(Guid fileItemId, Guid accountId);
 
+        /// <summary>
+        /// True if the account has EDIT (Write) on the file, by the same precedence as the throwing
+        /// CanEditFileAsync gate (bypass, per-account override, ancestor-folder override, group file
+        /// override, group folder ACL). No additive grant path — view grants do not confer edit.
+        /// </summary>
+        Task<bool> HasEditFileAsync(Guid fileItemId, Guid accountId);
+
+        /// <summary>
+        /// Among the given files, the FileItemIds this account has EDIT (Write) on — for filtering a
+        /// list to the files a non-admin/PM caller may actually manage. Decided through
+        /// HasEditFileAsync, so the full override precedence is never re-derived.
+        /// </summary>
+        Task<HashSet<Guid>> GetEditableFileIdsAsync(Guid accountId, IReadOnlyCollection<Guid> fileItemIds);
+
+        /// <summary>
+        /// Among the given folders, the FolderIds this account has EDIT (Write) on — for filtering a
+        /// list to the folders a non-admin/PM caller may actually manage. Decided through
+        /// HasEditFolderAsync (no downward inheritance — write on a parent does not confer it here).
+        /// </summary>
+        Task<HashSet<Guid>> GetEditableFolderIdsAsync(Guid accountId, IReadOnlyCollection<Guid> folderIds);
+
+        /// <summary>
+        /// Among the given folders, the FolderIds this account can VIEW — the read-gated counterpart of
+        /// GetEditableFolderIdsAsync, decided through HasViewFolderAsync. (Distinct from the
+        /// project-wide GetViewableFolderIdsAsync: this filters a caller-supplied id set.)
+        /// </summary>
+        Task<HashSet<Guid>> GetViewableFolderIdsAmongAsync(Guid accountId, IReadOnlyCollection<Guid> folderIds);
+
+        /// <summary>
+        /// Among the given files, the FileItemIds this account can VIEW — the read-gated counterpart of
+        /// GetEditableFileIdsAsync, decided through HasViewFileAsync.
+        /// </summary>
+        Task<HashSet<Guid>> GetViewableFileIdsAmongAsync(Guid accountId, IReadOnlyCollection<Guid> fileItemIds);
+
         // ===== Project-scoped =====
         /// <summary>True if the account is a system admin.</summary>
         Task<bool> HasSystemAdminAsync(Guid accountId);
@@ -45,6 +79,14 @@ namespace Application.Interfaces.IServices
 
         /// <summary>FolderIds in the project the account can View — for building filtered list views.</summary>
         Task<HashSet<Guid>> GetViewableFolderIdsAsync(Guid projectId, Guid accountId);
+
+        /// <summary>
+        /// Among the files in one folder, the FileItemIds this account is DENIED view on — for
+        /// filtering a folder listing so a file blocked at the file level (group or per-account
+        /// override) stops appearing, not just stops opening. Decided through HasViewFileAsync (the
+        /// single authority), so grants-win and the full override precedence are never re-derived.
+        /// </summary>
+        Task<HashSet<Guid>> GetDeniedViewFileIdsInFolderAsync(Guid folderId, Guid accountId);
 
         // ===== Current-user permission retrieval (viewing only, no authorization) =====
 

@@ -161,17 +161,21 @@ namespace Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        public async Task<int> CountFilesByFolderIdAsync(Guid folderId)
+        public async Task<int> CountFilesByFolderIdAsync(Guid folderId, IReadOnlyCollection<Guid>? excludeFileIds = null)
         {
-            return await _context.FileItems
-                .Where(fi => fi.FolderId == folderId)
-                .CountAsync();
+            var query = _context.FileItems.Where(fi => fi.FolderId == folderId);
+            if (excludeFileIds != null && excludeFileIds.Count > 0)
+                query = query.Where(fi => !excludeFileIds.Contains(fi.Id));
+            return await query.CountAsync();
         }
 
-        public async Task<List<FileItem>> GetFilesByFolderIdPagedAsync(Guid folderId, int skip, int take)
+        public async Task<List<FileItem>> GetFilesByFolderIdPagedAsync(
+            Guid folderId, int skip, int take, IReadOnlyCollection<Guid>? excludeFileIds = null)
         {
-            return await _context.FileItems
-                .Where(fi => fi.FolderId == folderId)
+            var query = _context.FileItems.Where(fi => fi.FolderId == folderId);
+            if (excludeFileIds != null && excludeFileIds.Count > 0)
+                query = query.Where(fi => !excludeFileIds.Contains(fi.Id));
+            return await query
                 .OrderByDescending(fi => fi.CreatedAt)
                 .ThenBy(fi => fi.Id)
                 .Skip(skip)
