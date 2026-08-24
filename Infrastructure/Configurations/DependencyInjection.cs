@@ -13,6 +13,7 @@ using Infrastructure.Adapters.Signing;
 using Infrastructure.Adapters.SmartCA;
 using Infrastructure.Adapters.Storage;
 using Infrastructure.Adapters.Viewer;
+using Infrastructure.Adapters.Watermarking;
 using Infrastructure.DbContexts;
 using Infrastructure.Repositories;
 using Infrastructure.UnitOfWorks;
@@ -57,6 +58,7 @@ namespace Infrastructure.Configurations
             services.AddScoped<IApprovalService, ApprovalService>();
             services.AddScoped<IFileSignaturePositionService, FileSignaturePositionService>();
             services.AddScoped<IPdfSignatureService, PdfSignatureService>();
+            services.AddScoped<IWatermarkService, WatermarkService>();
             services.AddScoped<IVnptSmartCaService, VnptSmartCaService>();
             services.AddScoped<IZoneReturnRequestService, ZoneReturnRequestService>();
             // Niêm phong lưu trữ (Published -> Archived, ngoài luồng phê duyệt): chỉ PM/Admin.
