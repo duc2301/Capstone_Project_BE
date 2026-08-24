@@ -36,12 +36,14 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("Folder files retrieved", files));
         }
 
-        // Nội dung 1 cấp khi user click vào 1 folder trên cây:
-        // subfolder trực tiếp (đã lọc theo quyền View) + file của chính folder đó.
+        // Nội dung 1 cấp khi user click vào 1 folder trên cây: TOÀN BỘ subfolder trực tiếp
+        // (đã lọc theo quyền View) + 1 trang file của chính folder đó (?page & ?pageSize).
         [HttpGet("folders/{folderId:guid}/contents")]
-        public async Task<IActionResult> GetFolderContents(Guid folderId)
+        public async Task<IActionResult> GetFolderContents(
+            Guid folderId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
-            var contents = await _folderTreeService.GetFolderContentsAsync(folderId, User.GetAccountId(), User.IsAdmin());
+            var contents = await _folderTreeService.GetFolderContentsAsync(
+                folderId, User.GetAccountId(), User.IsAdmin(), page, pageSize);
             return Ok(ApiResponse.Success("Folder contents retrieved", contents));
         }
     }

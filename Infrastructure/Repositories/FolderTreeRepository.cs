@@ -160,6 +160,24 @@ namespace Infrastructure.Repositories
                 .ToListAsync();
         }
 
+        public async Task<int> CountFilesByFolderIdAsync(Guid folderId)
+        {
+            return await _context.FileItems
+                .Where(fi => fi.FolderId == folderId)
+                .CountAsync();
+        }
+
+        public async Task<List<FileItem>> GetFilesByFolderIdPagedAsync(Guid folderId, int skip, int take)
+        {
+            return await _context.FileItems
+                .Where(fi => fi.FolderId == folderId)
+                .OrderBy(fi => fi.Name)
+                .Skip(skip)
+                .Take(take)
+                .AsNoTracking()
+                .ToListAsync();
+        }
+
         public async Task<HashSet<Guid>> GetWarningFolderIdsAsync(Guid projectId)
         {
             // Cảnh báo giờ ở version hiện hành -> folder "có cảnh báo" = có file mà bản hiện hành bị Warnning.
