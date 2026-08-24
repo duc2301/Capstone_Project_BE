@@ -42,8 +42,11 @@ namespace Application.Services
         // ===== GET =====
 
         public async Task<PermissionMatrixResponseDTO> GetMatrixAsync(
-            Guid projectId, Guid accountId, bool isSystemAdmin, CdeArea? area = null)
+            Guid projectId, Guid accountId, bool isSystemAdmin, PermissionMatrixFilterDTO? filter = null)
         {
+            filter ??= new PermissionMatrixFilterDTO();
+            var area = filter.Area;
+
             if (!await _matrixRepo.ProjectExistsAsync(projectId))
                 throw new ApiExceptionResponse("Project not found.", 404);
 
@@ -59,8 +62,13 @@ namespace Application.Services
             // Cột = bên tham gia đang hoạt động, TRỪ nhóm của chính caller (không tự sửa quyền nhóm mình).
             var callerParticipantIds = await _matrixRepo.GetCallerParticipantIdsAsync(projectId, accountId);
             var participants = await _matrixRepo.GetActiveParticipantsByProjectAsync(projectId);
+            // Lọc nhóm (multi-select theo GroupId). Rỗng = không lọc.
+            var groupFilter = filter.GroupIds is { Count: > 0 }
+                ? filter.GroupIds.ToHashSet()
+                : null;
             var columns = participants
                 .Where(pp => !callerParticipantIds.Contains(pp.Id))
+                .Where(pp => groupFilter == null || groupFilter.Contains(pp.GroupId))
                 .Select(pp => new MatrixColumnDTO
                 {
                     ProjectParticipantId = pp.Id,
@@ -173,6 +181,11 @@ namespace Application.Services
                     });
                 }
             }
+
+            // Lọc hàng theo folder/file (multi-select). Giữ hàng khớp + hậu duệ của folder khớp
+            // + tổ tiên (để cây hiển thị đúng đường dẫn). Rỗng = giữ nguyên.
+            if (filter.HasRowFilter)
+                rows = ApplyRowFilter(rows, filter.FolderIds, filter.FileIds);
 
             return new PermissionMatrixResponseDTO
             {
@@ -338,6 +351,58 @@ namespace Application.Services
         }
 
         // ===== Helpers =====
+
+        // Lọc hàng ma trận theo tập folder/file đã chọn, GIỮ NGUYÊN thứ tự cây (pre-order).
+        // Quy tắc giữ một hàng:
+        //  - folder ∈ FolderIds  -> giữ folder đó VÀ toàn bộ hậu duệ (file/subfolder bên trong).
+        //  - file   ∈ FileIds    -> giữ file đó.
+        //  - tổ tiên của bất kỳ hàng được giữ -> giữ để cây hiển thị đúng đường dẫn (ParentRowId hợp lệ).
+        // FolderIds/FileIds kết hợp theo OR. Đã đảm bảo có ít nhất một tập không rỗng trước khi gọi.
+        private static List<MatrixRowDTO> ApplyRowFilter(
+            List<MatrixRowDTO> rows, List<Guid>? folderIds, List<Guid>? fileIds)
+        {
+            var folderSet = folderIds is { Count: > 0 } ? folderIds.ToHashSet() : new HashSet<Guid>();
+            var fileSet = fileIds is { Count: > 0 } ? fileIds.ToHashSet() : new HashSet<Guid>();
+
+            var rowById = rows.ToDictionary(r => r.TargetId);
+            var childrenByParent = rows
+                .Where(r => r.ParentRowId.HasValue)
+                .GroupBy(r => r.ParentRowId!.Value)
+                .ToDictionary(g => g.Key, g => g.Select(r => r.TargetId).ToList());
+
+            var keep = new HashSet<Guid>();
+
+            // Hàng khớp trực tiếp + hậu duệ (BFS) cho folder khớp.
+            foreach (var r in rows)
+            {
+                var directHit =
+                    (r.TargetType == MatrixTargetType.Folder && folderSet.Contains(r.TargetId)) ||
+                    (r.TargetType == MatrixTargetType.File && fileSet.Contains(r.TargetId));
+                if (!directHit) continue;
+
+                var queue = new Queue<Guid>();
+                queue.Enqueue(r.TargetId);
+                while (queue.Count > 0)
+                {
+                    var id = queue.Dequeue();
+                    if (!keep.Add(id)) continue;
+                    // Chỉ mở rộng hậu duệ khi hàng khớp là folder (file không có con).
+                    if (rowById.TryGetValue(id, out var cur) && cur.TargetType == MatrixTargetType.Folder
+                        && childrenByParent.TryGetValue(id, out var kids))
+                        foreach (var k in kids) queue.Enqueue(k);
+                }
+            }
+
+            // Bổ sung tổ tiên của mọi hàng được giữ (đi lên theo ParentRowId).
+            foreach (var id in keep.ToList())
+            {
+                var parent = rowById[id].ParentRowId;
+                while (parent.HasValue && keep.Add(parent.Value))
+                    parent = rowById.TryGetValue(parent.Value, out var pr) ? pr.ParentRowId : null;
+            }
+
+            return rows.Where(r => keep.Contains(r.TargetId)).ToList();
+        }
 
         // Tập folder leader được sửa = folder được giao (có FolderPermission Active cho nhóm leader),
         // trừ root area, cộng toàn bộ folder con (BFS trên bản đồ cha->con của dự án).
