@@ -15,12 +15,16 @@ namespace Application.Services
         private readonly IMapper _mapper;
 
         private readonly IAuditLogService _auditLog;
+        private readonly IPermissionCleanupService _cleanup;
 
-        public FilePermissionService(IUnitOfWork unitOfWork, IMapper mapper, IAuditLogService auditLog)
+        public FilePermissionService(
+            IUnitOfWork unitOfWork, IMapper mapper, IAuditLogService auditLog,
+            IPermissionCleanupService cleanup)
         {
             _auditLog = auditLog;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
+            _cleanup = cleanup;
         }
 
         #region CRUD có sẵn
@@ -167,6 +171,10 @@ namespace Application.Services
                 projectId: auditFolder?.ProjectId, folderId: auditFile?.FolderId);
 
             await _unitOfWork.CommitAsync();
+
+            // [T1] Pool nhóm của file vừa đổi -> dọn override tài khoản mồ côi (chạy SAU commit để
+            // recompute thấy trạng thái mới; dòng mồ côi vốn trơ dưới mask nên lệch pha vô hại).
+            await _cleanup.CleanupFileOverridesAsync(dto.Id);
 
             var permissions = await _unitOfWork.FilePermissionRepository.GetFilePermissionsByParticipantIdsAsync(dto.Id, updatedParticipantIds);
 

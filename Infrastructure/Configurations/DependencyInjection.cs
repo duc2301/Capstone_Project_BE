@@ -101,6 +101,9 @@ namespace Infrastructure.Configurations
             services.AddScoped<IPermissionCheckingService, PermissionCheckingService>();
             services.AddScoped<IPermissionCheckingRepository, PermissionCheckingRepository>();
 
+            // Dọn override tài khoản mồ côi sau khi pool nhóm thay đổi (Part 4 permission redesign)
+            services.AddScoped<IPermissionCleanupService, PermissionCleanupService>();
+
             // Ma trận phân quyền (RACI): dựng lưới + lưu ô thay đổi (đọc theo lô, ghi qua PermissionLevelMapper).
             services.AddScoped<IPermissionMatrixRepository, PermissionMatrixRepository>();
             services.AddScoped<IPermissionMatrixService, PermissionMatrixService>();

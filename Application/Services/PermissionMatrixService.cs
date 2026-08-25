@@ -24,19 +24,22 @@ namespace Application.Services
         private readonly IFolderTreeService _folderTreeService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IAuditLogService _auditLog;
+        private readonly IPermissionCleanupService _cleanup;
 
         public PermissionMatrixService(
             IPermissionMatrixRepository matrixRepo,
             IPermissionCheckingService permissionChecking,
             IFolderTreeService folderTreeService,
             IUnitOfWork unitOfWork,
-            IAuditLogService auditLog)
+            IAuditLogService auditLog,
+            IPermissionCleanupService cleanup)
         {
             _matrixRepo = matrixRepo;
             _permissionChecking = permissionChecking;
             _folderTreeService = folderTreeService;
             _unitOfWork = unitOfWork;
             _auditLog = auditLog;
+            _cleanup = cleanup;
         }
 
         // ===== GET =====
@@ -432,6 +435,14 @@ namespace Application.Services
                 projectId: projectId);
 
             await _unitOfWork.CommitAsync();
+
+            // [T2] Pool nhóm của các folder/file vừa đổi trên ma trận -> dọn override tài khoản mồ
+            // côi (SAU commit để recompute thấy trạng thái mới). File ở đây phòng hờ: ma trận hiện
+            // folder-only, nhưng đường lưu vẫn nhận file change nên dọn luôn cho kín.
+            foreach (var folderId in changedFolderIds)
+                await _cleanup.CleanupFolderOverridesAsync(folderId);
+            foreach (var fileId in fileChangeIds)
+                await _cleanup.CleanupFileOverridesAsync(fileId);
 
             return await BuildSaveResultAsync(changes);
         }

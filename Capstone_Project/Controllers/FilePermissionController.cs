@@ -21,33 +21,34 @@ namespace Capstone_Project.Controllers
 
         #region file permission
 
-        // [KILL-A] Group file-permissioning has been retired from the frontend. The GROUP endpoints
-        // are commented out (NOT deleted) so they can be restored later; the underlying services are
-        // left intact. The per-member roster endpoints ("Phân quyền thành viên": user-ui / add-user)
-        // are intentionally KEPT.
+        // [Part 2 — group file-permissioning RESTORED] These GROUP endpoints back the file "Phân quyền"
+        // group dialog. They were commented out under KILL-A (2026-08-25) and are re-enabled here.
+        // The PERMISSION MATRIX stays folder-only (PermissionMatrixService still feeds no file rows) —
+        // file group assignment happens ONLY through these dedicated endpoints, never the matrix.
+        // The per-member roster endpoints ("Phân quyền thành viên": user-ui / add-user) are unchanged.
 
-        // Hàm này dùng để lấy data để test, lấy hết tất cả data liên quan đến file permission, bao gồm cả group đã bị xóa khỏi permission list
-        //[HttpGet("{fileItemId}")]
-        //public async Task<IActionResult> GetParticipatedGroupWithFilePermissionWithFileItemId(Guid fileItemId)
-        //{
-        //    var result = await _filePermissionService.GetGroupFilePermissionResponsesAsync(fileItemId);
-        //    return Ok(ApiResponse.Success("Group with permission retrieved successfully", result));
-        //}
+        // Toàn bộ dòng file permission (kể cả group đã bị gỡ khỏi danh sách) — dùng để lấy data/debug.
+        [HttpGet("{fileItemId:guid}")]
+        public async Task<IActionResult> GetParticipatedGroupWithFilePermissionWithFileItemId(Guid fileItemId)
+        {
+            var result = await _filePermissionService.GetGroupFilePermissionResponsesAsync(fileItemId);
+            return Ok(ApiResponse.Success("Group with permission retrieved successfully", result));
+        }
 
-        //
-        //[HttpGet("{fileItemId:guid}/group-ui")]
-        //public async Task<IActionResult> GetDataForFilePermissionUI(Guid fileItemId)
-        //{
-        //    var result = await _filePermissionService.GetDataForPermissionUIAsync(fileItemId, User.GetAccountId());
-        //    return Ok(ApiResponse.Success("Group with permission retrieved successfully", result));
-        //}
+        // Data cho hộp thoại phân quyền NHÓM của file: nhóm khả dụng + nhóm đang được cấp quyền.
+        [HttpGet("{fileItemId:guid}/group-ui")]
+        public async Task<IActionResult> GetDataForFilePermissionUI(Guid fileItemId)
+        {
+            var result = await _filePermissionService.GetDataForPermissionUIAsync(fileItemId, User.GetAccountId());
+            return Ok(ApiResponse.Success("Group with permission retrieved successfully", result));
+        }
 
-        //[HttpGet("{fileItemId:guid}/active-groups")]
-        //public async Task<IActionResult> GetActiveParticipatedGroupByFileItemId(Guid fileItemId)
-        //{
-        //    var result = await _filePermissionService.GetActiveParticipantsByFileItemId(fileItemId);
-        //    return Ok(ApiResponse.Success("Active groups retrieved successfully", result));
-        //}
+        [HttpGet("{fileItemId:guid}/active-groups")]
+        public async Task<IActionResult> GetActiveParticipatedGroupByFileItemId(Guid fileItemId)
+        {
+            var result = await _filePermissionService.GetActiveParticipantsByFileItemId(fileItemId);
+            return Ok(ApiResponse.Success("Active groups retrieved successfully", result));
+        }
 
         // "Phân quyền thành viên": roster of members with group-inherited access + blacklist state.
         [HttpGet("{fileItemId:guid}/user-ui")]
@@ -65,22 +66,20 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("User permission updated successfully", result));
         }
 
-        //[HttpPost("add-group")]
-        //public async Task<IActionResult> SaveFilePermissions([FromBody] AddPermissionsBulkDTO dto)
-        //{
-        //    //if (dto.FileItemId != fileId)
-        //    //    return BadRequest("File ID mismatch");
+        // Cấp/gỡ quyền NHÓM trên file (present-wins override; gỡ = trả về kế thừa quyền thư mục).
+        [HttpPost("add-group")]
+        public async Task<IActionResult> SaveFilePermissions([FromBody] AddPermissionsBulkDTO dto)
+        {
+            var result = await _filePermissionService.BulkUpdateFilePermissionsAsync(dto, User.GetAccountId());
+            return Ok(ApiResponse.Success("Permission updated successfully", result));
+        }
 
-        //    var result = await _filePermissionService.BulkUpdateFilePermissionsAsync(dto, User.GetAccountId());
-        //    return Ok(ApiResponse.Success("Permission updated successfully", result));
-        //}
-
-        //[HttpGet("group-permission")]
-        //public async Task<IActionResult> GetFilePermissionOfParticipantByFileItemIdAndParticipantId([FromQuery] GetFilePermissionOfParticipantDTO dto)
-        //{
-        //    var result = await _filePermissionService.GetFilePermissionOfParticipantByFileItemIdAndParticipantId(dto);
-        //    return Ok(ApiResponse.Success("Group permission retrieved successfully", result));
-        //}
+        [HttpGet("group-permission")]
+        public async Task<IActionResult> GetFilePermissionOfParticipantByFileItemIdAndParticipantId([FromQuery] GetFilePermissionOfParticipantDTO dto)
+        {
+            var result = await _filePermissionService.GetFilePermissionOfParticipantByFileItemIdAndParticipantId(dto);
+            return Ok(ApiResponse.Success("Group permission retrieved successfully", result));
+        }
 
         #endregion
 
