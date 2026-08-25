@@ -6,13 +6,15 @@ using Domain.Enum.Account;
 using Domain.Enum.Audit;
 using Domain.Enum.Cde;
 using Domain.Enum.File;
+using Domain.Enum.Permission;
 
 namespace Application.Services
 {
     /// <summary>
     /// Niêm phong lưu trữ (Published → Archived). Tách khỏi luồng phê duyệt:
     /// chỉ PM/Admin chủ động chốt bản Published chính thức vào vùng Archived, bấm được nhiều lần.
-    /// Mỗi lần niêm phong tạo/cộng dồn 1 bản lưu (mirror) chỉ-đọc trỏ cùng blob với bản Published gốc.
+    /// Mỗi lần niêm phong tạo/cộng dồn 1 bản lưu (mirror) chỉ-đọc trỏ cùng blob với bản Published gốc,
+    /// và chép theo ACL cấp file của bản gốc (xem SyncMirrorPermissionsAsync).
     /// Bản lưu được ingest vào chỉ mục ngữ nghĩa để khi bản Published bị rút về WIP, tìm kiếm vẫn
     /// rơi về được bản chính thức gần nhất (xem DocumentSearchRepository.SearchByVectorAsync).
     /// </summary>
@@ -140,6 +142,11 @@ namespace Application.Services
                 await _unitOfWork.Repository<FileItem>().CreateAsync(mirror);
             }
 
+            // Bản lưu là một FileItem KHÁC nên không thừa hưởng dòng FilePermission nào của bản gốc.
+            // Không chép thì mọi lệnh cấm cấp file biến mất khi niêm phong và bản lưu rơi về ACL thư
+            // mục Archived — vốn mở CanView cho cả nhóm (FolderBootstrapService.BuildDefaultGroupPermission).
+            await SyncMirrorPermissionsAsync(file.Id, mirror.Id);
+
             // Append 1 dòng version copy nội dung + số hiệu từ bản Published gốc.
             var result = await _fileVersionService.AppendArchivedVersionAsync(mirror.Id, currentPub);
             mirror.CurrentVersionId = result.VersionStateId;
@@ -155,6 +162,71 @@ namespace Application.Services
                 projectId: folder.ProjectId, folderId: archivedFolder.Id);
 
             return mirror.Id;
+        }
+
+        /// <summary>
+        /// Chép ACL cấp file của bản gốc sang bản lưu, chạy ở MỖI lần niêm phong vì quyền của bản gốc
+        /// có thể đã đổi giữa hai lần chốt. Chỉ chép quyền ĐỌC: bản lưu là hồ sơ chỉ-đọc nên
+        /// CanEdit/CanApprove luôn false, kể cả khi bản gốc có.
+        /// Đây là ảnh chụp tại thời điểm niêm phong — sửa quyền bản gốc SAU đó không tự lan sang bản
+        /// lưu; muốn đổi thì phân quyền thẳng trên bản lưu (nó là FileItem bình thường trong Archived).
+        /// </summary>
+        private async Task SyncMirrorPermissionsAsync(Guid sourceFileItemId, Guid mirrorFileItemId)
+        {
+            var sourceAcl = (await _unitOfWork.Repository<FilePermission>().FindAsync(
+                    p => p.FileItemId == sourceFileItemId && p.Status == PermissionStatus.Active))
+                .ToList();
+            var mirrorAcl = (await _unitOfWork.Repository<FilePermission>().FindAsync(
+                    p => p.FileItemId == mirrorFileItemId))
+                .ToList();
+
+            if (sourceAcl.Count == 0 && mirrorAcl.Count == 0)
+                return;
+
+            // Mỗi dòng ACL gán cho ĐÚNG MỘT chủ thể: nhóm (ProjectParticipantId) hoặc tài khoản
+            // (AccountId) — xem ràng buộc CHECK ở FilePermission. Cặp hai cột là khoá đối chiếu.
+            static (Guid?, Guid?) SubjectOf(FilePermission acl) => (acl.ProjectParticipantId, acl.AccountId);
+
+            var mirrorBySubject = new Dictionary<(Guid?, Guid?), FilePermission>();
+            foreach (var acl in mirrorAcl)
+                mirrorBySubject[SubjectOf(acl)] = acl;
+
+            foreach (var source in sourceAcl)
+            {
+                if (mirrorBySubject.TryGetValue(SubjectOf(source), out var existing))
+                {
+                    existing.CanView = source.CanView;
+                    existing.CanEdit = false;
+                    existing.CanApprove = false;
+                    existing.Status = PermissionStatus.Active;
+                    _unitOfWork.Repository<FilePermission>().Update(existing);
+                    continue;
+                }
+
+                await _unitOfWork.Repository<FilePermission>().CreateAsync(new FilePermission
+                {
+                    Id = Guid.NewGuid(),
+                    FileItemId = mirrorFileItemId,
+                    ProjectParticipantId = source.ProjectParticipantId,
+                    AccountId = source.AccountId,
+                    CanView = source.CanView,
+                    CanEdit = false,
+                    CanApprove = false,
+                    Status = PermissionStatus.Active
+                });
+            }
+
+            // Dòng bản gốc đã gỡ (hoặc đã tắt) -> tắt bên bản lưu chứ không xoá, để còn dấu vết là
+            // quyền này từng tồn tại. Bản lưu quay về ACL thư mục Archived đúng như bản gốc.
+            var sourceSubjects = sourceAcl.Select(SubjectOf).ToHashSet();
+            foreach (var stale in mirrorAcl)
+            {
+                if (stale.Status != PermissionStatus.Active || sourceSubjects.Contains(SubjectOf(stale)))
+                    continue;
+
+                stale.Status = PermissionStatus.Inactive;
+                _unitOfWork.Repository<FilePermission>().Update(stale);
+            }
         }
 
         private async Task<(FileItem File, Folder Folder)> LoadFileAndFolderAsync(Guid fileItemId)

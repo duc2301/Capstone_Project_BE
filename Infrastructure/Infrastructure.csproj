@@ -38,7 +38,7 @@
 		<PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.2" />
 		<PackageReference Include="Pgvector" Version="0.3.2" />
 		<PackageReference Include="Pgvector.EntityFrameworkCore" Version="0.3.0" />
-		<PackageReference Include="SkiaSharp" Version="4.151.1" />
+		<PackageReference Include="SkiaSharp" Version="3.119.1" />
 	</ItemGroup>
 
 
