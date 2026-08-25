@@ -29,25 +29,25 @@ namespace Application.Services
         // ===== Folder permissions =====
 
         public Task CanViewFolderAsync(Guid folderId, Guid accountId)
-            => CheckFolderAsync(folderId, accountId, fp => fp.CanView, "View");
+            => CheckFolderAsync(folderId, accountId, fp => fp.CanView, "Xem");
 
         public Task CanEditFolderAsync(Guid folderId, Guid accountId)
-            => CheckFolderAsync(folderId, accountId, fp => fp.CanEdit, "Edit");
+            => CheckFolderAsync(folderId, accountId, fp => fp.CanEdit, "Chỉnh sửa");
 
         //public Task CanUpdateFolderAsync(Guid folderId, Guid accountId)
-        //    => CheckFolderAsync(folderId, accountId, fp => fp.CanUpdate, "Update");
+        //    => CheckFolderAsync(folderId, accountId, fp => fp.CanUpdate, "Cập nhật");
 
         public Task CanUploadToFolderAsync(Guid folderId, Guid accountId)
-            => CheckFolderAsync(folderId, accountId, fp => fp.CanEdit, "Edit");
+            => CheckFolderAsync(folderId, accountId, fp => fp.CanEdit, "Chỉnh sửa");
 
         //public Task CanDownloadFolderAsync(Guid folderId, Guid accountId)
-        //    => CheckFolderAsync(folderId, accountId, fp => fp.CanDownload, "Download");
+        //    => CheckFolderAsync(folderId, accountId, fp => fp.CanDownload, "Tải xuống");
 
         //public Task CanVerifyFolderAsync(Guid folderId, Guid accountId)
-        //    => CheckFolderAsync(folderId, accountId, fp => fp.CanVerify, "Verify");
+        //    => CheckFolderAsync(folderId, accountId, fp => fp.CanVerify, "Xác minh");
 
         public Task CanApproveFolderAsync(Guid folderId, Guid accountId)
-            => CheckFolderAsync(folderId, accountId, fp => fp.CanApprove, "Approve");
+            => CheckFolderAsync(folderId, accountId, fp => fp.CanApprove, "Phê duyệt");
 
         // ===== File permissions =====
 
@@ -62,23 +62,23 @@ namespace Application.Services
                 return;
             if (await _permissionCheckingRepository.HasIssueStakeholderFileAccessAsync(fileItemId, accountId))
                 return;
-            await CheckFileAsync(fileItemId, accountId, fp => fp.CanView, fp => fp.CanView, "View");
+            await CheckFileAsync(fileItemId, accountId, fp => fp.CanView, fp => fp.CanView, "Xem");
         }
 
         public Task CanEditFileAsync(Guid fileItemId, Guid accountId)
-            => CheckFileAsync(fileItemId, accountId, fp => fp.CanEdit, fp => fp.CanEdit, "Edit");
+            => CheckFileAsync(fileItemId, accountId, fp => fp.CanEdit, fp => fp.CanEdit, "Chỉnh sửa");
 
         //public Task CanUpdateFileAsync(Guid fileItemId, Guid accountId)
-        //    => CheckFileAsync(fileItemId, accountId, fp => fp.CanUpdate, fp => fp.CanUpdate, "Update");
+        //    => CheckFileAsync(fileItemId, accountId, fp => fp.CanUpdate, fp => fp.CanUpdate, "Cập nhật");
 
         //public Task CanDownloadFileAsync(Guid fileItemId, Guid accountId)
-        //    => CheckFileAsync(fileItemId, accountId, fp => fp.CanDownload, fp => fp.CanDownload, "Download");
+        //    => CheckFileAsync(fileItemId, accountId, fp => fp.CanDownload, fp => fp.CanDownload, "Tải xuống");
 
         //public Task CanVerifyFileAsync(Guid fileItemId, Guid accountId)
-        //    => CheckFileAsync(fileItemId, accountId, fp => fp.CanVerify, fp => fp.CanVerify, "Verify");
+        //    => CheckFileAsync(fileItemId, accountId, fp => fp.CanVerify, fp => fp.CanVerify, "Xác minh");
 
         public Task CanApproveFileAsync(Guid fileItemId, Guid accountId)
-            => CheckFileAsync(fileItemId, accountId, fp => fp.CanApprove, fp => fp.CanApprove, "Approve");
+            => CheckFileAsync(fileItemId, accountId, fp => fp.CanApprove, fp => fp.CanApprove, "Phê duyệt");
 
         // ===== Non-throwing checks (for callers that filter/branch instead of gating) =====
 
@@ -449,10 +449,10 @@ namespace Application.Services
                 case FileEval.Allowed:
                     return;
                 case FileEval.NotFound:
-                    throw new ApiExceptionResponse("File not found.", 404);
+                    throw new ApiExceptionResponse("Không tìm thấy tệp.", 404);
                 default:
                     throw new ApiExceptionResponse(
-                        $"You do not have '{action}' permission on this file.", 403);
+                        $"Bạn không có quyền '{action}' đối với tệp này.", 403);
             }
         }
     }
