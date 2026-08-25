@@ -30,7 +30,7 @@ namespace Capstone_Project.Controllers
         {
             var result = await _permissionMatrixService.GetMatrixAsync(
                 projectId, User.GetAccountId(), User.IsAdmin(), filter);
-            return Ok(ApiResponse.Success("Permission matrix retrieved", result));
+            return Ok(ApiResponse.Success("Ma trận phân quyền đã được truy xuất", result));
         }
 
         [HttpPut]
@@ -38,7 +38,7 @@ namespace Capstone_Project.Controllers
         {
             var result = await _permissionMatrixService.SaveMatrixAsync(
                 projectId, dto, User.GetAccountId(), User.IsAdmin());
-            return Ok(ApiResponse.Success("Permission matrix updated", result));
+            return Ok(ApiResponse.Success("Ma trận cập nhật thành công", result));
         }
     }
 }
