@@ -19,17 +19,20 @@ namespace Application.Services
         private readonly INotificationService _notification;
         private readonly IMapper _mapper;
         private readonly IAuditLogService _auditLog;
+        private readonly IPermissionCleanupService _permissionCleanup;
 
         public GroupService(
             IUnitOfWork unitOfWork,
             INotificationService notification,
             IMapper mapper,
-            IAuditLogService auditLog)
+            IAuditLogService auditLog,
+            IPermissionCleanupService permissionCleanup)
         {
             _unitOfWork = unitOfWork;
             _notification = notification;
             _mapper = mapper;
             _auditLog = auditLog;
+            _permissionCleanup = permissionCleanup;
         }
 
         public async Task<IEnumerable<GroupResponseDTO>> GetAllAsync()
@@ -110,8 +113,19 @@ namespace Application.Services
             await EnsureAdminOrProjectManagerAsync(id, actor, actorRole,
                 "Chỉ Admin hoặc PM dự án mới được xóa nhóm.");
 
+            // [T3] Chốt danh sách thành viên Active TRƯỚC khi xóa nhóm — sau commit mới dọn được
+            // override mồ côi của từng người (recompute đọc DB đã mất nhóm).
+            var memberAccountIds = (await _unitOfWork.Repository<GroupMember>()
+                    .FindAsync(gm => gm.GroupId == id && gm.Status == GroupMemberStatus.Active))
+                .Select(gm => gm.AccountId)
+                .Distinct()
+                .ToList();
+
             _unitOfWork.Repository<Group>().Delete(entity);
             await _unitOfWork.CommitAsync();
+
+            foreach (var accountId in memberAccountIds)
+                await _permissionCleanup.CleanupAccountOverridesAsync(accountId);
         }
 
         // Đổi vai trò 1 thành viên Active. Role=Leader => chuyển trưởng nhóm (hạ Leader cũ xuống Member).
@@ -189,6 +203,11 @@ namespace Application.Services
                 groupId: groupId);
 
             await _unitOfWork.CommitAsync();
+
+            // [T3] Rời/mất Active khỏi nhóm -> tài khoản có thể rớt khỏi pool của các tài nguyên nhóm
+            // này cấp View -> dọn override mồ côi (SAU commit; quay lại Active thì không cần dọn).
+            if (newStatus != GroupMemberStatus.Active)
+                await _permissionCleanup.CleanupAccountOverridesAsync(accountId);
 
             if (removed)
             {

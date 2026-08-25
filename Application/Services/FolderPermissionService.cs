@@ -15,12 +15,16 @@ namespace Application.Services
         private readonly IMapper _mapper;
 
         private readonly IAuditLogService _auditLog;
+        private readonly IPermissionCleanupService _cleanup;
 
-        public FolderPermissionService(IUnitOfWork unitOfWork, IMapper mapper, IAuditLogService auditLog)
+        public FolderPermissionService(
+            IUnitOfWork unitOfWork, IMapper mapper, IAuditLogService auditLog,
+            IPermissionCleanupService cleanup)
         {
             _auditLog = auditLog;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
+            _cleanup = cleanup;
         }
 
         #region Lấy data cho frontend
@@ -142,6 +146,10 @@ namespace Application.Services
                 projectId: auditFolder?.ProjectId, folderId: dto.Id);
 
             await _unitOfWork.CommitAsync();
+
+            // [T2] Pool nhóm của folder vừa đổi -> dọn override tài khoản mồ côi trên folder và các
+            // file con trực tiếp (chạy SAU commit để recompute thấy trạng thái mới).
+            await _cleanup.CleanupFolderOverridesAsync(dto.Id);
 
             var permissions = await _unitOfWork.FolderPermissionRepository.GetFolderPermissionsByParticipantIdsAsync(dto.Id, updatedParticipantIds);
 
