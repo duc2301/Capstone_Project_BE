@@ -125,12 +125,18 @@ namespace Application.Services
             // mình có quyền GHI (editableFolderIds). Không có quyền ghi thì không thấy file trên ma trận.
             // Với người không quản vùng Published/Archived, không lấy file của các folder thuộc vùng đó
             // (kể cả folder gốc vẫn hiển thị làm tiêu đề).
-            var fileScopeFolderIds = isFullAccess ? visibleFolderIds : editableFolderIds;
-            var fileFolderIds = flatFolders
-                .Where(f => canManageRestrictedAreas || !IsExcludedArea(f.node.Area))
-                .Select(f => f.node.Id)
-                .Where(fileScopeFolderIds.Contains)
-                .ToList();
+            // [KILL-A] Group file-permissioning has been retired: the matrix shows FOLDERS ONLY,
+            // no file rows. Feeding no folders here means no files load, no per-file permission
+            // checks run, and the file-row loop further down emits nothing. The file machinery is
+            // left in place (dead) so this is fully reversible — to bring file rows back, restore
+            // the two statements preserved in the comment below.
+            // var fileScopeFolderIds = isFullAccess ? visibleFolderIds : editableFolderIds;
+            // var fileFolderIds = flatFolders
+            //     .Where(f => canManageRestrictedAreas || !IsExcludedArea(f.node.Area))
+            //     .Select(f => f.node.Id)
+            //     .Where(fileScopeFolderIds.Contains)
+            //     .ToList();
+            var fileFolderIds = new List<Guid>();
 
             var files = await _matrixRepo.GetFilesByFolderIdsAsync(fileFolderIds);
             var fileIds = files.Select(f => f.Id).ToList();

@@ -76,15 +76,20 @@ namespace Infrastructure.Repositories
                          && g.FileItem.Folder.ProjectId == projectId)
                 .Select(g => g.FileItemId);
 
-            // (b) FilePermission override CHO PHÉP xem (CanView = true) của nhóm account đang là thành viên Active.
+            // (b) FilePermission override CHO PHÉP xem (CanView = true), gồm hai loại chủ thể:
+            //     - Nhóm account đang là thành viên Active; hoặc
+            //     - Riêng tài khoản này (override kiểu Google Drive, ProjectParticipant = null, AccountId = account).
             var permittedFileIds = _context.FilePermissions
                 .Where(fp => fp.CanView
                           && fp.Status == PermissionStatus.Active
                           && fp.FileItem.Folder.ProjectId == projectId
-                          && fp.ProjectParticipant != null
-                          && fp.ProjectParticipant.Status == ProjectParticipantStatus.Active
-                          && fp.ProjectParticipant.Group.Members.Any(m =>
-                                m.AccountId == accountId && m.Status == GroupMemberStatus.Active))
+                          && (
+                                (fp.ProjectParticipant != null
+                                 && fp.ProjectParticipant.Status == ProjectParticipantStatus.Active
+                                 && fp.ProjectParticipant.Group.Members.Any(m =>
+                                        m.AccountId == accountId && m.Status == GroupMemberStatus.Active))
+                                || fp.AccountId == accountId
+                             ))
                 .Select(fp => fp.FileItemId);
 
             var issueStakeholderFileIds = _context.FileItems
