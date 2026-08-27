@@ -83,6 +83,14 @@ namespace Application.Interfaces.IRepositories
 
         Task<bool> HasIssueStakeholderFileAccessAsync(Guid fileItemId, Guid accountId);
 
+        /// <summary>
+        /// Distinct FileItemIds of files in the folder that carry at least one active FilePermission
+        /// row (a group file override or a per-account override). These are the only files whose view
+        /// access can diverge from the owning folder's ACL, so a listing filter evaluates just these
+        /// instead of every file in the folder.
+        /// </summary>
+        Task<List<Guid>> GetFileIdsWithActivePermissionByFolderAsync(Guid folderId);
+
         // ===== Current-user permission retrieval (viewing only) =====
 
         Task<Account?> GetAccountAsync(Guid accountId);

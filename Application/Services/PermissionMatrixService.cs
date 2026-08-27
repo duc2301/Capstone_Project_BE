@@ -24,26 +24,32 @@ namespace Application.Services
         private readonly IFolderTreeService _folderTreeService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IAuditLogService _auditLog;
+        private readonly IPermissionCleanupService _cleanup;
 
         public PermissionMatrixService(
             IPermissionMatrixRepository matrixRepo,
             IPermissionCheckingService permissionChecking,
             IFolderTreeService folderTreeService,
             IUnitOfWork unitOfWork,
-            IAuditLogService auditLog)
+            IAuditLogService auditLog,
+            IPermissionCleanupService cleanup)
         {
             _matrixRepo = matrixRepo;
             _permissionChecking = permissionChecking;
             _folderTreeService = folderTreeService;
             _unitOfWork = unitOfWork;
             _auditLog = auditLog;
+            _cleanup = cleanup;
         }
 
         // ===== GET =====
 
         public async Task<PermissionMatrixResponseDTO> GetMatrixAsync(
-            Guid projectId, Guid accountId, bool isSystemAdmin, CdeArea? area = null)
+            Guid projectId, Guid accountId, bool isSystemAdmin, PermissionMatrixFilterDTO? filter = null)
         {
+            filter ??= new PermissionMatrixFilterDTO();
+            var area = filter.Area;
+
             if (!await _matrixRepo.ProjectExistsAsync(projectId))
                 throw new ApiExceptionResponse("Project not found.", 404);
 
@@ -59,8 +65,13 @@ namespace Application.Services
             // Cột = bên tham gia đang hoạt động, TRỪ nhóm của chính caller (không tự sửa quyền nhóm mình).
             var callerParticipantIds = await _matrixRepo.GetCallerParticipantIdsAsync(projectId, accountId);
             var participants = await _matrixRepo.GetActiveParticipantsByProjectAsync(projectId);
+            // Lọc nhóm (multi-select theo GroupId). Rỗng = không lọc.
+            var groupFilter = filter.GroupIds is { Count: > 0 }
+                ? filter.GroupIds.ToHashSet()
+                : null;
             var columns = participants
                 .Where(pp => !callerParticipantIds.Contains(pp.Id))
+                .Where(pp => groupFilter == null || groupFilter.Contains(pp.GroupId))
                 .Select(pp => new MatrixColumnDTO
                 {
                     ProjectParticipantId = pp.Id,
@@ -91,25 +102,65 @@ namespace Application.Services
 
             var visibleFolderIds = flatFolders.Select(f => f.node.Id).ToHashSet();
 
-            // Tập được sửa (chỉ tính cho leader; full-access sửa mọi folder không phải root + mọi file).
-            var editableFolderIds = isFullAccess
-                ? new HashSet<Guid>()
-                : await ComputeLeaderEditableFolderIdsAsync(projectId, accountId);
+            // Vùng CDE của từng folder — để chọn cổng quyền theo vùng.
+            var folderAreaById = flatFolders.ToDictionary(f => f.node.Id, f => f.node.Area);
 
-            // Hiển thị file: full-access thấy mọi file trong folder hiện; còn lại chỉ ở folder có quyền View.
+            // Folder leader quản lý được (sửa ô quyền) tùy theo VÙNG, KHÔNG kế thừa xuống theo cây:
+            //   Shared -> chỉ cần quyền XEM (vùng chia sẻ, được phép điều phối quyền cho nhóm khác)
+            //   WIP    -> cần quyền GHI (vùng làm việc riêng)
+            // Published/Archived đã chặn ở trên (chỉ Admin/PM). Full-access sửa mọi folder (empty + cờ isFullAccess).
+            var editableFolderIds = new HashSet<Guid>();
+            if (!isFullAccess)
+            {
+                var wipFolderIds = flatFolders
+                    .Where(f => f.node.ParentFolderId != null && f.node.Area == CdeArea.Wip)
+                    .Select(f => f.node.Id).ToList();
+                var sharedFolderIds = flatFolders
+                    .Where(f => f.node.ParentFolderId != null && f.node.Area == CdeArea.Shared)
+                    .Select(f => f.node.Id).ToList();
+
+                editableFolderIds = await _permissionChecking.GetEditableFolderIdsAsync(accountId, wipFolderIds);
+                editableFolderIds.UnionWith(
+                    await _permissionChecking.GetViewableFolderIdsAmongAsync(accountId, sharedFolderIds));
+            }
+
+            // Hiển thị file: full-access thấy mọi file trong folder hiện; leader CHỈ thấy file ở folder
+            // mình có quyền GHI (editableFolderIds). Không có quyền ghi thì không thấy file trên ma trận.
             // Với người không quản vùng Published/Archived, không lấy file của các folder thuộc vùng đó
             // (kể cả folder gốc vẫn hiển thị làm tiêu đề).
-            var viewableFolderIds = isFullAccess
-                ? visibleFolderIds
-                : await _permissionChecking.GetViewableFolderIdsAsync(projectId, accountId);
-            var fileFolderIds = flatFolders
-                .Where(f => canManageRestrictedAreas || !IsExcludedArea(f.node.Area))
-                .Select(f => f.node.Id)
-                .Where(viewableFolderIds.Contains)
-                .ToList();
+            // [KILL-A] Group file-permissioning has been retired: the matrix shows FOLDERS ONLY,
+            // no file rows. Feeding no folders here means no files load, no per-file permission
+            // checks run, and the file-row loop further down emits nothing. The file machinery is
+            // left in place (dead) so this is fully reversible — to bring file rows back, restore
+            // the two statements preserved in the comment below.
+            // var fileScopeFolderIds = isFullAccess ? visibleFolderIds : editableFolderIds;
+            // var fileFolderIds = flatFolders
+            //     .Where(f => canManageRestrictedAreas || !IsExcludedArea(f.node.Area))
+            //     .Select(f => f.node.Id)
+            //     .Where(fileScopeFolderIds.Contains)
+            //     .ToList();
+            var fileFolderIds = new List<Guid>();
 
             var files = await _matrixRepo.GetFilesByFolderIdsAsync(fileFolderIds);
             var fileIds = files.Select(f => f.Id).ToList();
+
+            // Leader: file hiện & sửa được theo VÙNG của folder chứa nó — Shared cần XEM, WIP cần GHI trên
+            // CHÍNH file (quyền không kế thừa xuống; file bị override chặn cho nhóm caller cũng bị loại).
+            // Full-access (null) sửa mọi file.
+            HashSet<Guid>? editableFileIds = null;
+            if (!isFullAccess)
+            {
+                var wipFileIds = files
+                    .Where(f => folderAreaById.TryGetValue(f.FolderId, out var a) && a == CdeArea.Wip)
+                    .Select(f => f.Id).ToList();
+                var sharedFileIds = files
+                    .Where(f => folderAreaById.TryGetValue(f.FolderId, out var a) && a == CdeArea.Shared)
+                    .Select(f => f.Id).ToList();
+
+                editableFileIds = await _permissionChecking.GetEditableFileIdsAsync(accountId, wipFileIds);
+                editableFileIds.UnionWith(
+                    await _permissionChecking.GetViewableFileIdsAmongAsync(accountId, sharedFileIds));
+            }
 
             var folderPermIndex = IndexFolderPerms(
                 await _matrixRepo.GetActiveFolderPermissionsByFolderIdsAsync(visibleFolderIds.ToList()));
@@ -120,17 +171,47 @@ namespace Application.Services
                 .GroupBy(f => f.FolderId)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
+            // Leader: chỉ giữ folder có quyền GHI + tiêu đề vùng gốc (khung cây). Folder không có quyền ghi
+            // bị ẩn hẳn; folder/file được giữ sẽ neo lại vào tổ tiên còn hiển thị gần nhất để cây không đứt.
+            HashSet<Guid>? keptFolderIds = null;
+            Dictionary<Guid, Guid?>? displayParentById = null;
+            if (!isFullAccess)
+            {
+                keptFolderIds = new HashSet<Guid>(editableFolderIds);
+                foreach (var f in flatFolders)
+                    if (f.node.ParentFolderId == null) keptFolderIds.Add(f.node.Id);
+                displayParentById = flatFolders.ToDictionary(f => f.node.Id, f => f.displayParentId);
+            }
+
+            // Tổ tiên hiển thị gần nhất còn được giữ (bỏ qua folder bị ẩn). Full-access: giữ nguyên cha.
+            Guid? NearestKeptFolderId(Guid? parentId)
+            {
+                if (keptFolderIds == null) return parentId;
+                var seen = new HashSet<Guid>();
+                while (parentId.HasValue && seen.Add(parentId.Value))
+                {
+                    if (keptFolderIds.Contains(parentId.Value)) return parentId;
+                    parentId = displayParentById!.TryGetValue(parentId.Value, out var p) ? p : null;
+                }
+                return null;
+            }
+
             var rows = new List<MatrixRowDTO>();
             foreach (var (node, displayParentId) in flatFolders)
             {
                 var isRoot = node.ParentFolderId == null;
+
+                // Leader: ẩn folder không có quyền GHI (giữ tiêu đề vùng gốc). File/subfolder bên trong
+                // đã bị lọc riêng và sẽ neo vào tổ tiên còn hiển thị.
+                if (keptFolderIds != null && !isRoot && !keptFolderIds.Contains(node.Id)) continue;
+
                 var folderEditable = !isRoot && (isFullAccess || editableFolderIds.Contains(node.Id));
 
                 rows.Add(new MatrixRowDTO
                 {
                     TargetId = node.Id,
                     TargetType = MatrixTargetType.Folder,
-                    ParentRowId = displayParentId,
+                    ParentRowId = NearestKeptFolderId(displayParentId),
                     Name = node.Name,
                     Area = node.Area,
                     IsRootArea = isRoot,
@@ -146,9 +227,13 @@ namespace Application.Services
 
                 if (!filesByFolder.TryGetValue(node.Id, out var folderFiles)) continue;
 
-                var fileEditable = isFullAccess || editableFolderIds.Contains(node.Id);
                 foreach (var file in folderFiles)
                 {
+                    // Leader: ẩn HẲN file không có quyền GHI (không chỉ khoá ô) — không có quyền thì không
+                    // thấy trên ma trận. editableFileIds == null nghĩa là full-access (thấy & sửa mọi file).
+                    if (editableFileIds != null && !editableFileIds.Contains(file.Id)) continue;
+
+                    var fileEditable = isFullAccess || (editableFileIds != null && editableFileIds.Contains(file.Id));
                     rows.Add(new MatrixRowDTO
                     {
                         TargetId = file.Id,
@@ -173,6 +258,11 @@ namespace Application.Services
                     });
                 }
             }
+
+            // Lọc hàng theo folder/file (multi-select). Giữ hàng khớp + hậu duệ của folder khớp
+            // + tổ tiên (để cây hiển thị đúng đường dẫn). Rỗng = giữ nguyên.
+            if (filter.HasRowFilter)
+                rows = ApplyRowFilter(rows, filter.FolderIds, filter.FileIds);
 
             return new PermissionMatrixResponseDTO
             {
@@ -224,10 +314,6 @@ namespace Application.Services
                 .Select(c => c.TargetId).Distinct().ToList();
             var fileById = (await _matrixRepo.GetFilesByIdsAsync(fileChangeIds)).ToDictionary(f => f.Id);
 
-            var editableFolderIds = isFullAccess
-                ? null
-                : await ComputeLeaderEditableFolderIdsAsync(projectId, accountId);
-
             // Kiểm tra TOÀN BỘ lô trước khi ghi.
             foreach (var c in changes)
             {
@@ -247,8 +333,16 @@ namespace Application.Services
                         throw new ApiExceptionResponse("Root areas are not assignable.", 403);
                     if (c.Level == PermissionLevel.Inherit)
                         throw new ApiExceptionResponse("Folders cannot inherit; use N/R/W.", 400);
-                    if (!(isFullAccess || editableFolderIds!.Contains(c.TargetId)))
-                        throw new ApiExceptionResponse("You cannot assign permissions on this folder.", 403);
+                    // Cổng quyền theo VÙNG trên chính folder (không kế thừa từ folder cha) — khớp phần hiển thị:
+                    // Shared cần XEM, WIP cần GHI. Chặn leo thang qua cây.
+                    if (!isFullAccess)
+                    {
+                        var canManageFolder = targetFolder.Area == CdeArea.Shared
+                            ? await _permissionChecking.HasViewFolderAsync(c.TargetId, accountId)
+                            : await _permissionChecking.HasEditFolderAsync(c.TargetId, accountId);
+                        if (!canManageFolder)
+                            throw new ApiExceptionResponse("You cannot assign permissions on this folder.", 403);
+                    }
                 }
                 else
                 {
@@ -256,8 +350,16 @@ namespace Application.Services
                         throw new ApiExceptionResponse("File does not belong to this project.", 400);
                     if (IsExcludedArea(owningFolder.Area) && !canManageRestrictedAreas)
                         throw new ApiExceptionResponse("Only admin/PM can assign permissions in Published/Archived areas.", 403);
-                    if (!(isFullAccess || editableFolderIds!.Contains(file.FolderId)))
-                        throw new ApiExceptionResponse("You cannot assign permissions on this file.", 403);
+                    // Cổng quyền theo VÙNG của folder chứa file, trên CHÍNH file — khớp phần hiển thị:
+                    // Shared cần XEM, WIP cần GHI. Chặn leo thang qua cây.
+                    if (!isFullAccess)
+                    {
+                        var canManageFile = owningFolder.Area == CdeArea.Shared
+                            ? await _permissionChecking.HasViewFileAsync(c.TargetId, accountId)
+                            : await _permissionChecking.HasEditFileAsync(c.TargetId, accountId);
+                        if (!canManageFile)
+                            throw new ApiExceptionResponse("You cannot assign permissions on this file.", 403);
+                    }
                 }
             }
 
@@ -334,38 +436,69 @@ namespace Application.Services
 
             await _unitOfWork.CommitAsync();
 
+            // [T2] Pool nhóm của các folder/file vừa đổi trên ma trận -> dọn override tài khoản mồ
+            // côi (SAU commit để recompute thấy trạng thái mới). File ở đây phòng hờ: ma trận hiện
+            // folder-only, nhưng đường lưu vẫn nhận file change nên dọn luôn cho kín.
+            foreach (var folderId in changedFolderIds)
+                await _cleanup.CleanupFolderOverridesAsync(folderId);
+            foreach (var fileId in fileChangeIds)
+                await _cleanup.CleanupFileOverridesAsync(fileId);
+
             return await BuildSaveResultAsync(changes);
         }
 
         // ===== Helpers =====
 
-        // Tập folder leader được sửa = folder được giao (có FolderPermission Active cho nhóm leader),
-        // trừ root area, cộng toàn bộ folder con (BFS trên bản đồ cha->con của dự án).
-        private async Task<HashSet<Guid>> ComputeLeaderEditableFolderIdsAsync(Guid projectId, Guid accountId)
+        // Lọc hàng ma trận theo tập folder/file đã chọn, GIỮ NGUYÊN thứ tự cây (pre-order).
+        // Quy tắc giữ một hàng:
+        //  - folder ∈ FolderIds  -> giữ folder đó VÀ toàn bộ hậu duệ (file/subfolder bên trong).
+        //  - file   ∈ FileIds    -> giữ file đó.
+        //  - tổ tiên của bất kỳ hàng được giữ -> giữ để cây hiển thị đúng đường dẫn (ParentRowId hợp lệ).
+        // FolderIds/FileIds kết hợp theo OR. Đã đảm bảo có ít nhất một tập không rỗng trước khi gọi.
+        private static List<MatrixRowDTO> ApplyRowFilter(
+            List<MatrixRowDTO> rows, List<Guid>? folderIds, List<Guid>? fileIds)
         {
-            var leaderParticipantIds = await _matrixRepo.GetLeaderParticipantIdsAsync(projectId, accountId);
-            if (leaderParticipantIds.Count == 0) return new HashSet<Guid>();
+            var folderSet = folderIds is { Count: > 0 } ? folderIds.ToHashSet() : new HashSet<Guid>();
+            var fileSet = fileIds is { Count: > 0 } ? fileIds.ToHashSet() : new HashSet<Guid>();
 
-            var delegatedRoots = await _matrixRepo
-                .GetFolderIdsWithActivePermissionForParticipantsAsync(leaderParticipantIds);
+            var rowById = rows.ToDictionary(r => r.TargetId);
+            var childrenByParent = rows
+                .Where(r => r.ParentRowId.HasValue)
+                .GroupBy(r => r.ParentRowId!.Value)
+                .ToDictionary(g => g.Key, g => g.Select(r => r.TargetId).ToList());
 
-            var projectFolders = await _matrixRepo.GetProjectFoldersAsync(projectId);
-            var rootAreaIds = projectFolders.Where(f => f.ParentFolderId == null).Select(f => f.Id).ToHashSet();
-            var childrenByParent = projectFolders
-                .Where(f => f.ParentFolderId.HasValue)
-                .GroupBy(f => f.ParentFolderId!.Value)
-                .ToDictionary(g => g.Key, g => g.Select(f => f.Id).ToList());
+            var keep = new HashSet<Guid>();
 
-            var result = new HashSet<Guid>();
-            var queue = new Queue<Guid>(delegatedRoots.Where(id => !rootAreaIds.Contains(id)));
-            while (queue.Count > 0)
+            // Hàng khớp trực tiếp + hậu duệ (BFS) cho folder khớp.
+            foreach (var r in rows)
             {
-                var id = queue.Dequeue();
-                if (!result.Add(id)) continue;
-                if (childrenByParent.TryGetValue(id, out var kids))
-                    foreach (var k in kids) queue.Enqueue(k);
+                var directHit =
+                    (r.TargetType == MatrixTargetType.Folder && folderSet.Contains(r.TargetId)) ||
+                    (r.TargetType == MatrixTargetType.File && fileSet.Contains(r.TargetId));
+                if (!directHit) continue;
+
+                var queue = new Queue<Guid>();
+                queue.Enqueue(r.TargetId);
+                while (queue.Count > 0)
+                {
+                    var id = queue.Dequeue();
+                    if (!keep.Add(id)) continue;
+                    // Chỉ mở rộng hậu duệ khi hàng khớp là folder (file không có con).
+                    if (rowById.TryGetValue(id, out var cur) && cur.TargetType == MatrixTargetType.Folder
+                        && childrenByParent.TryGetValue(id, out var kids))
+                        foreach (var k in kids) queue.Enqueue(k);
+                }
             }
-            return result;
+
+            // Bổ sung tổ tiên của mọi hàng được giữ (đi lên theo ParentRowId).
+            foreach (var id in keep.ToList())
+            {
+                var parent = rowById[id].ParentRowId;
+                while (parent.HasValue && keep.Add(parent.Value))
+                    parent = rowById.TryGetValue(parent.Value, out var pr) ? pr.ParentRowId : null;
+            }
+
+            return rows.Where(r => keep.Contains(r.TargetId)).ToList();
         }
 
         private async Task<List<MatrixCellResultDTO>> BuildSaveResultAsync(List<MatrixCellChangeDTO> changes)

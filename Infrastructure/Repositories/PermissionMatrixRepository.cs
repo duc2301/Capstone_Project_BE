@@ -114,32 +114,6 @@ namespace Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        // ===== Leader editable-set =====
-
-        public async Task<List<Guid>> GetLeaderParticipantIdsAsync(Guid projectId, Guid accountId)
-            => await _context.ProjectParticipants
-                .Where(pp => pp.ProjectId == projectId
-                          && pp.Status == ProjectParticipantStatus.Active
-                          && pp.Group.Members.Any(m =>
-                                 m.AccountId == accountId
-                                 && m.Status == GroupMemberStatus.Active
-                                 && m.Role == GroupMemberRole.Leader))
-                .Select(pp => pp.Id)
-                .ToListAsync();
-
-        public async Task<HashSet<Guid>> GetFolderIdsWithActivePermissionForParticipantsAsync(IReadOnlyCollection<Guid> participantIds)
-        {
-            if (participantIds.Count == 0) return new HashSet<Guid>();
-            var ids = await _context.FolderPermissions
-                .Where(fp => fp.ProjectParticipantId != null
-                          && participantIds.Contains(fp.ProjectParticipantId.Value)
-                          && fp.Status == PermissionStatus.Active)
-                .Select(fp => fp.FolderId)
-                .Distinct()
-                .ToListAsync();
-            return ids.ToHashSet();
-        }
-
         // ===== Save: tracked loads for update =====
 
         public async Task<List<FolderPermission>> GetFolderPermissionsForUpdateAsync(

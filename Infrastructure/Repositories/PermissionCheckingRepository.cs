@@ -191,9 +191,11 @@ namespace Infrastructure.Repositories
                 .ToListAsync())
                 .ToHashSet();
 
-            // Per-account overrides adjust the group result: an override grants/denies the folder AND
-            // its subtree (nearest-ancestor wins), matching the eval-time walk. Fast path: no override
-            // in the project -> group result is final, no tree load.
+            // Per-account overrides are a MASK on the group result: the group ACL is the ceiling, and
+            // the nearest-ancestor (inclusive) override may only SUBTRACT from it (a deny hides the
+            // folder and its subtree); an override can no longer grant a folder the group does not.
+            // Matches the eval-time mask in PermissionCheckingService.EvaluateFolderAsync.
+            // Fast path: no override in the project -> group result is final, no tree load.
             var overrides = await _context.FolderPermissions
                 .Where(fp => fp.AccountId == accountId
                           && fp.Status == PermissionStatus.Active
@@ -213,28 +215,24 @@ namespace Infrastructure.Repositories
             var result = new HashSet<Guid>();
             foreach (var f in folders)
             {
-                // Nearest-ancestor (inclusive) account override decides; else fall back to the group ACL.
-                bool? overrideDecision = null;
+                // Group ceiling first: no group view -> not viewable, regardless of overrides.
+                if (!groupViewable.Contains(f.Id)) continue;
+
+                // Mask: nearest-ancestor (inclusive) account override may only lower the group allow.
+                var masked = false;
                 Guid? current = f.Id;
                 var visited = new HashSet<Guid>();
                 while (current.HasValue && visited.Add(current.Value))
                 {
                     if (overrideByFolder.TryGetValue(current.Value, out var canView))
                     {
-                        overrideDecision = canView;
+                        masked = !canView;
                         break;
                     }
                     current = parentByFolder.TryGetValue(current.Value, out var parent) ? parent : null;
                 }
 
-                if (overrideDecision.HasValue)
-                {
-                    if (overrideDecision.Value) result.Add(f.Id);
-                }
-                else if (groupViewable.Contains(f.Id))
-                {
-                    result.Add(f.Id);
-                }
+                if (!masked) result.Add(f.Id);
             }
             return result;
         }
@@ -266,6 +264,18 @@ namespace Infrastructure.Repositories
                             && m.Status == GroupMemberStatus.Active))
                     || _context.IssueMentions.Any(m =>
                             m.IssueId == i.Id && m.MentionedAccountId == accountId)));
+        }
+
+        public async Task<List<Guid>> GetFileIdsWithActivePermissionByFolderAsync(Guid folderId)
+        {
+            // Cả override nhóm (ProjectParticipantId) lẫn override cá nhân (AccountId) đều là dòng
+            // FilePermission -> chỉ những file có dòng Active mới có thể khác quyền so với folder.
+            return await _context.FilePermissions
+                .Where(fp => fp.FileItem.FolderId == folderId
+                          && fp.Status == PermissionStatus.Active)
+                .Select(fp => fp.FileItemId)
+                .Distinct()
+                .ToListAsync();
         }
 
         // ===== Current-user permission retrieval (viewing only) =====

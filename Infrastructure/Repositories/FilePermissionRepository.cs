@@ -40,7 +40,9 @@ namespace Infrastructure.Repositories
         public async Task<Dictionary<Guid, FilePermission>> GetActivePartipantsByFileItemIdAsync(Guid fileItemId)
         {
             return await _context.FilePermissions
-                .Where(p => p.FileItemId == fileItemId && p.Status == PermissionStatus.Active)
+                .Where(p => p.FileItemId == fileItemId
+                         && p.Status == PermissionStatus.Active
+                         && p.ProjectParticipantId != null)
                 .Include(p => p.ProjectParticipant)
                 .ThenInclude(pp => pp.Group)
                 .AsNoTracking()

@@ -18,12 +18,19 @@ namespace Application.Services
         private readonly IFolderTreeRepository _folderTreeRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
+        // Nguồn quyết định quyền xem file duy nhất — dùng để ẩn file bị từ chối ở cấp file khỏi listing.
+        private readonly IPermissionCheckingService _permissionChecking;
 
-        public FolderTreeService(IFolderTreeRepository folderTreeRepository, IUnitOfWork unitOfWork, IMapper mapper)
+        public FolderTreeService(
+            IFolderTreeRepository folderTreeRepository,
+            IUnitOfWork unitOfWork,
+            IMapper mapper,
+            IPermissionCheckingService permissionChecking)
         {
             _folderTreeRepository = folderTreeRepository;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
+            _permissionChecking = permissionChecking;
         }
 
         public async Task<List<FolderTreeNodeDTO>> GetTreeAsync(Guid projectId, Guid accountId, bool isSystemAdmin, CdeArea? area = null)
@@ -126,6 +133,15 @@ namespace Application.Services
                 ? await _folderTreeRepository.GetFilesByFolderIdAsync(folderId)
                 : new List<Domain.Entities.FileItem>();
 
+            // Ẩn file mà user bị TỪ CHỐI xem ở cấp file (override nhóm/cá nhân) dù folder vẫn View được;
+            // nếu không, file bị chặn vẫn hiện trong danh sách dù không mở được nội dung. Full access bỏ qua.
+            if (canView && !hasFullAccess && files.Count > 0)
+            {
+                var deniedFileIds = await _permissionChecking.GetDeniedViewFileIdsInFolderAsync(folderId, accountId);
+                if (deniedFileIds.Count > 0)
+                    files = files.Where(f => !deniedFileIds.Contains(f.Id)).ToList();
+            }
+
             // Kéo file được cấp quyền riêng (folder chứa không View được) lên folder đang mở nếu đây là
             // tổ tiên gần nhất còn View được. Bỏ qua với user full access — họ đã thấy folder thật.
             if (!hasFullAccess)
@@ -187,14 +203,23 @@ namespace Application.Services
                 ? DefaultFolderContentsPageSize
                 : pageSize;
 
+            // File bị TỪ CHỐI xem ở cấp file (override nhóm/cá nhân) cho user này — loại khỏi CẢ đếm lẫn
+            // phân trang để tổng số và offset luôn khớp phần đã lọc. Full access thấy tất cả nên bỏ qua.
+            IReadOnlyCollection<Guid>? deniedFileIds = null;
+            if (canViewFolder && !hasFullAccess)
+            {
+                var denied = await _permissionChecking.GetDeniedViewFileIdsInFolderAsync(folderId, accountId);
+                if (denied.Count > 0) deniedFileIds = denied;
+            }
+
             // Không có quyền View trên khu vực gốc thì ẩn file (fileCount = 0), chỉ thấy subfolder được phép.
             var fileCount = canViewFolder
-                ? await _folderTreeRepository.CountFilesByFolderIdAsync(folderId)
+                ? await _folderTreeRepository.CountFilesByFolderIdAsync(folderId, deniedFileIds)
                 : 0;
 
             var pageFiles = canViewFolder && fileCount > 0
                 ? await _folderTreeRepository.GetFilesByFolderIdPagedAsync(
-                    folderId, (safePage - 1) * safeSize, safeSize)
+                    folderId, (safePage - 1) * safeSize, safeSize, deniedFileIds)
                 : new List<Domain.Entities.FileItem>();
 
             // Kéo file được cấp quyền riêng (folder chứa không View được) lên folder đang mở nếu đây là

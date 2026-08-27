@@ -35,14 +35,14 @@ namespace Application.Services
                 case PermissionLevel.NoAccess:
                     // File: dòng Active chặn để đè quyền thư mục. Thư mục (phẳng): Inactive là đủ.
                     if (isFile)
-                        Set(acl, PermissionStatus.Active, canView: false, canEdit: false, canApprove: false);
+                        Set(acl, PermissionStatus.Active, canView: false, canEdit: false, canApprove: true);
                     else
-                        Set(acl, PermissionStatus.Inactive, canView: false, canEdit: false, canApprove: false);
+                        Set(acl, PermissionStatus.Inactive, canView: false, canEdit: false, canApprove: true);
                     break;
 
                 case PermissionLevel.Inherit:
                 default:
-                    Set(acl, PermissionStatus.Inactive, canView: false, canEdit: false, canApprove: false);
+                    Set(acl, PermissionStatus.Inactive, canView: false, canEdit: false, canApprove: true);
                     break;
             }
         }

@@ -76,7 +76,12 @@ namespace Infrastructure.Repositories
                          && g.FileItem.Folder.ProjectId == projectId)
                 .Select(g => g.FileItemId);
 
-            // (b) FilePermission override CHO PHÉP xem (CanView = true) của nhóm account đang là thành viên Active.
+            // (b) FilePermission override NHÓM cho phép xem (CanView = true, nhóm account đang là
+            //     thành viên Active). Theo mô hình mask (Part 1 redesign): override TÀI KHOẢN không
+            //     còn tự cấp quyền đứng một mình (trần nhóm quyết trước) nên KHÔNG kéo file lên nữa;
+            //     ngược lại một dòng CHẶN theo tài khoản trên chính file đó che grant nhóm -> loại ra
+            //     để cây không hiện file mà gate sẽ 403. (Grant cộng thêm FileViewGrant/issue ở (a)/(c)
+            //     vẫn thắng deny nên không lọc hai nhánh đó.)
             var permittedFileIds = _context.FilePermissions
                 .Where(fp => fp.CanView
                           && fp.Status == PermissionStatus.Active
@@ -84,7 +89,12 @@ namespace Infrastructure.Repositories
                           && fp.ProjectParticipant != null
                           && fp.ProjectParticipant.Status == ProjectParticipantStatus.Active
                           && fp.ProjectParticipant.Group.Members.Any(m =>
-                                m.AccountId == accountId && m.Status == GroupMemberStatus.Active))
+                                 m.AccountId == accountId && m.Status == GroupMemberStatus.Active)
+                          && !_context.FilePermissions.Any(d =>
+                                 d.FileItemId == fp.FileItemId
+                                 && d.AccountId == accountId
+                                 && d.Status == PermissionStatus.Active
+                                 && !d.CanView))
                 .Select(fp => fp.FileItemId);
 
             var issueStakeholderFileIds = _context.FileItems
@@ -161,17 +171,21 @@ namespace Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        public async Task<int> CountFilesByFolderIdAsync(Guid folderId)
+        public async Task<int> CountFilesByFolderIdAsync(Guid folderId, IReadOnlyCollection<Guid>? excludeFileIds = null)
         {
-            return await _context.FileItems
-                .Where(fi => fi.FolderId == folderId)
-                .CountAsync();
+            var query = _context.FileItems.Where(fi => fi.FolderId == folderId);
+            if (excludeFileIds != null && excludeFileIds.Count > 0)
+                query = query.Where(fi => !excludeFileIds.Contains(fi.Id));
+            return await query.CountAsync();
         }
 
-        public async Task<List<FileItem>> GetFilesByFolderIdPagedAsync(Guid folderId, int skip, int take)
+        public async Task<List<FileItem>> GetFilesByFolderIdPagedAsync(
+            Guid folderId, int skip, int take, IReadOnlyCollection<Guid>? excludeFileIds = null)
         {
-            return await _context.FileItems
-                .Where(fi => fi.FolderId == folderId)
+            var query = _context.FileItems.Where(fi => fi.FolderId == folderId);
+            if (excludeFileIds != null && excludeFileIds.Count > 0)
+                query = query.Where(fi => !excludeFileIds.Contains(fi.Id));
+            return await query
                 .OrderByDescending(fi => fi.CreatedAt)
                 .ThenBy(fi => fi.Id)
                 .Skip(skip)

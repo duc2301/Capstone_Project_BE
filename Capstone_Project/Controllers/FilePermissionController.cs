@@ -20,15 +20,22 @@ namespace Capstone_Project.Controllers
         }
 
         #region file permission
-        // Hàm này dùng để lấy data để test, lấy hết tất cả data liên quan đến file permission, bao gồm cả group đã bị xóa khỏi permission list
-        [HttpGet("{fileItemId}")]
+
+        // [Part 2 — group file-permissioning RESTORED] These GROUP endpoints back the file "Phân quyền"
+        // group dialog. They were commented out under KILL-A (2026-08-25) and are re-enabled here.
+        // The PERMISSION MATRIX stays folder-only (PermissionMatrixService still feeds no file rows) —
+        // file group assignment happens ONLY through these dedicated endpoints, never the matrix.
+        // The per-member roster endpoints ("Phân quyền thành viên": user-ui / add-user) are unchanged.
+
+        // Toàn bộ dòng file permission (kể cả group đã bị gỡ khỏi danh sách) — dùng để lấy data/debug.
+        [HttpGet("{fileItemId:guid}")]
         public async Task<IActionResult> GetParticipatedGroupWithFilePermissionWithFileItemId(Guid fileItemId)
         {
             var result = await _filePermissionService.GetGroupFilePermissionResponsesAsync(fileItemId);
             return Ok(ApiResponse.Success("Group with permission retrieved successfully", result));
         }
 
-        //
+        // Data cho hộp thoại phân quyền NHÓM của file: nhóm khả dụng + nhóm đang được cấp quyền.
         [HttpGet("{fileItemId:guid}/group-ui")]
         public async Task<IActionResult> GetDataForFilePermissionUI(Guid fileItemId)
         {
@@ -59,12 +66,10 @@ namespace Capstone_Project.Controllers
             return Ok(ApiResponse.Success("User permission updated successfully", result));
         }
 
+        // Cấp/gỡ quyền NHÓM trên file (present-wins override; gỡ = trả về kế thừa quyền thư mục).
         [HttpPost("add-group")]
         public async Task<IActionResult> SaveFilePermissions([FromBody] AddPermissionsBulkDTO dto)
         {
-            //if (dto.FileItemId != fileId)
-            //    return BadRequest("File ID mismatch");
-
             var result = await _filePermissionService.BulkUpdateFilePermissionsAsync(dto, User.GetAccountId());
             return Ok(ApiResponse.Success("Permission updated successfully", result));
         }
