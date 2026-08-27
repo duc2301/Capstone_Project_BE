@@ -91,7 +91,7 @@ namespace Application.Services
             });
         }
 
-        public async Task<ApiResponse> GetPendingAsync(Guid actorId)
+        public async Task<ApiResponse> GetPendingAsync(Guid actorId, Guid? projectId = null)
         {
             var leaderGroupIds = await _zoneResolver.GetActiveLeaderGroupIdsAsync(actorId);
             if (leaderGroupIds.Count == 0)
@@ -117,6 +117,8 @@ namespace Application.Services
 
                 var currentFolder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
                 if (currentFolder == null)
+                    continue;
+                if (projectId.HasValue && currentFolder.ProjectId != projectId.Value)
                     continue;
 
                 var projectFolders = await _zoneResolver.GetProjectFoldersAsync(currentFolder.ProjectId);

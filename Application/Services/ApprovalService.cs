@@ -202,14 +202,15 @@ namespace Application.Services
         /// <summary>
         /// Lấy các approval request đang Pending mà actor có quyền xem.
         /// </summary>
-        public async Task<PagedResult<ApprovalRequestResponseDTO>> GetPendingAsync(Guid actorId, int page, int pageSize)
+        public async Task<PagedResult<ApprovalRequestResponseDTO>> GetPendingAsync(Guid actorId, int page, int pageSize, Guid? projectId = null)
         {
             var safePage = page < 1 ? 1 : page;
             var safeSize = pageSize < 1 || pageSize > MaxPageSize ? DefaultPageSize : pageSize;
 
             var (pendingRequests, totalCount) = await _unitOfWork.Repository<ApprovalRequest>().GetPagedAsync(
                 safePage, safeSize,
-                predicate: a => a.Status == ApprovalRequestStatus.Pending,
+                predicate: a => a.Status == ApprovalRequestStatus.Pending
+                                && (projectId == null || a.FileItem.Folder.ProjectId == projectId.Value),
                 orderBy: q => q.OrderByDescending(a => a.CreatedAt));
 
             return await BuildPagedResponseAsync(pendingRequests, totalCount, actorId, safePage, safeSize);

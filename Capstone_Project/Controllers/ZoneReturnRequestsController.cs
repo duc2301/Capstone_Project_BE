@@ -19,8 +19,8 @@ namespace Capstone_Project.Controllers
         }
 
         [HttpGet("pending")]
-        public async Task<IActionResult> GetPending()
-            => Ok(await _zoneReturnRequestService.GetPendingAsync(User.GetAccountId()));
+        public async Task<IActionResult> GetPending([FromQuery] Guid? projectId = null)
+            => Ok(await _zoneReturnRequestService.GetPendingAsync(User.GetAccountId(), projectId));
 
         [HttpPost("{requestId:guid}/approve")]
         public async Task<IActionResult> Approve(Guid requestId)

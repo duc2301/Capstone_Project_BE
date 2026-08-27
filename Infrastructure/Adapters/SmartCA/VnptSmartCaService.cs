@@ -386,14 +386,17 @@ namespace Infrastructure.Adapters.SmartCA
             if (validation.Error != null)
                 return ApiResponse.Fail(validation.Error);
 
+            // Phai loc theo dung nguoi dang xem (SignedBy = nguoi tao giao dich) - ho so can nhieu nguoi
+            // ky co the da co giao dich Signed cua MOT signer khac, lay nham se khien nguoi chua ky tuong
+            // minh da ky xong.
             var transaction = (await _unitOfWork.Repository<ApprovalSignatureTransaction>().FindAsync(
-                    t => t.ApprovalRequestId == approvalId))
+                    t => t.ApprovalRequestId == approvalId && t.SignedBy == currentUserId))
                 .OrderByDescending(t => t.CreatedAt)
                 .FirstOrDefault();
             if (transaction == null)
                 return ApiResponse.Fail("Signature transaction not found.");
 
-            return ApiResponse.Success("Signature info retrieved", MapSignatureInfo(transaction));
+            return ApiResponse.Success("Signature info retrieved", await MapSignatureInfoAsync(transaction));
         }
 
         /// <summary>
@@ -1110,17 +1113,26 @@ namespace Infrastructure.Adapters.SmartCA
                 .Select(char.ToLowerInvariant)
                 .ToArray());
 
-        private static SignatureInfoDto MapSignatureInfo(ApprovalSignatureTransaction transaction)
-            => new()
+        private async Task<SignatureInfoDto> MapSignatureInfoAsync(ApprovalSignatureTransaction transaction)
+        {
+            string? signedByName = null;
+            if (transaction.SignedBy.HasValue)
+            {
+                var signer = await _unitOfWork.Repository<Account>().GetByIdAsync(transaction.SignedBy.Value);
+                signedByName = signer?.UserName;
+            }
+
+            return new SignatureInfoDto
             {
                 ApprovalRequestId = transaction.ApprovalRequestId,
                 FileItemId = transaction.FileItemId,
                 TransactionId = transaction.TransactionId,
                 CertificateSerial = transaction.CertificateSerial,
-                SignedBy = transaction.SignedBy,
+                SignedBy = signedByName,
                 SignedAt = transaction.SignedAt,
                 Status = transaction.Status
             };
+        }
 
         /// <summary>Ngu canh da xac thuc cua 1 thao tac ky SmartCA: approval/file/folder/signer lien quan.</summary>
         private sealed record SigningContext(
