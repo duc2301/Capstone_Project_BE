@@ -11,6 +11,7 @@ using Application.Options;
 using Application.Services.Signing;
 using Domain.Entities;
 using Domain.Enum.Account;
+using Domain.Enum.Audit;
 using Domain.Enum.Cde;
 using Domain.Enum.File;
 using Domain.Enum.Group;
@@ -447,7 +448,10 @@ namespace Infrastructure.Adapters.SmartCA
             if (!approval.RequiresSignature)
                 return SigningValidationResult.Fail("This file does not require digital signature.");
 
-            var signer = await ResolveSignerAsync(approval.Id, currentUserId);
+            // Re-check "vẫn còn Leader active" chỉ ở bước khởi tạo ký (blockSignedFile=true) — bước chỉ
+            // đọc trạng thái transaction đã tạo thì bỏ qua, không thì transaction WaitingConfirm sẽ kẹt
+            // vĩnh viễn vì chỉ đúng SignedBy mới đọc/tiến triển được nó.
+            var signer = await ResolveSignerAsync(approval.Id, currentUserId, folder.ProjectId, requireActiveLeader: blockSignedFile);
             if (signer == null)
                 return SigningValidationResult.Fail("Current user is not required to sign this approval request.");
 
@@ -457,7 +461,10 @@ namespace Infrastructure.Adapters.SmartCA
             return SigningValidationResult.Success(new SigningContext(approval, fileItem, folder, signer));
         }
 
-        private async Task<ApprovalRequestSigner?> ResolveSignerAsync(Guid approvalId, Guid currentUserId)
+        // Signer trực tiếp phải VẪN ĐANG là Leader active — AccountId khớp thôi không đủ (chỉ là
+        // snapshot chốt lúc submit). requireActiveLeader=false cho các bước chỉ đọc.
+        private async Task<ApprovalRequestSigner?> ResolveSignerAsync(
+            Guid approvalId, Guid currentUserId, Guid projectId, bool requireActiveLeader)
         {
             var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
                     s => s.ApprovalRequestId == approvalId))
@@ -465,7 +472,18 @@ namespace Infrastructure.Adapters.SmartCA
 
             var accountSigner = signers.FirstOrDefault(s => s.SignerAccountId == currentUserId);
             if (accountSigner != null)
-                return accountSigner;
+            {
+                if (!requireActiveLeader || await _approvalService.IsActiveProjectLeaderAsync(currentUserId, projectId))
+                    return accountSigner;
+
+                // Throttled vì bước này có thể bị bấm thử lại nhiều lần liên tiếp.
+                await _auditLog.LogThrottledAsync(
+                    LogScope.Project, AuditAction.PermissionChange, nameof(ApprovalRequestSigner),
+                    accountSigner.Id.ToString(), currentUserId,
+                    detail: "Từ chối ký: người được assign không còn là Team Leader active (đã bị đổi vai trò sau khi gán ký).",
+                    projectId: projectId);
+                return null;
+            }
 
             var groupIds = signers
                 .Where(s => s.SignerGroupId.HasValue)

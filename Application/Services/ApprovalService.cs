@@ -180,12 +180,23 @@ namespace Application.Services
             var safePage = page < 1 ? 1 : page;
             var safeSize = pageSize < 1 || pageSize > MaxPageSize ? DefaultPageSize : pageSize;
 
+            // "Lịch sử phê duyệt" chỉ hiện đúng cái actor tự gửi — Admin/PM dự án vẫn xem được hết.
+            var canViewAll = await CanViewAllApprovalsAsync(actorId);
             var (requests, totalCount) = await _unitOfWork.Repository<ApprovalRequest>().GetPagedAsync(
                 safePage, safeSize,
-                predicate: null,
+                predicate: canViewAll ? null : a => a.RequestedBy == actorId,
                 orderBy: q => q.OrderByDescending(a => a.CreatedAt));
 
             return await BuildPagedResponseAsync(requests, totalCount, actorId, safePage, safeSize);
+        }
+
+        private async Task<bool> CanViewAllApprovalsAsync(Guid actorId)
+        {
+            var account = await _unitOfWork.Repository<Account>().GetByIdAsync(actorId);
+            if (account?.Role == Domain.Enum.Account.AccountRole.Admin)
+                return true;
+
+            return (await _unitOfWork.Repository<Project>().FindAsync(p => p.ManagerAccountId == actorId)).Any();
         }
 
         /// <summary>
@@ -362,10 +373,12 @@ namespace Application.Services
             var pendingRequest = (await _unitOfWork.Repository<ApprovalRequest>().FindAsync(
                     r => r.FileItemId == fileItemId && r.Status == ApprovalRequestStatus.Pending))
                 .FirstOrDefault();
-            if (pendingRequest != null
-                && pendingRequest.RequiresSignature
-                && await IsRequiredSignerAsync(actorId, pendingRequest.Id))
-                return;
+            if (pendingRequest != null && pendingRequest.RequiresSignature)
+            {
+                var folder = await GetFolderAsync(fileItem.FolderId);
+                if (await IsRequiredSignerAsync(actorId, pendingRequest.Id, folder.ProjectId))
+                    return;
+            }
 
             throw new ApiExceptionResponse("Only the Team Leader can perform this action.", 403);
         }
@@ -472,7 +485,8 @@ namespace Application.Services
             if (request.Status != ApprovalRequestStatus.Pending || fileItem.Status != FileItemStatus.PendingApproval)
                 throw new ApiExceptionResponse("Only pending approval requests can be approved or rejected.", 409);
 
-            if (allowRequiredSigner && request.RequiresSignature && await IsRequiredSignerAsync(actor, request.Id))
+            if (allowRequiredSigner && request.RequiresSignature
+                && await IsRequiredSignerAsync(actor, request.Id, folder.ProjectId))
                 return;
 
             var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, folder, requireApprovePermission: true);
@@ -786,6 +800,22 @@ namespace Application.Services
                     400);
         }
 
+        /// <inheritdoc/>
+        public async Task<bool> IsActiveProjectLeaderAsync(Guid accountId, Guid projectId)
+        {
+            var projectGroupIds = (await _unitOfWork.Repository<ProjectParticipant>().FindAsync(
+                    p => p.ProjectId == projectId && p.Status == ProjectParticipantStatus.Active))
+                .Select(p => p.GroupId)
+                .ToHashSet();
+
+            return (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                    m => projectGroupIds.Contains(m.GroupId)
+                         && m.AccountId == accountId
+                         && m.Role == GroupMemberRole.Leader
+                         && m.Status == GroupMemberStatus.Active))
+                .Any();
+        }
+
         /// <summary>Kiểm tra actor có phải Group Leader active không.</summary>
         private async Task<bool> IsGroupLeaderAsync(Guid accountId, IReadOnlyCollection<Guid> groupIds)
             => (await _unitOfWork.Repository<GroupMember>().FindAsync(
@@ -820,31 +850,36 @@ namespace Application.Services
             if (account?.Role == Domain.Enum.Account.AccountRole.Admin)
                 return true;
 
-            if (await IsProjectManagerOfFileAsync(actor, fileItem))
+            var folder = await GetFolderAsync(fileItem.FolderId);
+            if (await IsProjectManagerOfFolderAsync(actor, folder))
                 return true;
 
-            if (request.RequiresSignature && await IsRequiredSignerAsync(actor, request.Id))
+            if (request.RequiresSignature && await IsRequiredSignerAsync(actor, request.Id, folder.ProjectId))
                 return true;
 
             var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, requireApprovePermission: true);
             return await IsGroupLeaderAsync(actor, teamGroupIds);
         }
 
-        private async Task<bool> IsProjectManagerOfFileAsync(Guid actor, FileItem fileItem)
+        private async Task<bool> IsProjectManagerOfFolderAsync(Guid actor, Folder folder)
         {
-            var folder = await GetFolderAsync(fileItem.FolderId);
             var project = await _unitOfWork.Repository<Project>().GetByIdAsync(folder.ProjectId);
             return project?.ManagerAccountId == actor;
         }
 
-        /// <summary>Actor có phải người/nhóm (thành viên active) được chỉ định ký cho request này không.</summary>
-        private async Task<bool> IsRequiredSignerAsync(Guid actor, Guid approvalRequestId)
+        /// <summary>
+        /// Actor có phải người/nhóm (thành viên active) được chỉ định ký cho request này không. Signer
+        /// trực tiếp (SignerAccountId) phải VẪN ĐANG là Leader active của 1 nhóm trong dự án — chỉ so
+        /// khớp AccountId thôi thì không đủ, vì đó chỉ là snapshot chốt lúc submit, không tự cập nhật
+        /// khi signer bị hạ xuống Member sau đó.
+        /// </summary>
+        private async Task<bool> IsRequiredSignerAsync(Guid actor, Guid approvalRequestId, Guid projectId)
         {
             var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
                     s => s.ApprovalRequestId == approvalRequestId))
                 .ToList();
             if (signers.Any(s => s.SignerAccountId == actor))
-                return true;
+                return await IsActiveProjectLeaderAsync(actor, projectId);
 
             var signerGroupIds = signers
                 .Where(s => s.SignerGroupId.HasValue)
