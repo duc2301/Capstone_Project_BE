@@ -153,6 +153,7 @@ namespace Application.Services
                 throw new ApiExceptionResponse(
                     "Chỉ Admin, PM dự án hoặc Trưởng nhóm hiện tại mới được đổi vai trò thành viên.", 403);
 
+            var previousRole = target.Role;
             GroupMember? demotedLeader = null;
             if (newRole == GroupMemberRole.Leader)
             {
@@ -172,22 +173,26 @@ namespace Application.Services
                 target.Role = GroupMemberRole.Member;
             }
 
-            // 1 nhóm có thể thuộc nhiều dự án -> ghi 1 dòng log CHO MỖI dự án để PM thấy đúng nhật ký.
-            var projectIds = await GetActiveProjectIdsOfGroupAsync(groupId);
+            // Vai trò thực sự không đổi (vd gọi Leader lên chức Leader) thì bỏ qua ghi log/bắn realtime.
+            if (target.Role != previousRole)
+            {
+                // 1 nhóm có thể thuộc nhiều dự án -> ghi 1 dòng log CHO MỖI dự án để PM thấy đúng nhật ký.
+                var projectIds = await GetActiveProjectIdsOfGroupAsync(groupId);
 
-            await LogMemberChangeAsync(AuditAction.Update, target, actor, groupId, projectIds,
-                $"Đổi vai trò thành viên thành {(newRole == GroupMemberRole.Leader ? "Trưởng nhóm" : "Thành viên")}");
+                await LogMemberChangeAsync(AuditAction.Update, target, actor, groupId, projectIds,
+                    $"Đổi vai trò thành viên thành {(newRole == GroupMemberRole.Leader ? "Trưởng nhóm" : "Thành viên")}");
 
-            if (demotedLeader != null)
-                await LogMemberChangeAsync(AuditAction.Update, demotedLeader, actor, groupId, projectIds,
-                    "Đổi vai trò thành viên thành Thành viên (do chuyển trưởng nhóm)");
+                if (demotedLeader != null)
+                    await LogMemberChangeAsync(AuditAction.Update, demotedLeader, actor, groupId, projectIds,
+                        "Đổi vai trò thành viên thành Thành viên (do chuyển trưởng nhóm)");
 
-            await _unitOfWork.CommitAsync();
+                await _unitOfWork.CommitAsync();
 
-            // Báo realtime cho (các) người vừa bị đổi vai trò để FE tự làm mới ngay.
-            await _groupRealtime.MemberRoleChangedAsync(target.AccountId, groupId, target.Role.ToString());
-            if (demotedLeader != null)
-                await _groupRealtime.MemberRoleChangedAsync(demotedLeader.AccountId, groupId, demotedLeader.Role.ToString());
+                // Báo realtime cho (các) người vừa bị đổi vai trò để FE tự làm mới ngay.
+                await _groupRealtime.MemberRoleChangedAsync(target.AccountId, groupId, target.Role.ToString());
+                if (demotedLeader != null)
+                    await _groupRealtime.MemberRoleChangedAsync(demotedLeader.AccountId, groupId, demotedLeader.Role.ToString());
+            }
 
             return await GetByIdAsync(groupId)
                 ?? throw new ApiExceptionResponse("Group not found after update.", 500);

@@ -310,6 +310,7 @@ namespace Application.Services
         {
             var request = await GetRequestAsync(approvalId);
             var fileItem = await GetFileItemAsync(request.FileItemId);
+            var folder = await GetFolderAsync(fileItem.FolderId);
             var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, requireApprovePermission: true);
 
             var stakeholderIds = new HashSet<Guid> { request.RequestedBy };
@@ -319,9 +320,17 @@ namespace Application.Services
                     s => s.ApprovalRequestId == approvalId))
                 .ToList();
 
-            stakeholderIds.UnionWith(signers
+            // Signer trực tiếp phải VẪN ĐANG là Leader active mới coi là stakeholder — cùng luật với
+            // IsRequiredSignerAsync, để người bị demoted không còn nhận realtime cho request này nữa.
+            var directSignerIds = signers
                 .Where(s => s.SignerAccountId.HasValue)
-                .Select(s => s.SignerAccountId!.Value));
+                .Select(s => s.SignerAccountId!.Value)
+                .Distinct();
+            foreach (var signerId in directSignerIds)
+            {
+                if (await IsActiveProjectLeaderAsync(signerId, folder.ProjectId))
+                    stakeholderIds.Add(signerId);
+            }
 
             var signerGroupIds = signers
                 .Where(s => s.SignerGroupId.HasValue)
@@ -878,8 +887,11 @@ namespace Application.Services
             var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
                     s => s.ApprovalRequestId == approvalRequestId))
                 .ToList();
-            if (signers.Any(s => s.SignerAccountId == actor))
-                return await IsActiveProjectLeaderAsync(actor, projectId);
+            // Không return ngay khi có dòng SignerAccountId khớp — nếu người này KHÔNG còn là Leader
+            // active (demoted) thì vẫn phải kiểm tiếp đường signer-theo-nhóm bên dưới, vì họ có thể vẫn
+            // hợp lệ qua đường đó (ví dụ đang là Leader của 1 nhóm khác được chỉ định ký).
+            if (signers.Any(s => s.SignerAccountId == actor) && await IsActiveProjectLeaderAsync(actor, projectId))
+                return true;
 
             var signerGroupIds = signers
                 .Where(s => s.SignerGroupId.HasValue)

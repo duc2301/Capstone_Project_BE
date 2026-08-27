@@ -476,13 +476,14 @@ namespace Infrastructure.Adapters.SmartCA
                 if (!requireActiveLeader || await _approvalService.IsActiveProjectLeaderAsync(currentUserId, projectId))
                     return accountSigner;
 
-                // Throttled vì bước này có thể bị bấm thử lại nhiều lần liên tiếp.
+                // Không return null ngay — người này có thể vẫn hợp lệ qua đường signer-theo-nhóm bên
+                // dưới (vd đang là Leader của 1 nhóm khác được chỉ định ký). Throttled vì bước này có
+                // thể bị bấm thử lại nhiều lần liên tiếp.
                 await _auditLog.LogThrottledAsync(
                     LogScope.Project, AuditAction.PermissionChange, nameof(ApprovalRequestSigner),
                     accountSigner.Id.ToString(), currentUserId,
-                    detail: "Từ chối ký: người được assign không còn là Team Leader active (đã bị đổi vai trò sau khi gán ký).",
+                    detail: "Từ chối ký (signer trực tiếp): người được assign không còn là Team Leader active.",
                     projectId: projectId);
-                return null;
             }
 
             var groupIds = signers
