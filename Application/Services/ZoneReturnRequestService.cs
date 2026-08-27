@@ -102,6 +102,12 @@ namespace Application.Services
                 .OrderByDescending(r => r.CreatedAt)
                 .ToList();
 
+            var requesterIds = requests.Select(r => r.RequestedBy).Distinct().ToHashSet();
+            var requesters = requesterIds.Count == 0
+                ? new Dictionary<Guid, Account>()
+                : (await _unitOfWork.Repository<Account>().FindAsync(a => requesterIds.Contains(a.Id)))
+                    .ToDictionary(a => a.Id);
+
             var result = new List<ZoneReturnRequestResponseDTO>();
             foreach (var request in requests)
             {
@@ -118,6 +124,8 @@ namespace Application.Services
                 if (!teamGroupIds.Any(leaderGroupIds.Contains))
                     continue;
 
+                requesters.TryGetValue(request.RequestedBy, out var requester);
+
                 result.Add(new ZoneReturnRequestResponseDTO
                 {
                     ReturnRequestId = request.Id,
@@ -126,6 +134,7 @@ namespace Application.Services
                     FromZone = _zoneResolver.FormatZone(request.FromZone),
                     TargetZone = _zoneResolver.FormatZone(request.TargetZone),
                     RequestedBy = request.RequestedBy,
+                    RequestedByName = requester?.UserName,
                     Reason = request.Reason,
                     CreatedAt = request.CreatedAt,
                     Status = request.Status.ToString()

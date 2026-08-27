@@ -8,6 +8,7 @@ namespace Application.DTOs.ResponseDTOs.ZoneReturn
         public string FromZone { get; set; } = string.Empty;
         public string TargetZone { get; set; } = string.Empty;
         public Guid RequestedBy { get; set; }
+        public string? RequestedByName { get; set; }
         public string? Reason { get; set; }
         public DateTime CreatedAt { get; set; }
         public string Status { get; set; } = string.Empty;

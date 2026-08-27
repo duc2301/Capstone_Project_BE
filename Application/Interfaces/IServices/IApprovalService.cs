@@ -45,5 +45,10 @@ namespace Application.Interfaces.IServices
 
         // Tất cả account có thể đang xem/quan tâm approval này (requester, team leader, signer) — dùng để broadcast realtime.
         Task<IReadOnlyCollection<Guid>> GetStakeholderAccountIdsAsync(Guid approvalId);
+
+        // accountId có ĐANG là Leader active của bất kỳ nhóm nào trong dự án không — dùng để re-validate
+        // signer trực tiếp (SignerAccountId) tại thời điểm xem/ký, không chỉ tin snapshot lúc submit
+        // (nếu signer bị hạ xuống Member sau khi được assign thì không còn xem/ký được nữa).
+        Task<bool> IsActiveProjectLeaderAsync(Guid accountId, Guid projectId);
     }
 }
