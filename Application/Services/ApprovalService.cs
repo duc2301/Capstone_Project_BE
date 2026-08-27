@@ -527,9 +527,6 @@ namespace Application.Services
 
             if (fileItem.Status == FileItemStatus.PendingApproval)
                 throw new ApiExceptionResponse("File is already pending approval.", 409);
-
-            if (fileItem.Status == FileItemStatus.Rejected)
-                throw new ApiExceptionResponse("Rejected file cannot be submitted for approval.", 400);
         }
 
         private static CdeArea ResolveApprovalTargetZone(string? targetZone, CdeArea currentZone)
