@@ -11,7 +11,7 @@ namespace Application.DTOs.ResponseDTOs.SmartCA
         public Guid FileItemId { get; set; }
         public string TransactionId { get; set; } = string.Empty;
         public string? CertificateSerial { get; set; }
-        public Guid? SignedBy { get; set; }
+        public string? SignedBy { get; set; }
         public DateTime? SignedAt { get; set; }
         public SignatureTransactionStatus Status { get; set; }
     }
