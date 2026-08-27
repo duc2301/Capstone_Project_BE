@@ -125,11 +125,8 @@ namespace Application.Services
                     + string.Join(", ", occupiedAreas) + ".", 409);
             }
 
-            foreach (var entry in subtrees)
-            {
-                for (var i = entry.Subtree.Count - 1; i >= 0; i--)
-                    _unitOfWork.Repository<Folder>().Delete(entry.Subtree[i]);
-            }
+            foreach (var folder in Enumerable.Reverse(allFolders))
+                _unitOfWork.Repository<Folder>().Delete(folder);
 
             var subFolderCount = allFolders.Count - mirrorGroup.Count;
             var subFolderNote = subFolderCount > 0 ? $" cùng {subFolderCount} thư mục con" : string.Empty;
