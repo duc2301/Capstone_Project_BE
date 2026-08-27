@@ -10,5 +10,6 @@ namespace Capstone_Project.SignalR
         public const string MarkupNoteAdded = "MarkupNoteAdded";
         public const string MarkupNoteUpdated = "MarkupNoteUpdated";
         public const string MarkupNoteDeleted = "MarkupNoteDeleted";
+        public const string GroupMemberRoleChanged = "GroupMemberRoleChanged";
     }
 }

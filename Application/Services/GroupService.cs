@@ -19,17 +19,20 @@ namespace Application.Services
         private readonly INotificationService _notification;
         private readonly IMapper _mapper;
         private readonly IAuditLogService _auditLog;
+        private readonly IGroupRealtimeNotifier _groupRealtime;
 
         public GroupService(
             IUnitOfWork unitOfWork,
             INotificationService notification,
             IMapper mapper,
-            IAuditLogService auditLog)
+            IAuditLogService auditLog,
+            IGroupRealtimeNotifier groupRealtime)
         {
             _unitOfWork = unitOfWork;
             _notification = notification;
             _mapper = mapper;
             _auditLog = auditLog;
+            _groupRealtime = groupRealtime;
         }
 
         public async Task<IEnumerable<GroupResponseDTO>> GetAllAsync()
@@ -136,13 +139,17 @@ namespace Application.Services
                 throw new ApiExceptionResponse(
                     "Chỉ Admin, PM dự án hoặc Trưởng nhóm hiện tại mới được đổi vai trò thành viên.", 403);
 
+            GroupMember? demotedLeader = null;
             if (newRole == GroupMemberRole.Leader)
             {
                 // Chuyển trưởng nhóm: hạ Leader hiện tại xuống Member rồi nâng target lên Leader.
                 if (target.Role != GroupMemberRole.Leader)
                 {
                     if (currentLeader != null && currentLeader.AccountId != target.AccountId)
+                    {
                         currentLeader.Role = GroupMemberRole.Member;
+                        demotedLeader = currentLeader;
+                    }
                     target.Role = GroupMemberRole.Leader;
                 }
             }
@@ -151,17 +158,52 @@ namespace Application.Services
                 target.Role = GroupMemberRole.Member;
             }
 
-            // Scope=System: 1 nhóm có thể thuộc NHIỀU dự án nên không gắn được 1 projectId duy nhất.
-            await _auditLog.LogAsync(
-                LogScope.System, AuditAction.Update, nameof(GroupMember), target.Id.ToString(), actor,
-                detail: $"Đổi vai trò thành viên thành {(newRole == GroupMemberRole.Leader ? "Trưởng nhóm" : "Thành viên")}",
-                groupId: groupId);
+            // 1 nhóm có thể thuộc nhiều dự án -> ghi 1 dòng log CHO MỖI dự án để PM thấy đúng nhật ký.
+            var projectIds = await GetActiveProjectIdsOfGroupAsync(groupId);
+
+            await LogMemberChangeAsync(AuditAction.Update, target, actor, groupId, projectIds,
+                $"Đổi vai trò thành viên thành {(newRole == GroupMemberRole.Leader ? "Trưởng nhóm" : "Thành viên")}");
+
+            if (demotedLeader != null)
+                await LogMemberChangeAsync(AuditAction.Update, demotedLeader, actor, groupId, projectIds,
+                    "Đổi vai trò thành viên thành Thành viên (do chuyển trưởng nhóm)");
 
             await _unitOfWork.CommitAsync();
+
+            // Báo realtime cho (các) người vừa bị đổi vai trò để FE tự làm mới ngay.
+            await _groupRealtime.MemberRoleChangedAsync(target.AccountId, groupId, target.Role.ToString());
+            if (demotedLeader != null)
+                await _groupRealtime.MemberRoleChangedAsync(demotedLeader.AccountId, groupId, demotedLeader.Role.ToString());
 
             return await GetByIdAsync(groupId)
                 ?? throw new ApiExceptionResponse("Group not found after update.", 500);
         }
+
+        // Không có dự án nào (nhóm chưa gắn vào project) thì vẫn ghi 1 dòng chung, không projectId.
+        private async Task LogMemberChangeAsync(
+            AuditAction action, GroupMember member, Guid actor, Guid groupId,
+            IReadOnlyCollection<Guid> projectIds, string detail)
+        {
+            if (projectIds.Count == 0)
+            {
+                await _auditLog.LogAsync(
+                    LogScope.System, action, nameof(GroupMember), member.Id.ToString(), actor,
+                    detail: detail, groupId: groupId);
+                return;
+            }
+
+            foreach (var projectId in projectIds)
+                await _auditLog.LogAsync(
+                    LogScope.System, action, nameof(GroupMember), member.Id.ToString(), actor,
+                    detail: detail, projectId: projectId, groupId: groupId);
+        }
+
+        private async Task<List<Guid>> GetActiveProjectIdsOfGroupAsync(Guid groupId)
+            => (await _unitOfWork.Repository<ProjectParticipant>().FindAsync(
+                    pp => pp.GroupId == groupId && pp.Status == ProjectParticipantStatus.Active))
+                .Select(pp => pp.ProjectId)
+                .Distinct()
+                .ToList();
 
         public async Task<GroupResponseDTO> ChangeMemberStatusAsync(
             Guid groupId, Guid accountId, GroupMemberStatus newStatus, Guid actor, string? actorRole, string? actorName)
@@ -183,10 +225,9 @@ namespace Application.Services
             var removed = newStatus == GroupMemberStatus.Left;
             target.Status = newStatus;
 
-            await _auditLog.LogAsync(
-                LogScope.System, AuditAction.StatusChange, nameof(GroupMember), target.Id.ToString(), actor,
-                detail: $"Đổi trạng thái thành viên nhóm '{group.Name}' thành {newStatus}",
-                groupId: groupId);
+            var projectIds = await GetActiveProjectIdsOfGroupAsync(groupId);
+            await LogMemberChangeAsync(AuditAction.StatusChange, target, actor, groupId, projectIds,
+                $"Đổi trạng thái thành viên nhóm '{group.Name}' thành {newStatus}");
 
             await _unitOfWork.CommitAsync();
 
