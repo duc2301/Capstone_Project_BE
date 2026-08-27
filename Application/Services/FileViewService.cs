@@ -126,14 +126,14 @@ namespace Application.Services
             FileItem fileItem, FileVersionState version, CancellationToken ct)
         {
             var format = version.Format ?? string.Empty;
-            var ext = format.StartsWith('.') ? format.ToLowerInvariant() : "." + format.ToLowerInvariant();
+            var ext = FileFormatRules.NormalizeExtension(format);
             var fileName = FileDownloadNaming.BuildFileName(fileItem.Name, format);
             var hasStoredContent = !string.IsNullOrWhiteSpace(version.StoragePath);
 
             var folder = await _files.GetFolderAsync(fileItem.FolderId, ct)
                 ?? throw new ApiExceptionResponse("File folder not found.", 404);
 
-            var info = fileItem.FileType switch
+            var info = FileFormatRules.FromExtension(format) switch
             {
                 FileType.Ifc or FileType.Cad => await BuildModelAsync(version, fileName, format),
                 FileType.Pdf or FileType.Image when hasStoredContent
@@ -297,14 +297,15 @@ namespace Application.Services
                 ?? throw new ApiExceptionResponse("Current version not found.", 404);
 
             var format = version.Format ?? string.Empty;
-            var ext = format.StartsWith('.') ? format.ToLowerInvariant() : "." + format.ToLowerInvariant();
+            var ext = FileFormatRules.NormalizeExtension(format);
+            var versionType = FileFormatRules.FromExtension(format);
 
             string storagePath;
-            if (fileItem.FileType == FileType.Pdf)
+            if (versionType == FileType.Pdf)
             {
                 storagePath = version.StoragePath!;
             }
-            else if (fileItem.FileType == FileType.Office && !TextExts.Contains(ext))
+            else if (versionType == FileType.Office && !TextExts.Contains(ext))
             {
                 storagePath = await EnsureOfficePdfPathAsync(fileItem, version, ext, ct)
                     ?? throw new ApiExceptionResponse("Không thể chuyển file sang PDF để markup.", 415);
@@ -353,12 +354,12 @@ namespace Application.Services
                 throw new ApiExceptionResponse("Version has no stored content.", 404);
 
             var format = version.Format ?? string.Empty;
-            var ext = format.StartsWith('.') ? format.ToLowerInvariant() : "." + format.ToLowerInvariant();
+            var ext = FileFormatRules.NormalizeExtension(format);
             var fileName = FileDownloadNaming.BuildFileName(fileItem.Name, format);
 
             string storagePath;
             string contentType;
-            switch (fileItem.FileType)
+            switch (FileFormatRules.FromExtension(format))
             {
                 case FileType.Pdf:
                 case FileType.Image:

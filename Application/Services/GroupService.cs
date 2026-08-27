@@ -146,7 +146,8 @@ namespace Application.Services
 
             var currentLeader = members.FirstOrDefault(
                 gm => gm.Role == GroupMemberRole.Leader && gm.Status == GroupMemberStatus.Active);
-            await RequireCanChangeMemberRoleAsync(groupId, actor, actorRole, currentLeader);
+            await EnsureAdminOrProjectManagerAsync(groupId, actor, actorRole,
+                "Chỉ Admin hoặc PM dự án mới được đổi vai trò thành viên.");
 
             var previousRole = target.Role;
             var demotedLeader = ApplyRoleChange(target, newRole, currentLeader);
@@ -157,17 +158,6 @@ namespace Application.Services
 
             return await GetByIdAsync(groupId)
                 ?? throw new ApiExceptionResponse("Group not found after update.", 500);
-        }
-
-        private async Task RequireCanChangeMemberRoleAsync(
-            Guid groupId, Guid actor, string? actorRole, GroupMember? currentLeader)
-        {
-            var isAdmin = actorRole == AccountRole.Admin.ToString();
-            var isLeader = currentLeader != null && currentLeader.AccountId == actor;
-            var isManager = await IsProjectManagerOfGroupAsync(groupId, actor);
-            if (!isAdmin && !isLeader && !isManager)
-                throw new ApiExceptionResponse(
-                    "Chỉ Admin, PM dự án hoặc Trưởng nhóm hiện tại mới được đổi vai trò thành viên.", 403);
         }
 
         // Mutate target (entity đang tracked) theo newRole. Trả về Leader cũ nếu bị tự động hạ xuống

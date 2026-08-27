@@ -58,13 +58,27 @@ namespace Application.Services
 
             await _permission.CanEditFolderAsync(id, actorId);
 
-            _mapper.Map(dto, entity);
-            entity.UpdatedAt = DateTime.UtcNow;
-            _unitOfWork.Repository<Folder>().Update(entity);
+            var newName = (dto.Name ?? string.Empty).Trim();
+            if (newName.Length == 0)
+                throw new ApiExceptionResponse("Folder name is required.", 400);
+
+            var projectFolders = await GetProjectFoldersAsync(entity.ProjectId);
+            var mirrorGroup = ResolveMirrorGroup(entity, projectFolders);
+
+            EnsureNameAvailable(newName, mirrorGroup, projectFolders);
+
+            var previousName = entity.Name;
+            var now = DateTime.UtcNow;
+            foreach (var folder in mirrorGroup)
+            {
+                folder.Name = newName;
+                folder.UpdatedAt = now;
+                _unitOfWork.Repository<Folder>().Update(folder);
+            }
 
             await _auditLog.LogAsync(
                 LogScope.Group, AuditAction.Update, nameof(Folder), entity.Id.ToString(), actorId,
-                detail: $"Cập nhật thư mục '{entity.Name}'",
+                detail: $"Đổi tên thư mục '{previousName}' thành '{newName}' ở {mirrorGroup.Count} khu vực",
                 projectId: entity.ProjectId, folderId: entity.Id);
 
             await _unitOfWork.CommitAsync();
@@ -78,44 +92,101 @@ namespace Application.Services
 
             await _permission.CanEditFolderAsync(id, actorId);
 
-            var subtree = await GetSubtreeTopDownAsync(entity);
-            var subtreeIds = subtree.Select(f => f.Id).ToList();
+            var projectFolders = await GetProjectFoldersAsync(entity.ProjectId);
+            var mirrorGroup = ResolveMirrorGroup(entity, projectFolders);
+            var childrenByParent = GroupByParent(projectFolders);
 
-            var documents = await _unitOfWork.Repository<FileItem>()
-                .FindAsync(f => subtreeIds.Contains(f.FolderId));
-            var documentCount = documents.Count();
-            if (documentCount > 0)
+            var subtrees = mirrorGroup
+                .Select(folder => new
+                {
+                    Folder = folder,
+                    Subtree = GetSubtreeTopDown(folder, childrenByParent)
+                })
+                .ToList();
+
+            var allFolders = subtrees.SelectMany(entry => entry.Subtree).ToList();
+            var allFolderIds = allFolders.Select(f => f.Id).ToList();
+
+            var documents = (await _unitOfWork.Repository<FileItem>()
+                    .FindAsync(f => allFolderIds.Contains(f.FolderId)))
+                .ToList();
+
+            if (documents.Count > 0)
             {
+                var occupiedAreas = subtrees
+                    .Where(entry => entry.Subtree.Any(folder => documents.Any(d => d.FolderId == folder.Id)))
+                    .Select(entry => entry.Folder.Area)
+                    .Distinct()
+                    .OrderBy(area => area)
+                    .Select(area => area.ToString());
+
                 throw new ApiExceptionResponse(
-                    $"Folder still contains {documentCount} document(s).",
-                    409);
+                    $"Folder still contains {documents.Count} document(s) in zone(s): "
+                    + string.Join(", ", occupiedAreas) + ".", 409);
             }
 
-            for (var i = subtree.Count - 1; i >= 0; i--)
+            foreach (var entry in subtrees)
             {
-                _unitOfWork.Repository<Folder>().Delete(subtree[i]);
+                for (var i = entry.Subtree.Count - 1; i >= 0; i--)
+                    _unitOfWork.Repository<Folder>().Delete(entry.Subtree[i]);
             }
 
-            var subFolderCount = subtree.Count - 1;
+            var subFolderCount = allFolders.Count - mirrorGroup.Count;
             var subFolderNote = subFolderCount > 0 ? $" cùng {subFolderCount} thư mục con" : string.Empty;
             await _auditLog.LogAsync(
                 LogScope.Group, AuditAction.Delete, nameof(Folder), entity.Id.ToString(), actorId,
-                detail: $"Xoá thư mục '{entity.Name}' (vùng {entity.Area}){subFolderNote}",
+                detail: $"Xoá thư mục '{entity.Name}' ở {mirrorGroup.Count} khu vực{subFolderNote}",
                 projectId: entity.ProjectId, folderId: entity.Id);
 
             await _unitOfWork.CommitAsync();
         }
 
-        private async Task<List<Folder>> GetSubtreeTopDownAsync(Folder root)
-        {
-            var projectFolders = await _unitOfWork.Repository<Folder>()
-                .FindAsync(f => f.ProjectId == root.ProjectId);
+        private async Task<List<Folder>> GetProjectFoldersAsync(Guid projectId)
+            => (await _unitOfWork.Repository<Folder>()
+                    .FindAsync(f => f.ProjectId == projectId && !f.IsTemplate))
+                .ToList();
 
-            var childrenByParent = projectFolders
+        private static List<Folder> ResolveMirrorGroup(Folder folder, List<Folder> projectFolders)
+        {
+            var source = folder.MirrorSourceFolderId.HasValue
+                ? projectFolders.FirstOrDefault(f => f.Id == folder.MirrorSourceFolderId.Value) ?? folder
+                : folder;
+
+            var group = new List<Folder> { source };
+            group.AddRange(projectFolders.Where(f => f.MirrorSourceFolderId == source.Id && f.Id != source.Id));
+
+            if (group.All(f => f.Id != folder.Id))
+                group.Add(folder);
+
+            return group;
+        }
+
+        private static void EnsureNameAvailable(string name, List<Folder> targets, List<Folder> projectFolders)
+        {
+            var targetIds = targets.Select(f => f.Id).ToHashSet();
+
+            foreach (var target in targets)
+            {
+                var clash = projectFolders.FirstOrDefault(f =>
+                    !targetIds.Contains(f.Id)
+                    && f.Area == target.Area
+                    && f.ParentFolderId == target.ParentFolderId
+                    && string.Equals(f.Name.Trim(), name, StringComparison.OrdinalIgnoreCase));
+
+                if (clash != null)
+                    throw new ApiExceptionResponse(
+                        $"Folder name '{name}' already exists in zone: {clash.Area}.", 409);
+            }
+        }
+
+        private static Dictionary<Guid, List<Folder>> GroupByParent(List<Folder> projectFolders)
+            => projectFolders
                 .Where(f => f.ParentFolderId.HasValue)
                 .GroupBy(f => f.ParentFolderId!.Value)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
+        private static List<Folder> GetSubtreeTopDown(Folder root, Dictionary<Guid, List<Folder>> childrenByParent)
+        {
             var ordered = new List<Folder>();
             var pending = new Queue<Folder>();
             pending.Enqueue(root);
