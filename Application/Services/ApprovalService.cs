@@ -324,7 +324,7 @@ namespace Application.Services
             // IsRequiredSignerAsync, để người bị demoted không còn nhận realtime cho request này nữa.
             var directSignerIds = signers
                 .Where(s => s.SignerAccountId.HasValue)
-                .Select(s => s.SignerAccountId!.Value)
+                .Select(s => s.SignerAccountId.Value)
                 .Distinct();
             foreach (var signerId in directSignerIds)
             {

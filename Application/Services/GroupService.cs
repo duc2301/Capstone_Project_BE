@@ -146,56 +146,72 @@ namespace Application.Services
 
             var currentLeader = members.FirstOrDefault(
                 gm => gm.Role == GroupMemberRole.Leader && gm.Status == GroupMemberStatus.Active);
+            await RequireCanChangeMemberRoleAsync(groupId, actor, actorRole, currentLeader);
+
+            var previousRole = target.Role;
+            var demotedLeader = ApplyRoleChange(target, newRole, currentLeader);
+
+            // Vai trò thực sự không đổi (vd gọi Leader lên chức Leader) thì bỏ qua ghi log/bắn realtime.
+            if (target.Role != previousRole)
+                await PersistAndNotifyRoleChangeAsync(groupId, actor, newRole, target, demotedLeader);
+
+            return await GetByIdAsync(groupId)
+                ?? throw new ApiExceptionResponse("Group not found after update.", 500);
+        }
+
+        private async Task RequireCanChangeMemberRoleAsync(
+            Guid groupId, Guid actor, string? actorRole, GroupMember? currentLeader)
+        {
             var isAdmin = actorRole == AccountRole.Admin.ToString();
             var isLeader = currentLeader != null && currentLeader.AccountId == actor;
             var isManager = await IsProjectManagerOfGroupAsync(groupId, actor);
             if (!isAdmin && !isLeader && !isManager)
                 throw new ApiExceptionResponse(
                     "Chỉ Admin, PM dự án hoặc Trưởng nhóm hiện tại mới được đổi vai trò thành viên.", 403);
+        }
 
-            var previousRole = target.Role;
-            GroupMember? demotedLeader = null;
-            if (newRole == GroupMemberRole.Leader)
-            {
-                // Chuyển trưởng nhóm: hạ Leader hiện tại xuống Member rồi nâng target lên Leader.
-                if (target.Role != GroupMemberRole.Leader)
-                {
-                    if (currentLeader != null && currentLeader.AccountId != target.AccountId)
-                    {
-                        currentLeader.Role = GroupMemberRole.Member;
-                        demotedLeader = currentLeader;
-                    }
-                    target.Role = GroupMemberRole.Leader;
-                }
-            }
-            else
+        // Mutate target (entity đang tracked) theo newRole. Trả về Leader cũ nếu bị tự động hạ xuống
+        // Member do có người khác lên thay (null nếu không có ai bị hạ, kể cả trường hợp no-op).
+        private static GroupMember? ApplyRoleChange(GroupMember target, GroupMemberRole newRole, GroupMember? currentLeader)
+        {
+            if (newRole != GroupMemberRole.Leader)
             {
                 target.Role = GroupMemberRole.Member;
+                return null;
             }
 
-            // Vai trò thực sự không đổi (vd gọi Leader lên chức Leader) thì bỏ qua ghi log/bắn realtime.
-            if (target.Role != previousRole)
+            if (target.Role == GroupMemberRole.Leader)
+                return null;
+
+            GroupMember? demotedLeader = null;
+            if (currentLeader != null && currentLeader.AccountId != target.AccountId)
             {
-                // 1 nhóm có thể thuộc nhiều dự án -> ghi 1 dòng log CHO MỖI dự án để PM thấy đúng nhật ký.
-                var projectIds = await GetActiveProjectIdsOfGroupAsync(groupId);
-
-                await LogMemberChangeAsync(AuditAction.Update, target, actor, groupId, projectIds,
-                    $"Đổi vai trò thành viên thành {(newRole == GroupMemberRole.Leader ? "Trưởng nhóm" : "Thành viên")}");
-
-                if (demotedLeader != null)
-                    await LogMemberChangeAsync(AuditAction.Update, demotedLeader, actor, groupId, projectIds,
-                        "Đổi vai trò thành viên thành Thành viên (do chuyển trưởng nhóm)");
-
-                await _unitOfWork.CommitAsync();
-
-                // Báo realtime cho (các) người vừa bị đổi vai trò để FE tự làm mới ngay.
-                await _groupRealtime.MemberRoleChangedAsync(target.AccountId, groupId, target.Role.ToString());
-                if (demotedLeader != null)
-                    await _groupRealtime.MemberRoleChangedAsync(demotedLeader.AccountId, groupId, demotedLeader.Role.ToString());
+                currentLeader.Role = GroupMemberRole.Member;
+                demotedLeader = currentLeader;
             }
+            target.Role = GroupMemberRole.Leader;
+            return demotedLeader;
+        }
 
-            return await GetByIdAsync(groupId)
-                ?? throw new ApiExceptionResponse("Group not found after update.", 500);
+        private async Task PersistAndNotifyRoleChangeAsync(
+            Guid groupId, Guid actor, GroupMemberRole newRole, GroupMember target, GroupMember? demotedLeader)
+        {
+            // 1 nhóm có thể thuộc nhiều dự án -> ghi 1 dòng log CHO MỖI dự án để PM thấy đúng nhật ký.
+            var projectIds = await GetActiveProjectIdsOfGroupAsync(groupId);
+
+            await LogMemberChangeAsync(AuditAction.Update, target, actor, groupId, projectIds,
+                $"Đổi vai trò thành viên thành {(newRole == GroupMemberRole.Leader ? "Trưởng nhóm" : "Thành viên")}");
+
+            if (demotedLeader != null)
+                await LogMemberChangeAsync(AuditAction.Update, demotedLeader, actor, groupId, projectIds,
+                    "Đổi vai trò thành viên thành Thành viên (do chuyển trưởng nhóm)");
+
+            await _unitOfWork.CommitAsync();
+
+            // Báo realtime cho (các) người vừa bị đổi vai trò để FE tự làm mới ngay.
+            await _groupRealtime.MemberRoleChangedAsync(target.AccountId, groupId, target.Role.ToString());
+            if (demotedLeader != null)
+                await _groupRealtime.MemberRoleChangedAsync(demotedLeader.AccountId, groupId, demotedLeader.Role.ToString());
         }
 
         // Không có dự án nào (nhóm chưa gắn vào project) thì vẫn ghi 1 dòng chung, không projectId.
