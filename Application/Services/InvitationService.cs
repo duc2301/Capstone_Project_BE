@@ -63,6 +63,8 @@ namespace Application.Services
             if (existingMember != null && existingMember.Status != GroupMemberStatus.Left)
                 throw new ApiExceptionResponse("Account is already a member of this group.", 409);
 
+            await EnsureNotInAnotherProjectGroupAsync(dto.ProjectId, dto.InvitedAccountId, dto.InvitedGroupId);
+
             // Chặn sớm: không mời thêm Leader nếu nhóm đã có Leader đang hoạt động (Active).
             if (dto.Role == GroupMemberRole.Leader
                 && groupMembers.Any(gm => gm.Role == GroupMemberRole.Leader && gm.Status == GroupMemberStatus.Active))
@@ -133,6 +135,8 @@ namespace Application.Services
                 throw new ApiExceptionResponse(
                     "Nhóm đã có Trưởng nhóm (Leader). Không thể gia nhập với vai trò Leader.", 409);
             }
+
+            await EnsureNotInAnotherProjectGroupAsync(projectId, accountId, groupId);
 
             if (member != null)
             {
@@ -241,6 +245,31 @@ namespace Application.Services
 
         private static string RoleLabel(GroupMemberRole role)
             => role == GroupMemberRole.Leader ? "Trưởng nhóm" : "Thành viên";
+
+        private async Task EnsureNotInAnotherProjectGroupAsync(Guid projectId, Guid accountId, Guid? targetGroupId)
+        {
+            var otherGroupIds = (await _unitOfWork.Repository<ProjectParticipant>()
+                    .FindAsync(pp => pp.ProjectId == projectId
+                                  && pp.Status == ProjectParticipantStatus.Active))
+                .Select(pp => pp.GroupId)
+                .Where(id => id != targetGroupId)
+                .ToHashSet();
+
+            if (otherGroupIds.Count == 0) return;
+
+            var conflict = (await _unitOfWork.Repository<GroupMember>()
+                    .FindAsync(gm => gm.AccountId == accountId
+                                  && gm.Status == GroupMemberStatus.Active
+                                  && otherGroupIds.Contains(gm.GroupId)))
+                .FirstOrDefault();
+
+            if (conflict == null) return;
+
+            var occupiedGroup = await _unitOfWork.Repository<Group>().GetByIdAsync(conflict.GroupId);
+            throw new ApiExceptionResponse(
+                $"Tài khoản đã thuộc nhóm '{occupiedGroup?.Name}' trong dự án này. "
+                + "Mỗi người chỉ được tham gia một nhóm trong cùng dự án.", 409);
+        }
 
         public async Task<IEnumerable<MyInvitationDTO>> GetMyPendingAsync(Guid accountId)
         {
