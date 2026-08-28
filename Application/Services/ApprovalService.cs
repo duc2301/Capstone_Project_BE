@@ -260,13 +260,22 @@ namespace Application.Services
 
             if (request.TargetZone == CdeArea.Published)
             {
-                var revokedCount = await RevokeFileViewGrantsOnZoneExitAsync(fileItem.Id);
+                var revokedAccountIds = await RevokeFileViewGrantsOnZoneExitAsync(fileItem.Id);
 
-                if (revokedCount > 0)
+                if (revokedAccountIds.Count > 0)
+                {
+                    var revokedLabels = await PermissionAuditDescriber.ResolveAccountLabelsAsync(
+                        _unitOfWork, folder.ProjectId, revokedAccountIds);
+                    var revokedNames = revokedAccountIds
+                        .Select(id => PermissionAuditDescriber.AccountLabelOf(revokedLabels, id))
+                        .ToList();
+
                     await _auditLog.LogAsync(
                         LogScope.Project, AuditAction.RevokeShare, nameof(FileItem), fileItem.Id.ToString(), actor,
-                        detail: $"Thu hồi quyền xem '{fileItem.Name}' của {revokedCount} tài khoản (file sang Published)",
+                        detail: $"Thu hồi quyền xem '{fileItem.Name}' của {PermissionAuditDescriber.Join(revokedNames)}"
+                                + " — lý do: tệp đã chuyển sang Published",
                         projectId: folder.ProjectId, folderId: folder.Id);
+                }
             }
 
             await _auditLog.LogAsync(
@@ -689,7 +698,12 @@ namespace Application.Services
             return grantAccountIds.Count;
         }
 
-        private async Task<int> RevokeFileViewGrantsOnZoneExitAsync(Guid fileItemId)
+        /// <summary>
+        /// Gỡ mọi grant xem theo tài khoản của file và trả về DANH SÁCH tài khoản bị thu hồi (không chỉ
+        /// số lượng) để dòng audit log gọi được tên từng người — mất quyền xem là việc người dùng sẽ
+        /// thắc mắc, log phải trả lời được "ai" chứ không chỉ "mấy người".
+        /// </summary>
+        private async Task<List<Guid>> RevokeFileViewGrantsOnZoneExitAsync(Guid fileItemId)
         {
             var signerGrants = (await _unitOfWork.Repository<FileViewGrant>().FindAsync(
                     g => g.FileItemId == fileItemId))
@@ -697,7 +711,7 @@ namespace Application.Services
             foreach (var grant in signerGrants)
                 _unitOfWork.Repository<FileViewGrant>().Delete(grant);
 
-            return signerGrants.Count;
+            return signerGrants.Select(g => g.AccountId).Distinct().ToList();
         }
 
         /// <summary>

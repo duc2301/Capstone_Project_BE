@@ -96,6 +96,9 @@ namespace Application.Services
 
             var updatedParticipantIds = new List<Guid>();
 
+            // (bên tham gia, mức mới) để dựng câu audit log sau khi tra được tên nhóm.
+            var auditChanges = new List<(Guid ParticipantId, string Level)>();
+
             // Remove permissions for participants in the removal list
             foreach (var participantId in dto.RemoveParticipantIds)
             {
@@ -105,6 +108,7 @@ namespace Application.Services
                     PermissionLevelMapper.Apply(perm, PermissionLevel.Inherit, isFile: false);
 
                     updatedParticipantIds.Add(participantId);
+                    auditChanges.Add((participantId, PermissionAuditDescriber.RemovedLabel));
 
                 }
             }
@@ -132,6 +136,7 @@ namespace Application.Services
                     permission, PermissionLevelMapper.FromFlags(u.CanView, u.CanEdit), isFile: false);
 
                 updatedParticipantIds.Add(u.ProjectParticipantId);
+                auditChanges.Add((u.ProjectParticipantId, PermissionAuditDescriber.LevelName(u.CanView, u.CanEdit)));
 
             }
 
@@ -139,10 +144,20 @@ namespace Application.Services
                 await _unitOfWork.Repository<FolderPermission>().CreateRangeAsync(toCreate);
 
             var auditFolder = await _unitOfWork.Repository<Folder>().GetByIdAsync(dto.Id);
+
+            // Ghi rõ TỪNG bên và mức quyền mới: chỉ đếm "cho N bên tham gia" thì đọc log xong vẫn
+            // không biết ai vừa được mở hay bị gỡ quyền trên thư mục này.
+            var groupNames = await PermissionAuditDescriber.ResolveGroupNamesAsync(
+                _unitOfWork, auditChanges.Select(c => c.ParticipantId).ToList());
+            var auditEntries = auditChanges
+                .Select(c => PermissionAuditDescriber.Entry(
+                    PermissionAuditDescriber.GroupNameOf(groupNames, c.ParticipantId), c.Level))
+                .ToList();
+
             await _auditLog.LogAsync(
                 Domain.Enum.Audit.LogScope.Project, Domain.Enum.Audit.AuditAction.PermissionChange,
                 nameof(Folder), dto.Id.ToString(), actorId,
-                detail: $"Cập nhật phân quyền thư mục '{auditFolder?.Name}' cho {updatedParticipantIds.Count()} bên tham gia",
+                detail: $"Phân quyền nhóm trên thư mục '{auditFolder?.Name}': {PermissionAuditDescriber.Join(auditEntries)}",
                 projectId: auditFolder?.ProjectId, folderId: dto.Id);
 
             await _unitOfWork.CommitAsync();
@@ -174,6 +189,9 @@ namespace Application.Services
 
             var updatedAccountIds = new List<Guid>();
 
+            // (tài khoản, mức mới) để dựng câu audit log sau khi tra được tên người + nhóm của họ.
+            var auditChanges = new List<(Guid AccountId, string Level)>();
+
             // Remove = trả tài khoản về kế thừa quyền nhóm (dòng Inactive; đường đọc lọc Active nên bỏ qua).
             foreach (var accountId in removeIds)
             {
@@ -181,6 +199,7 @@ namespace Application.Services
                 {
                     PermissionLevelMapper.Apply(perm, PermissionLevel.Inherit, isFile: true);
                     updatedAccountIds.Add(accountId);
+                    auditChanges.Add((accountId, "bỏ quyền riêng, trở lại theo nhóm"));
                 }
             }
 
@@ -203,16 +222,27 @@ namespace Application.Services
                 PermissionLevelMapper.Apply(
                     permission, PermissionLevelMapper.FromFlags(u.CanView, u.CanEdit), isFile: true);
                 updatedAccountIds.Add(u.AccountId);
+                auditChanges.Add((u.AccountId, PermissionAuditDescriber.LevelName(u.CanView, u.CanEdit)));
             }
 
             if (toCreate.Any())
                 await _unitOfWork.Repository<FolderPermission>().CreateRangeAsync(toCreate);
 
             var auditFolder = await _unitOfWork.Repository<Folder>().GetByIdAsync(dto.Id);
+
+            // Ghi rõ TÊN người và nhóm của họ: quyền riêng theo tài khoản là đường đè lên quyền nhóm
+            // nên khi truy vết sự cố, "mấy người" là con số vô dụng.
+            var accountLabels = await PermissionAuditDescriber.ResolveAccountLabelsAsync(
+                _unitOfWork, auditFolder?.ProjectId, auditChanges.Select(c => c.AccountId).ToList());
+            var auditEntries = auditChanges
+                .Select(c => PermissionAuditDescriber.Entry(
+                    PermissionAuditDescriber.AccountLabelOf(accountLabels, c.AccountId), c.Level))
+                .ToList();
+
             await _auditLog.LogAsync(
                 Domain.Enum.Audit.LogScope.Project, Domain.Enum.Audit.AuditAction.PermissionChange,
                 nameof(Folder), dto.Id.ToString(), actorId,
-                detail: $"Cập nhật phân quyền người dùng cho thư mục '{auditFolder?.Name}': {updatedAccountIds.Distinct().Count()} người",
+                detail: $"Phân quyền người dùng trên thư mục '{auditFolder?.Name}': {PermissionAuditDescriber.Join(auditEntries)}",
                 projectId: auditFolder?.ProjectId, folderId: dto.Id);
 
             await _unitOfWork.CommitAsync();
