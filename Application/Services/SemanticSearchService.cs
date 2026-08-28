@@ -33,23 +33,31 @@ namespace Application.Services
             if (string.IsNullOrWhiteSpace(query))
                 throw new ApiExceptionResponse("Câu tìm kiếm rỗng", 400);
 
-            // Admin hệ thống / PM / ProjectAdmin tra cứu toàn dự án; còn lại chỉ trong thư mục được cấp quyền xem.
-            // Cùng cặp đôi đang dùng ở AuditLogService.GetMyInProjectAsync — mặc định từ chối.
+            // Admin hệ thống / PM / ProjectAdmin tra cứu toàn dự án; còn lại chỉ trong phạm vi được
+            // cấp quyền. Cùng cặp đôi đang dùng ở AuditLogService.GetMyInProjectAsync — mặc định từ chối.
             IReadOnlyCollection<Guid>? viewableFolderIds = null;
+            IReadOnlyCollection<Guid>? extraViewableFileIds = null;
             var hasFullAccess = await _permission.HasProjectFullAccessAsync(projectId, actorId);
             if (!hasFullAccess)
             {
                 var viewable = await _permission.GetViewableFolderIdsAsync(projectId, actorId);
 
-                // Không được xem thư mục nào -> không có gì để trả, và khỏi tốn một lượt embed qua Ollama.
-                if (viewable.Count == 0)
+                // Quyền cấp cho RIÊNG một tệp không nằm trong tập thư mục: tệp được chia sẻ lẻ vẫn phải
+                // tìm được dù thư mục chứa nó đóng với người này (đúng như cây thư mục đang "kéo" tệp
+                // được cấp lẻ lên tổ tiên xem được).
+                var extraFiles = await _permission.GetExtraViewableFileIdsAsync(projectId, actorId, viewable);
+
+                // Không có thư mục lẫn tệp nào xem được -> khỏi tốn một lượt embed qua Ollama.
+                if (viewable.Count == 0 && extraFiles.Count == 0)
                     return Array.Empty<FileSearchResultDTO>();
 
                 viewableFolderIds = viewable;
+                extraViewableFileIds = extraFiles;
             }
 
             var qVec = new Vector(await _embeddingService.EmbedAsync(BuildQuery(query), ct));
-            var hits = await _searchSematicRepo.SearchByVectorAsync(projectId, qVec, CandidateK, viewableFolderIds, ct);
+            var hits = await _searchSematicRepo.SearchByVectorAsync(
+                projectId, qVec, CandidateK, viewableFolderIds, extraViewableFileIds, ct);
 
             // Gom theo file và xếp hạng theo đoạn khớp nhất, nhưng CHƯA cắt còn MaxFiles: bước lọc
             // quyền cấp file bên dưới có thể loại bớt, cắt trước sẽ làm hụt kết quả trả về.

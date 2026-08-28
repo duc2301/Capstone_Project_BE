@@ -81,6 +81,15 @@ namespace Application.Interfaces.IServices
         Task<HashSet<Guid>> GetViewableFolderIdsAsync(Guid projectId, Guid accountId);
 
         /// <summary>
+        /// FileItemIds viewable through a FILE-level grant while the owning folder is NOT viewable —
+        /// the files a folder-only filter drops even though the user may open them. Callers that
+        /// pre-filter by folder (semantic search) must widen their candidate set with this, otherwise
+        /// "cấp quyền cho riêng một tệp" works everywhere except there.
+        /// </summary>
+        Task<HashSet<Guid>> GetExtraViewableFileIdsAsync(
+            Guid projectId, Guid accountId, IReadOnlyCollection<Guid> viewableFolderIds);
+
+        /// <summary>
         /// Among the files in one folder, the FileItemIds this account is DENIED view on — for
         /// filtering a folder listing so a file blocked at the file level (group or per-account
         /// override) stops appearing, not just stops opening. Decided through HasViewFileAsync (the

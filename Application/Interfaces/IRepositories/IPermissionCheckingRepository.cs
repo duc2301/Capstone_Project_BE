@@ -76,6 +76,16 @@ namespace Application.Interfaces.IRepositories
         Task<HashSet<Guid>> GetViewableFolderIdsAsync(Guid projectId, Guid accountId);
 
         /// <summary>
+        /// FileItemIds the account can view through a FILE-level grant while the owning folder is NOT
+        /// in viewableFolderIds — the files a folder-only filter would wrongly drop. Covers every
+        /// additive path HasViewFileAsync accepts: a CanView FilePermission (group or per-account),
+        /// an active FileViewGrant, and open-issue stakeholder access.
+        /// Files inside already-viewable folders are excluded: the folder filter admits them anyway.
+        /// </summary>
+        Task<HashSet<Guid>> GetExtraViewableFileIdsAsync(
+            Guid projectId, Guid accountId, IReadOnlyCollection<Guid> viewableFolderIds);
+
+        /// <summary>
         /// True if the account holds an active per-account view grant on the file (FileViewGrant),
         /// issued because they were assigned to sign it. Independent of the group-based ACL.
         /// </summary>

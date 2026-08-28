@@ -24,7 +24,9 @@ namespace Infrastructure.Repositories
 
         public async Task<IReadOnlyList<DocumentSearchHit>> SearchByVectorAsync(
             Guid projectId, Vector queryEmbedding, int k,
-            IReadOnlyCollection<Guid>? viewableFolderIds, CancellationToken ct = default)
+            IReadOnlyCollection<Guid>? viewableFolderIds,
+            IReadOnlyCollection<Guid>? extraViewableFileIds = null,
+            CancellationToken ct = default)
         {
             var files = _context.Set<FileItem>().AsNoTracking();
             var q = from c in _context.Set<DocumentChildChunk>().AsNoTracking()
@@ -41,8 +43,19 @@ namespace Infrastructure.Repositories
             // con `src.Folder.Area == Published` ở trên: đó là kiểm tra trạng thái (bản Published còn tồn
             // tại hay không), không phải kiểm tra đọc được hay không. Lẫn hai thứ này sẽ làm cờ
             // IsUnderRevision báo sai cho người không nhìn thấy thư mục Published của nhóm khác.
+            //
+            // Vùng ứng viên = thư mục xem được HOẶC tệp được cấp quyền riêng lẻ. Thiếu vế thứ hai thì
+            // "phân quyền cho đúng một tệp" chạy đúng ở mọi màn hình trừ tìm kiếm, vì quyền cấp theo
+            // tệp không nằm trong tập thư mục. Đây chỉ là bộ lọc THÔ để giữ recall khi cắt top-k ở DB;
+            // quyết định cuối cùng vẫn do SemanticSearchService hỏi lại từng tệp.
             if (viewableFolderIds is not null)
-                q = q.Where(x => viewableFolderIds.Contains(x.f.FolderId));
+            {
+                var extraFileIds = extraViewableFileIds ?? Array.Empty<Guid>();
+                q = extraFileIds.Count == 0
+                    ? q.Where(x => viewableFolderIds.Contains(x.f.FolderId))
+                    : q.Where(x => viewableFolderIds.Contains(x.f.FolderId)
+                                || extraFileIds.Contains(x.f.Id));
+            }
 
             return await q
                 .OrderBy(x => x.c.Embedding!.CosineDistance(queryEmbedding))
