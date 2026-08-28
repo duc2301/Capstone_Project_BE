@@ -7,6 +7,7 @@ using AutoMapper;
 
 using Domain.Entities;
 using Domain.Enum.Audit;
+using Domain.Enum.Cde;
 
 namespace Application.Services
 {
@@ -76,9 +77,18 @@ namespace Application.Services
                 _unitOfWork.Repository<Folder>().Update(folder);
             }
 
+            // Nói rõ đổi gì thành gì và lan sang những khu vực NÀO (đọc "ở 4 khu vực" thì vẫn phải đoán
+            // là khu vực nào). Trường hợp tên không đổi cũng ghi thẳng ra thay vì "đổi X thành X".
+            var areaNames = string.Join(", ", mirrorGroup
+                .Select(f => f.Area == CdeArea.Wip ? "WIP" : f.Area.ToString())
+                .Distinct());
+            var changeDetail = previousName == newName
+                ? $"Lưu thư mục '{newName}': tên không thay đổi"
+                : $"Đổi tên thư mục '{previousName}' thành '{newName}' (áp cho khu vực: {areaNames})";
+
             await _auditLog.LogAsync(
                 LogScope.Group, AuditAction.Update, nameof(Folder), entity.Id.ToString(), actorId,
-                detail: $"Đổi tên thư mục '{previousName}' thành '{newName}' ở {mirrorGroup.Count} khu vực",
+                detail: changeDetail,
                 projectId: entity.ProjectId, folderId: entity.Id);
 
             await _unitOfWork.CommitAsync();
