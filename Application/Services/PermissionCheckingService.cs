@@ -158,6 +158,10 @@ namespace Application.Services
         public Task<HashSet<Guid>> GetViewableFolderIdsAsync(Guid projectId, Guid accountId)
             => _permissionCheckingRepository.GetViewableFolderIdsAsync(projectId, accountId);
 
+        public Task<HashSet<Guid>> GetExtraViewableFileIdsAsync(
+            Guid projectId, Guid accountId, IReadOnlyCollection<Guid> viewableFolderIds)
+            => _permissionCheckingRepository.GetExtraViewableFileIdsAsync(projectId, accountId, viewableFolderIds);
+
         public async Task<HashSet<Guid>> GetDeniedViewFileIdsInFolderAsync(Guid folderId, Guid accountId)
         {
             var denied = new HashSet<Guid>();

@@ -14,9 +14,16 @@ namespace Application.Interfaces.IRepositories
         /// Lọc quyền nằm ngay trong mệnh đề where của truy vấn vector để "tệp nào được phép trích dẫn"
         /// chỉ có đúng một nơi định nghĩa.
         /// </param>
+        /// <param name="extraViewableFileIds">
+        /// Các tệp được cấp quyền RIÊNG LẺ tuy thư mục chứa không xem được. Phải cộng vào vùng ứng
+        /// viên: quyền cấp cho từng tệp không nằm trong tập thư mục nên bộ lọc thư mục sẽ loại nhầm.
+        /// Bỏ qua khi viewableFolderIds là null.
+        /// </param>
         Task<IReadOnlyList<DocumentSearchHit>> SearchByVectorAsync(
            Guid projectId, Vector queryEmbedding, int k,
-           IReadOnlyCollection<Guid>? viewableFolderIds, CancellationToken ct = default);
+           IReadOnlyCollection<Guid>? viewableFolderIds,
+           IReadOnlyCollection<Guid>? extraViewableFileIds = null,
+           CancellationToken ct = default);
 
         public record DocumentSearchHit(
         Guid FileItemId,

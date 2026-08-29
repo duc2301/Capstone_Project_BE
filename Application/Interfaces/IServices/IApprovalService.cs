@@ -19,8 +19,10 @@ namespace Application.Interfaces.IServices
         // Tất cả yêu cầu phê duyệt mà người dùng được phép xem, có phân trang.
         Task<PagedResult<ApprovalRequestResponseDTO>> GetAllAsync(Guid actorId, int page, int pageSize);
 
-        // Danh sách yêu cầu đang chờ duyệt của Team Leader hiện tại, có phân trang.
-        Task<PagedResult<ApprovalRequestResponseDTO>> GetPendingAsync(Guid actorId, int page, int pageSize);
+        // Danh sách yêu cầu đang chờ duyệt của Team Leader hiện tại, có phân trang. projectId null =
+        // không lọc (dùng cho Dashboard tổng hợp mọi dự án); có giá trị = chỉ lấy request của dự án đó
+        // (dùng khi mở "Danh sách chờ duyệt" từ bên trong 1 dự án cụ thể).
+        Task<PagedResult<ApprovalRequestResponseDTO>> GetPendingAsync(Guid actorId, int page, int pageSize, Guid? projectId = null);
 
         // Chi tiết một yêu cầu phê duyệt.
         Task<ApprovalRequestResponseDTO> GetByIdAsync(Guid id, Guid actorId);
@@ -45,5 +47,10 @@ namespace Application.Interfaces.IServices
 
         // Tất cả account có thể đang xem/quan tâm approval này (requester, team leader, signer) — dùng để broadcast realtime.
         Task<IReadOnlyCollection<Guid>> GetStakeholderAccountIdsAsync(Guid approvalId);
+
+        // accountId có ĐANG là Leader active của bất kỳ nhóm nào trong dự án không — dùng để re-validate
+        // signer trực tiếp (SignerAccountId) tại thời điểm xem/ký, không chỉ tin snapshot lúc submit
+        // (nếu signer bị hạ xuống Member sau khi được assign thì không còn xem/ký được nữa).
+        Task<bool> IsActiveProjectLeaderAsync(Guid accountId, Guid projectId);
     }
 }
