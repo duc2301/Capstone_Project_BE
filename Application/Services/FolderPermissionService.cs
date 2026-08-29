@@ -41,6 +41,15 @@ namespace Application.Services
             // Groups the caller belongs to are excluded so they cannot kick themselves out of the group.
             var callerParticipantIds = await _unitOfWork.FolderPermissionRepository.GetCallerParticipantIdsByFolderIdAsync(folderId, callerAccountId);
 
+            var excludedParticipantIds = new HashSet<Guid>(callerParticipantIds);
+
+            // Ẩn nhóm CHỦ SỞ HỮU folder khỏi cả danh sách có thể thêm lẫn danh sách đang có quyền —
+            // leader nhóm khác không được đụng vào. Admin/PM/PA (toàn quyền dự án) vẫn thấy.
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(folderId);
+            if (folder?.OwnerParticipantId is Guid ownerParticipantId
+                && !await _permission.HasProjectFullAccessAsync(folder.ProjectId, callerAccountId))
+                excludedParticipantIds.Add(ownerParticipantId);
+
             var items = await _unitOfWork.FolderPermissionRepository.GetActivePartipantsByFolderIdAsync(folderId);
 
             var activeGroupOfFolder = _mapper.Map<IEnumerable<GroupFolderPermissionResponseDTO>>(items.Values.ToList());
@@ -48,14 +57,14 @@ namespace Application.Services
             var allProjectParticipants = await _unitOfWork.FolderPermissionRepository.GetAllParticipantsByFolderIdAsync(folderId);
 
             var availableGroups = allProjectParticipants
-                .Where(pp => !items.ContainsKey(pp.ProjectParticipantId) && !callerParticipantIds.Contains(pp.ProjectParticipantId))
+                .Where(pp => !items.ContainsKey(pp.ProjectParticipantId) && !excludedParticipantIds.Contains(pp.ProjectParticipantId))
                 .ToList();
 
             return new FolderPermissionsViewModelDTO
             {
                 AvailableGroups = availableGroups,
                 SelectedPermissions = activeGroupOfFolder
-                    .Where(p => !callerParticipantIds.Contains(p.ProjectParticipantId))
+                    .Where(p => !excludedParticipantIds.Contains(p.ProjectParticipantId))
                     .ToList()
             };
         }

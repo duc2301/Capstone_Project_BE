@@ -16,15 +16,17 @@ namespace Application.Services
 
         private readonly IAuditLogService _auditLog;
         private readonly IPermissionCleanupService _cleanup;
+        private readonly IPermissionCheckingService _permission;
 
         public FilePermissionService(
             IUnitOfWork unitOfWork, IMapper mapper, IAuditLogService auditLog,
-            IPermissionCleanupService cleanup)
+            IPermissionCleanupService cleanup, IPermissionCheckingService permission)
         {
             _auditLog = auditLog;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _cleanup = cleanup;
+            _permission = permission;
         }
 
         #region CRUD có sẵn
@@ -44,6 +46,16 @@ namespace Application.Services
             // Groups the caller belongs to are excluded so they cannot kick themselves out of the group.
             var callerParticipantIds = await _unitOfWork.FilePermissionRepository.GetCallerParticipantIdsByFileItemIdAsync(fileItemId, callerAccountId);
 
+            var excludedParticipantIds = new HashSet<Guid>(callerParticipantIds);
+
+            // Ẩn nhóm CHỦ SỞ HỮU (theo folder chứa file) khỏi cả danh sách có thể thêm lẫn danh sách
+            // đang có quyền — leader nhóm khác không được đụng vào. Admin/PM/PA (toàn quyền) vẫn thấy.
+            var file = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId);
+            var folder = file == null ? null : await _unitOfWork.Repository<Folder>().GetByIdAsync(file.FolderId);
+            if (folder?.OwnerParticipantId is Guid ownerParticipantId
+                && !await _permission.HasProjectFullAccessAsync(folder.ProjectId, callerAccountId))
+                excludedParticipantIds.Add(ownerParticipantId);
+
             var items = await _unitOfWork.FilePermissionRepository.GetActivePartipantsByFileItemIdAsync(fileItemId);
 
             var activeGroupOfFile = _mapper.Map<IEnumerable<GroupFilePermissionResponseDTO>>(items.Values.ToList());
@@ -51,14 +63,14 @@ namespace Application.Services
             var allProjectParticipants = await _unitOfWork.FilePermissionRepository.GetAllParticipantsByFileItemIdAsync(fileItemId);
 
             var availableGroups = allProjectParticipants
-                .Where(pp => !items.ContainsKey(pp.ProjectParticipantId) && !callerParticipantIds.Contains(pp.ProjectParticipantId))
+                .Where(pp => !items.ContainsKey(pp.ProjectParticipantId) && !excludedParticipantIds.Contains(pp.ProjectParticipantId))
                 .ToList();
 
             return new FilePermissionsViewModelDTO
             {
                 AvailableGroups = availableGroups,
                 SelectedPermissions = activeGroupOfFile
-                    .Where(p => !callerParticipantIds.Contains(p.ProjectParticipantId))
+                    .Where(p => !excludedParticipantIds.Contains(p.ProjectParticipantId))
                     .ToList()
             };
         }
@@ -108,8 +120,22 @@ namespace Application.Services
 
         public async Task<IEnumerable<GroupFilePermissionResponseDTO>> BulkUpdateFilePermissionsAsync(AddPermissionsBulkDTO dto, Guid actorId)
         {
-            //if (!dto.GroupsPermission.Any()) 
+            //if (!dto.GroupsPermission.Any())
             //    throw new ApiExceptionResponse("GroupsPermission list is empty.", 400);
+
+            var file = await _unitOfWork.Repository<FileItem>().GetByIdAsync(dto.Id)
+                ?? throw new ApiExceptionResponse("File not found.", 404);
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(file.FolderId);
+
+            // Nhóm CHỦ SỞ HỮU (theo folder chứa file) chỉ bị đổi quyền bởi Admin/PM/PA (toàn quyền dự
+            // án); leader nhóm khác không được ghi đè/gỡ quyền của chủ sở hữu. Vì override quyền file
+            // "present-wins" (đè cả quyền kế thừa từ thư mục), chặn MỌI thao tác nhắm vào nhóm chủ sở
+            // hữu — cả cấp/hạ mức lẫn gỡ — để không thể tách chủ sở hữu khỏi quyền kế thừa của họ.
+            if (folder?.OwnerParticipantId is Guid ownerParticipantId
+                && !await _permission.HasProjectFullAccessAsync(folder.ProjectId, actorId)
+                && (dto.GroupsPermission.Any(g => g.ProjectParticipantId == ownerParticipantId)
+                    || dto.RemoveParticipantIds.Contains(ownerParticipantId)))
+                throw new ApiExceptionResponse("You cannot change the owning group's permission on this file.", 403);
 
             var participantIds = dto.GroupsPermission.Select(u => u.ProjectParticipantId).Union(dto.RemoveParticipantIds).ToList();
 
@@ -165,11 +191,6 @@ namespace Application.Services
             if (toCreate.Any())
                 await _unitOfWork.Repository<FilePermission>().CreateRangeAsync(toCreate);
 
-            var auditFile = await _unitOfWork.Repository<FileItem>().GetByIdAsync(dto.Id);
-            var auditFolder = auditFile == null
-                ? null
-                : await _unitOfWork.Repository<Folder>().GetByIdAsync(auditFile.FolderId);
-
             // Ghi rõ TỪNG bên và mức quyền mới thay vì chỉ đếm số bên.
             var groupNames = await PermissionAuditDescriber.ResolveGroupNamesAsync(
                 _unitOfWork, auditChanges.Select(c => c.ParticipantId).ToList());
@@ -181,8 +202,8 @@ namespace Application.Services
             await _auditLog.LogAsync(
                 Domain.Enum.Audit.LogScope.Project, Domain.Enum.Audit.AuditAction.PermissionChange,
                 nameof(FileItem), dto.Id.ToString(), actorId,
-                detail: $"Phân quyền nhóm trên tệp '{auditFile?.Name}': {PermissionAuditDescriber.Join(auditEntries)}",
-                projectId: auditFolder?.ProjectId, folderId: auditFile?.FolderId);
+                detail: $"Phân quyền nhóm trên tệp '{file.Name}': {PermissionAuditDescriber.Join(auditEntries)}",
+                projectId: folder?.ProjectId, folderId: file.FolderId);
 
             await _unitOfWork.CommitAsync();
 
