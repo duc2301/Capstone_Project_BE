@@ -428,10 +428,27 @@ namespace Application.Services
             if (filesToCreate.Count > 0)
                 await _unitOfWork.Repository<FilePermission>().CreateRangeAsync(filesToCreate);
 
+            // Mỗi ô là một quyết định phân quyền thật sự -> log phải nói ra đối tượng nào, bên nào,
+            // mức nào. "N ô" không truy vết được vì ô trên ma trận không có danh tính khi đọc lại log.
+            var groupNames = await PermissionAuditDescriber.ResolveGroupNamesAsync(
+                _unitOfWork, changes.Select(c => c.ProjectParticipantId).ToList());
+            var auditEntries = changes
+                .Select(c =>
+                {
+                    var targetName = c.TargetType == MatrixTargetType.Folder
+                        ? $"thư mục '{(folderById.TryGetValue(c.TargetId, out var f) ? f.Name : c.TargetId.ToString())}'"
+                        : $"tệp '{(fileById.TryGetValue(c.TargetId, out var fi) ? fi.Name : c.TargetId.ToString())}'";
+
+                    return PermissionAuditDescriber.Entry(
+                        $"{targetName} · {PermissionAuditDescriber.GroupNameOf(groupNames, c.ProjectParticipantId)}",
+                        PermissionAuditDescriber.LevelName(c.Level));
+                })
+                .ToList();
+
             await _auditLog.LogAsync(
                 LogScope.Project, AuditAction.PermissionChange,
                 nameof(Project), projectId.ToString(), accountId,
-                detail: $"Cập nhật ma trận phân quyền: {changes.Count} ô",
+                detail: $"Cập nhật ma trận phân quyền: {PermissionAuditDescriber.Join(auditEntries)}",
                 projectId: projectId);
 
             await _unitOfWork.CommitAsync();

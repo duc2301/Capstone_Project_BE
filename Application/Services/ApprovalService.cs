@@ -180,25 +180,37 @@ namespace Application.Services
             var safePage = page < 1 ? 1 : page;
             var safeSize = pageSize < 1 || pageSize > MaxPageSize ? DefaultPageSize : pageSize;
 
+            // "Lịch sử phê duyệt" chỉ hiện đúng cái actor tự gửi — Admin/PM dự án vẫn xem được hết.
+            var canViewAll = await CanViewAllApprovalsAsync(actorId);
             var (requests, totalCount) = await _unitOfWork.Repository<ApprovalRequest>().GetPagedAsync(
                 safePage, safeSize,
-                predicate: null,
+                predicate: canViewAll ? null : a => a.RequestedBy == actorId,
                 orderBy: q => q.OrderByDescending(a => a.CreatedAt));
 
             return await BuildPagedResponseAsync(requests, totalCount, actorId, safePage, safeSize);
         }
 
+        private async Task<bool> CanViewAllApprovalsAsync(Guid actorId)
+        {
+            var account = await _unitOfWork.Repository<Account>().GetByIdAsync(actorId);
+            if (account?.Role == Domain.Enum.Account.AccountRole.Admin)
+                return true;
+
+            return (await _unitOfWork.Repository<Project>().FindAsync(p => p.ManagerAccountId == actorId)).Any();
+        }
+
         /// <summary>
         /// Lấy các approval request đang Pending mà actor có quyền xem.
         /// </summary>
-        public async Task<PagedResult<ApprovalRequestResponseDTO>> GetPendingAsync(Guid actorId, int page, int pageSize)
+        public async Task<PagedResult<ApprovalRequestResponseDTO>> GetPendingAsync(Guid actorId, int page, int pageSize, Guid? projectId = null)
         {
             var safePage = page < 1 ? 1 : page;
             var safeSize = pageSize < 1 || pageSize > MaxPageSize ? DefaultPageSize : pageSize;
 
             var (pendingRequests, totalCount) = await _unitOfWork.Repository<ApprovalRequest>().GetPagedAsync(
                 safePage, safeSize,
-                predicate: a => a.Status == ApprovalRequestStatus.Pending,
+                predicate: a => a.Status == ApprovalRequestStatus.Pending
+                                && (projectId == null || a.FileItem.Folder.ProjectId == projectId.Value),
                 orderBy: q => q.OrderByDescending(a => a.CreatedAt));
 
             return await BuildPagedResponseAsync(pendingRequests, totalCount, actorId, safePage, safeSize);
@@ -248,13 +260,22 @@ namespace Application.Services
 
             if (request.TargetZone == CdeArea.Published)
             {
-                var revokedCount = await RevokeFileViewGrantsOnZoneExitAsync(fileItem.Id);
+                var revokedAccountIds = await RevokeFileViewGrantsOnZoneExitAsync(fileItem.Id);
 
-                if (revokedCount > 0)
+                if (revokedAccountIds.Count > 0)
+                {
+                    var revokedLabels = await PermissionAuditDescriber.ResolveAccountLabelsAsync(
+                        _unitOfWork, folder.ProjectId, revokedAccountIds);
+                    var revokedNames = revokedAccountIds
+                        .Select(id => PermissionAuditDescriber.AccountLabelOf(revokedLabels, id))
+                        .ToList();
+
                     await _auditLog.LogAsync(
                         LogScope.Project, AuditAction.RevokeShare, nameof(FileItem), fileItem.Id.ToString(), actor,
-                        detail: $"Thu hồi quyền xem '{fileItem.Name}' của {revokedCount} tài khoản (file sang Published)",
+                        detail: $"Thu hồi quyền xem '{fileItem.Name}' của {PermissionAuditDescriber.Join(revokedNames)}"
+                                + " — lý do: tệp đã chuyển sang Published",
                         projectId: folder.ProjectId, folderId: folder.Id);
+                }
             }
 
             await _auditLog.LogAsync(
@@ -299,6 +320,7 @@ namespace Application.Services
         {
             var request = await GetRequestAsync(approvalId);
             var fileItem = await GetFileItemAsync(request.FileItemId);
+            var folder = await GetFolderAsync(fileItem.FolderId);
             var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, requireApprovePermission: true);
 
             var stakeholderIds = new HashSet<Guid> { request.RequestedBy };
@@ -308,9 +330,17 @@ namespace Application.Services
                     s => s.ApprovalRequestId == approvalId))
                 .ToList();
 
-            stakeholderIds.UnionWith(signers
+            // Signer trực tiếp phải VẪN ĐANG là Leader active mới coi là stakeholder — cùng luật với
+            // IsRequiredSignerAsync, để người bị demoted không còn nhận realtime cho request này nữa.
+            var directSignerIds = signers
                 .Where(s => s.SignerAccountId.HasValue)
-                .Select(s => s.SignerAccountId!.Value));
+                .Select(s => s.SignerAccountId.Value)
+                .Distinct();
+            foreach (var signerId in directSignerIds)
+            {
+                if (await IsActiveProjectLeaderAsync(signerId, folder.ProjectId))
+                    stakeholderIds.Add(signerId);
+            }
 
             var signerGroupIds = signers
                 .Where(s => s.SignerGroupId.HasValue)
@@ -362,10 +392,12 @@ namespace Application.Services
             var pendingRequest = (await _unitOfWork.Repository<ApprovalRequest>().FindAsync(
                     r => r.FileItemId == fileItemId && r.Status == ApprovalRequestStatus.Pending))
                 .FirstOrDefault();
-            if (pendingRequest != null
-                && pendingRequest.RequiresSignature
-                && await IsRequiredSignerAsync(actorId, pendingRequest.Id))
-                return;
+            if (pendingRequest != null && pendingRequest.RequiresSignature)
+            {
+                var folder = await GetFolderAsync(fileItem.FolderId);
+                if (await IsRequiredSignerAsync(actorId, pendingRequest.Id, folder.ProjectId))
+                    return;
+            }
 
             throw new ApiExceptionResponse("Only the Team Leader can perform this action.", 403);
         }
@@ -472,7 +504,8 @@ namespace Application.Services
             if (request.Status != ApprovalRequestStatus.Pending || fileItem.Status != FileItemStatus.PendingApproval)
                 throw new ApiExceptionResponse("Only pending approval requests can be approved or rejected.", 409);
 
-            if (allowRequiredSigner && request.RequiresSignature && await IsRequiredSignerAsync(actor, request.Id))
+            if (allowRequiredSigner && request.RequiresSignature
+                && await IsRequiredSignerAsync(actor, request.Id, folder.ProjectId))
                 return;
 
             var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, folder, requireApprovePermission: true);
@@ -504,9 +537,6 @@ namespace Application.Services
 
             if (fileItem.Status == FileItemStatus.PendingApproval)
                 throw new ApiExceptionResponse("File is already pending approval.", 409);
-
-            if (fileItem.Status == FileItemStatus.Rejected)
-                throw new ApiExceptionResponse("Rejected file cannot be submitted for approval.", 400);
         }
 
         private static CdeArea ResolveApprovalTargetZone(string? targetZone, CdeArea currentZone)
@@ -668,7 +698,12 @@ namespace Application.Services
             return grantAccountIds.Count;
         }
 
-        private async Task<int> RevokeFileViewGrantsOnZoneExitAsync(Guid fileItemId)
+        /// <summary>
+        /// Gỡ mọi grant xem theo tài khoản của file và trả về DANH SÁCH tài khoản bị thu hồi (không chỉ
+        /// số lượng) để dòng audit log gọi được tên từng người — mất quyền xem là việc người dùng sẽ
+        /// thắc mắc, log phải trả lời được "ai" chứ không chỉ "mấy người".
+        /// </summary>
+        private async Task<List<Guid>> RevokeFileViewGrantsOnZoneExitAsync(Guid fileItemId)
         {
             var signerGrants = (await _unitOfWork.Repository<FileViewGrant>().FindAsync(
                     g => g.FileItemId == fileItemId))
@@ -676,7 +711,7 @@ namespace Application.Services
             foreach (var grant in signerGrants)
                 _unitOfWork.Repository<FileViewGrant>().Delete(grant);
 
-            return signerGrants.Count;
+            return signerGrants.Select(g => g.AccountId).Distinct().ToList();
         }
 
         /// <summary>
@@ -786,6 +821,22 @@ namespace Application.Services
                     400);
         }
 
+        /// <inheritdoc/>
+        public async Task<bool> IsActiveProjectLeaderAsync(Guid accountId, Guid projectId)
+        {
+            var projectGroupIds = (await _unitOfWork.Repository<ProjectParticipant>().FindAsync(
+                    p => p.ProjectId == projectId && p.Status == ProjectParticipantStatus.Active))
+                .Select(p => p.GroupId)
+                .ToHashSet();
+
+            return (await _unitOfWork.Repository<GroupMember>().FindAsync(
+                    m => projectGroupIds.Contains(m.GroupId)
+                         && m.AccountId == accountId
+                         && m.Role == GroupMemberRole.Leader
+                         && m.Status == GroupMemberStatus.Active))
+                .Any();
+        }
+
         /// <summary>Kiểm tra actor có phải Group Leader active không.</summary>
         private async Task<bool> IsGroupLeaderAsync(Guid accountId, IReadOnlyCollection<Guid> groupIds)
             => (await _unitOfWork.Repository<GroupMember>().FindAsync(
@@ -820,30 +871,38 @@ namespace Application.Services
             if (account?.Role == Domain.Enum.Account.AccountRole.Admin)
                 return true;
 
-            if (await IsProjectManagerOfFileAsync(actor, fileItem))
+            var folder = await GetFolderAsync(fileItem.FolderId);
+            if (await IsProjectManagerOfFolderAsync(actor, folder))
                 return true;
 
-            if (request.RequiresSignature && await IsRequiredSignerAsync(actor, request.Id))
+            if (request.RequiresSignature && await IsRequiredSignerAsync(actor, request.Id, folder.ProjectId))
                 return true;
 
             var teamGroupIds = await ResolveFileItemTeamGroupIdsAsync(fileItem, requireApprovePermission: true);
             return await IsGroupLeaderAsync(actor, teamGroupIds);
         }
 
-        private async Task<bool> IsProjectManagerOfFileAsync(Guid actor, FileItem fileItem)
+        private async Task<bool> IsProjectManagerOfFolderAsync(Guid actor, Folder folder)
         {
-            var folder = await GetFolderAsync(fileItem.FolderId);
             var project = await _unitOfWork.Repository<Project>().GetByIdAsync(folder.ProjectId);
             return project?.ManagerAccountId == actor;
         }
 
-        /// <summary>Actor có phải người/nhóm (thành viên active) được chỉ định ký cho request này không.</summary>
-        private async Task<bool> IsRequiredSignerAsync(Guid actor, Guid approvalRequestId)
+        /// <summary>
+        /// Actor có phải người/nhóm (thành viên active) được chỉ định ký cho request này không. Signer
+        /// trực tiếp (SignerAccountId) phải VẪN ĐANG là Leader active của 1 nhóm trong dự án — chỉ so
+        /// khớp AccountId thôi thì không đủ, vì đó chỉ là snapshot chốt lúc submit, không tự cập nhật
+        /// khi signer bị hạ xuống Member sau đó.
+        /// </summary>
+        private async Task<bool> IsRequiredSignerAsync(Guid actor, Guid approvalRequestId, Guid projectId)
         {
             var signers = (await _unitOfWork.Repository<ApprovalRequestSigner>().FindAsync(
                     s => s.ApprovalRequestId == approvalRequestId))
                 .ToList();
-            if (signers.Any(s => s.SignerAccountId == actor))
+            // Không return ngay khi có dòng SignerAccountId khớp — nếu người này KHÔNG còn là Leader
+            // active (demoted) thì vẫn phải kiểm tiếp đường signer-theo-nhóm bên dưới, vì họ có thể vẫn
+            // hợp lệ qua đường đó (ví dụ đang là Leader của 1 nhóm khác được chỉ định ký).
+            if (signers.Any(s => s.SignerAccountId == actor) && await IsActiveProjectLeaderAsync(actor, projectId))
                 return true;
 
             var signerGroupIds = signers

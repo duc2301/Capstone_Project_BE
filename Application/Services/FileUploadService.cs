@@ -544,19 +544,10 @@ namespace Application.Services
 
         private static void ValidateExtensionMatchesType(string ext, FileType type)
         {
-            ext = ext.Trim().ToLowerInvariant();
-            var allowed = type switch
-            {
-                FileType.Pdf => new[] { ".pdf" },
-                FileType.Ifc => new[] { ".ifc" },
-                FileType.Image => new[] { ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp" },
-                FileType.Cad => new[] { ".dwg", ".dxf", ".rvt", ".nwc", ".nwd", ".dgn" },
-                FileType.Office => new[] { ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".csv", ".txt" },
-                FileType.Other => Array.Empty<string>(),
-                _ => Array.Empty<string>()
-            };
+            ext = FileFormatRules.NormalizeExtension(ext);
+            var allowed = FileFormatRules.ExtensionsOf(type);
 
-            if (allowed.Length > 0 && !allowed.Contains(ext))
+            if (allowed.Count > 0 && !allowed.Contains(ext))
                 throw new ApiExceptionResponse(
                     $"Extension '{ext}' does not match file type '{type}'. Allowed: {string.Join(", ", allowed)}.", 400);
         }

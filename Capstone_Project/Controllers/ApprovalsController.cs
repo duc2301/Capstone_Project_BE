@@ -35,8 +35,8 @@ namespace Capstone_Project.Controllers
         /// Xem danh sách yêu cầu đang chờ duyệt của Team Leader hiện tại, có phân trang.
         /// </summary>
         [HttpGet("pending")]
-        public async Task<IActionResult> GetPending([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
-            => Ok(ApiResponse.Success("Pending approvals retrieved", await _approvalService.GetPendingAsync(User.GetAccountId(), page, pageSize)));
+        public async Task<IActionResult> GetPending([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] Guid? projectId = null)
+            => Ok(ApiResponse.Success("Pending approvals retrieved", await _approvalService.GetPendingAsync(User.GetAccountId(), page, pageSize, projectId)));
 
         /// <summary>
         /// Xem chi tiết một yêu cầu phê duyệt.

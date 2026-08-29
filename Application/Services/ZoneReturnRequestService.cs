@@ -91,7 +91,7 @@ namespace Application.Services
             });
         }
 
-        public async Task<ApiResponse> GetPendingAsync(Guid actorId)
+        public async Task<ApiResponse> GetPendingAsync(Guid actorId, Guid? projectId = null)
         {
             var leaderGroupIds = await _zoneResolver.GetActiveLeaderGroupIdsAsync(actorId);
             if (leaderGroupIds.Count == 0)
@@ -101,6 +101,12 @@ namespace Application.Services
                     r => r.Status == ZoneReturnRequestStatus.Pending))
                 .OrderByDescending(r => r.CreatedAt)
                 .ToList();
+
+            var requesterIds = requests.Select(r => r.RequestedBy).Distinct().ToHashSet();
+            var requesters = requesterIds.Count == 0
+                ? new Dictionary<Guid, Account>()
+                : (await _unitOfWork.Repository<Account>().FindAsync(a => requesterIds.Contains(a.Id)))
+                    .ToDictionary(a => a.Id);
 
             var result = new List<ZoneReturnRequestResponseDTO>();
             foreach (var request in requests)
@@ -112,11 +118,15 @@ namespace Application.Services
                 var currentFolder = await _unitOfWork.Repository<Folder>().GetByIdAsync(fileItem.FolderId);
                 if (currentFolder == null)
                     continue;
+                if (projectId.HasValue && currentFolder.ProjectId != projectId.Value)
+                    continue;
 
                 var projectFolders = await _zoneResolver.GetProjectFoldersAsync(currentFolder.ProjectId);
                 var teamGroupIds = await _zoneResolver.ResolveFileTeamGroupIdsAsync(fileItem, currentFolder, projectFolders);
                 if (!teamGroupIds.Any(leaderGroupIds.Contains))
                     continue;
+
+                requesters.TryGetValue(request.RequestedBy, out var requester);
 
                 result.Add(new ZoneReturnRequestResponseDTO
                 {
@@ -126,6 +136,7 @@ namespace Application.Services
                     FromZone = _zoneResolver.FormatZone(request.FromZone),
                     TargetZone = _zoneResolver.FormatZone(request.TargetZone),
                     RequestedBy = request.RequestedBy,
+                    RequestedByName = requester?.UserName,
                     Reason = request.Reason,
                     CreatedAt = request.CreatedAt,
                     Status = request.Status.ToString()
@@ -180,6 +191,24 @@ namespace Application.Services
                 .ToList();
             foreach (var grant in viewGrants)
                 _unitOfWork.Repository<FileViewGrant>().Delete(grant);
+
+            // Mất quyền xem là thứ người dùng sẽ thắc mắc -> ghi log riêng, gọi tên từng người kèm
+            // nhóm. Trước đây việc này diễn ra im lặng, chỉ còn lại dòng "Duyệt trả về WIP".
+            if (viewGrants.Count > 0)
+            {
+                var revokedAccountIds = viewGrants.Select(g => g.AccountId).Distinct().ToList();
+                var revokedLabels = await PermissionAuditDescriber.ResolveAccountLabelsAsync(
+                    _unitOfWork, currentFolder.ProjectId, revokedAccountIds);
+                var revokedNames = revokedAccountIds
+                    .Select(id => PermissionAuditDescriber.AccountLabelOf(revokedLabels, id))
+                    .ToList();
+
+                await _auditLog.LogAsync(
+                    LogScope.Project, AuditAction.RevokeShare, nameof(FileItem), fileItem.Id.ToString(), actorId,
+                    detail: $"Thu hồi quyền xem '{fileItem.Name}' của {PermissionAuditDescriber.Join(revokedNames)}"
+                            + $" — lý do: tệp được trả từ {request.FromZone} về WIP",
+                    projectId: currentFolder.ProjectId, folderId: currentFolder.Id);
+            }
 
             // Versioning: quay về WIP từ tài liệu đã publish (C{rev}) -> P{WorkingRevision}.01,
             // PublishedRevision bảo toàn. Quay về từ Shared: version giữ nguyên.

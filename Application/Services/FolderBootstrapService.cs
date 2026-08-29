@@ -127,6 +127,7 @@ namespace Application.Services
                 ?? throw new ApiExceptionResponse("Parent folder not found.", 404);
 
             await EnsureCanCreateSubFolderAsync(actor, parentFolder, actorRole);
+            await EnsureChildNameAvailableAsync(parentFolder, name.Trim());
 
             var now = DateTime.UtcNow;
             var child = new Folder
@@ -237,6 +238,18 @@ namespace Application.Services
                 cur = parent;
             }
             return null;
+        }
+
+        private async Task EnsureChildNameAvailableAsync(Folder parentFolder, string name)
+        {
+            var siblings = await _unitOfWork.Repository<Folder>()
+                .FindAsync(f => f.ParentFolderId == parentFolder.Id
+                             && f.Area == parentFolder.Area
+                             && !f.IsTemplate);
+
+            if (siblings.Any(f => string.Equals(f.Name.Trim(), name, StringComparison.OrdinalIgnoreCase)))
+                throw new ApiExceptionResponse(
+                    $"Folder name '{name}' already exists in zone: {parentFolder.Area}.", 409);
         }
 
         public async Task EnsureCanManageFolderAsync(Guid folderId, Guid actorId, string? actorRole)
