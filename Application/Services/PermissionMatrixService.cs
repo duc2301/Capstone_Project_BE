@@ -327,6 +327,10 @@ namespace Application.Services
                 {
                     if (!folderById.TryGetValue(c.TargetId, out var targetFolder))
                         throw new ApiExceptionResponse("Folder does not belong to this project.", 400);
+                    // Nhóm CHỦ SỞ HỮU folder chỉ bị đổi quyền bởi Admin/PM/PA (isFullAccess); leader nhóm
+                    // khác được mời vào không được gỡ/hạ quyền của chủ sở hữu.
+                    if (!isFullAccess && targetFolder.OwnerParticipantId == c.ProjectParticipantId)
+                        throw new ApiExceptionResponse("You cannot change the owning group's permission on this folder.", 403);
                     if (IsExcludedArea(targetFolder.Area) && !canManageRestrictedAreas)
                         throw new ApiExceptionResponse("Only admin/PM can assign permissions in Published/Archived areas.", 403);
                     if (rootAreaIds.Contains(c.TargetId))

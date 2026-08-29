@@ -16,15 +16,17 @@ namespace Application.Services
 
         private readonly IAuditLogService _auditLog;
         private readonly IPermissionCleanupService _cleanup;
+        private readonly IPermissionCheckingService _permission;
 
         public FolderPermissionService(
             IUnitOfWork unitOfWork, IMapper mapper, IAuditLogService auditLog,
-            IPermissionCleanupService cleanup)
+            IPermissionCleanupService cleanup, IPermissionCheckingService permission)
         {
             _auditLog = auditLog;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _cleanup = cleanup;
+            _permission = permission;
         }
 
         #region Lấy data cho frontend
@@ -86,8 +88,19 @@ namespace Application.Services
 
         public async Task<IEnumerable<GroupFolderPermissionResponseDTO>> BulkUpdateFolderPermissionsAsync(AddPermissionsBulkDTO dto, Guid actorId)
         {
-            //if (!dto.GroupsPermission.Any()) 
+            //if (!dto.GroupsPermission.Any())
             //    throw new ApiExceptionResponse("GroupsPermission list is empty.", 400);
+
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(dto.Id)
+                ?? throw new ApiExceptionResponse("Folder not found.", 404);
+
+            // Nhóm CHỦ SỞ HỮU folder chỉ bị đổi quyền bởi Admin/PM/PA (toàn quyền dự án); leader nhóm
+            // khác được mời vào không được gỡ/hạ quyền của chủ sở hữu.
+            if (folder.OwnerParticipantId is Guid ownerParticipantId
+                && !await _permission.HasProjectFullAccessAsync(folder.ProjectId, actorId)
+                && (dto.GroupsPermission.Any(g => g.ProjectParticipantId == ownerParticipantId)
+                    || dto.RemoveParticipantIds.Contains(ownerParticipantId)))
+                throw new ApiExceptionResponse("You cannot change the owning group's permission on this folder.", 403);
 
             var participantIds = dto.GroupsPermission.Select(u => u.ProjectParticipantId).Union(dto.RemoveParticipantIds).ToList();
 
