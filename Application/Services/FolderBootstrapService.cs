@@ -90,6 +90,8 @@ namespace Application.Services
                         Name = group.Name,
                         Area = root.Area,
                         IsTemplate = false,
+                        // "Ô" của nhóm là gốc quyền sở hữu: chính participant này sở hữu, con cháu kế thừa.
+                        OwnerParticipantId = participant.Id,
                         CreatedAt = now,
                         UpdatedAt = now
                     };
@@ -139,6 +141,9 @@ namespace Application.Services
                 Area = parentFolder.Area,                          // kế thừa khu vực
                 IsTemplate = false,
                 CreatedByAccountId = actor,
+                // Kế thừa nhóm sở hữu của cha: mọi thứ trong "lãnh thổ" của một nhóm thuộc về nhóm đó,
+                // kể cả folder do leader nhóm khác (được mời) tạo bên trong.
+                OwnerParticipantId = parentFolder.OwnerParticipantId,
                 CreatedAt = now,
                 UpdatedAt = now
             };
@@ -401,6 +406,8 @@ namespace Application.Services
                 Area = mirrorParent.Area,
                 IsTemplate = false,
                 CreatedByAccountId = source.CreatedByAccountId,
+                // Bản chiếu thuộc cùng nhóm sở hữu với folder gốc bên WIP.
+                OwnerParticipantId = source.OwnerParticipantId,
                 MirrorSourceFolderId = source.Id,
                 CreatedAt = now,
                 UpdatedAt = now
