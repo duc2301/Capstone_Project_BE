@@ -11,6 +11,7 @@ using Domain.Enum.Audit;
 using Domain.Enum.Cde;
 using Domain.Enum.File;
 using Domain.Enum.Group;
+using Domain.Enum.Issue;
 using Domain.Enum.Permission;
 using Domain.Enum.Project;
 using Microsoft.Extensions.Logging;
@@ -241,6 +242,7 @@ namespace Application.Services
             var folder = await GetFolderAsync(fileItem.FolderId);
 
             await RequireCanDecideAsync(actor, request, fileItem, folder, allowRequiredSigner: viaSignatureCompletion);
+            await RequireNoUnresolvedIssuesAsync(fileItem.Id);
             await RequireSignersCompleteBeforeApprovalAsync(request);
 
             var now = DateTime.UtcNow;
@@ -405,6 +407,21 @@ namespace Application.Services
             if (teamGroupIds.Count == 0)
                 throw new ApiExceptionResponse(
                     "No group has been granted approve permission on this folder yet. Please ask the project Admin to configure it.",
+                    403);
+        }
+
+        /// <summary>
+        /// File còn issue liên kết chưa đóng (Open/InProgress/Answered) thì không cho duyệt/ký — phải
+        /// đánh dấu đã giải quyết (Closed) hết trước. Issue đã Closed không chặn.
+        /// </summary>
+        public async Task RequireNoUnresolvedIssuesAsync(Guid fileItemId)
+        {
+            var hasUnresolvedIssue = (await _unitOfWork.Repository<Domain.Entities.Issue>().FindAsync(
+                    i => i.LinkedFileItemId == fileItemId && i.Status != IssueStatus.Closed))
+                .Any();
+            if (hasUnresolvedIssue)
+                throw new ApiExceptionResponse(
+                    "File still has unresolved issues. Please resolve all issues before approving or signing.",
                     403);
         }
 

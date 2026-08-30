@@ -438,6 +438,21 @@ namespace Infrastructure.Adapters.SmartCA
                 return SigningValidationResult.Fail(ex.Message);
             }
 
+            // Chỉ chặn ở bước KHỞI TẠO ký (blockSignedFile=true) — bước chỉ đọc trạng thái transaction
+            // đã tạo (polling) thì bỏ qua, không thì transaction WaitingConfirm sẽ kẹt vĩnh viễn nếu ai
+            // đó tạo issue mới giữa lúc đang chờ SmartCA phản hồi (giống lý do bỏ qua re-check Leader).
+            if (blockSignedFile)
+            {
+                try
+                {
+                    await _approvalService.RequireNoUnresolvedIssuesAsync(fileItem.Id);
+                }
+                catch (ApiExceptionResponse ex)
+                {
+                    return SigningValidationResult.Fail(ex.Message);
+                }
+            }
+
             var account = await _unitOfWork.Repository<Account>().GetByIdAsync(currentUserId);
             if (account == null || account.Status != AccountStatus.Active)
                 return SigningValidationResult.Fail("Current user must be active.");
