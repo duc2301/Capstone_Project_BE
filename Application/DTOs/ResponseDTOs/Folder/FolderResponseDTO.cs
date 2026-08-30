@@ -10,7 +10,6 @@ namespace Application.DTOs.ResponseDTOs.Folder
         public string Name { get; set; } = null!;
         public CdeArea Area { get; set; }
         public Guid? OwnerOrganizationId { get; set; }
-        public Guid? OwnerGroupId { get; set; }
         public bool IsTemplate { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }

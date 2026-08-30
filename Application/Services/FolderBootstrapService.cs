@@ -229,22 +229,6 @@ namespace Application.Services
             };
         }
 
-        private async Task<Guid?> ResolveOwnerGroupIdAsync(Folder folder)
-        {
-
-            var byId = (await _unitOfWork.Repository<Folder>()
-                    .FindAsync(f => f.ProjectId == folder.ProjectId))
-                .ToDictionary(f => f.Id);
-
-            var cur = folder;
-            while (cur.ParentFolderId.HasValue && byId.TryGetValue(cur.ParentFolderId.Value, out var parent))
-            {
-                
-                cur = parent;
-            }
-            return null;
-        }
-
         private async Task EnsureChildNameAvailableAsync(Folder parentFolder, string name)
         {
             var siblings = await _unitOfWork.Repository<Folder>()

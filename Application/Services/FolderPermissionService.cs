@@ -104,6 +104,14 @@ namespace Application.Services
             if (!await _permission.CanAssignFolderPermissionsAsync(dto.Id, actorId))
                 throw new ApiExceptionResponse("You cannot assign permissions on this folder.", 403);
 
+            // Không tự sửa quyền NHÓM CỦA MÌNH (đồng nhất với ma trận): tránh chủ sở hữu tự cấp lại
+            // nhóm mình sau khi bị Admin/PM gỡ, và tránh tự leo thang quyền.
+            var callerParticipantIds = (await _unitOfWork.FolderPermissionRepository
+                .GetCallerParticipantIdsByFolderIdAsync(dto.Id, actorId)).ToHashSet();
+            if (dto.GroupsPermission.Any(g => callerParticipantIds.Contains(g.ProjectParticipantId))
+                || dto.RemoveParticipantIds.Any(callerParticipantIds.Contains))
+                throw new ApiExceptionResponse("You cannot change permissions for your own group.", 403);
+
             var participantIds = dto.GroupsPermission.Select(u => u.ProjectParticipantId).Union(dto.RemoveParticipantIds).ToList();
 
             // Get all existing permissions in one query
