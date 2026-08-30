@@ -43,18 +43,12 @@ namespace Application.Services
 
         public async Task<FilePermissionsViewModelDTO> GetDataForPermissionUIAsync(Guid fileItemId, Guid callerAccountId)
         {
+            // Chỉ leader nhóm SỞ HỮU (theo folder chứa file), hoặc Admin/PM/PA, mới mở được màn phân quyền.
+            if (!await _permission.CanAssignFilePermissionsAsync(fileItemId, callerAccountId))
+                throw new ApiExceptionResponse("You cannot assign permissions on this file.", 403);
+
             // Groups the caller belongs to are excluded so they cannot kick themselves out of the group.
             var callerParticipantIds = await _unitOfWork.FilePermissionRepository.GetCallerParticipantIdsByFileItemIdAsync(fileItemId, callerAccountId);
-
-            var excludedParticipantIds = new HashSet<Guid>(callerParticipantIds);
-
-            // Ẩn nhóm CHỦ SỞ HỮU (theo folder chứa file) khỏi cả danh sách có thể thêm lẫn danh sách
-            // đang có quyền — leader nhóm khác không được đụng vào. Admin/PM/PA (toàn quyền) vẫn thấy.
-            var file = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId);
-            var folder = file == null ? null : await _unitOfWork.Repository<Folder>().GetByIdAsync(file.FolderId);
-            if (folder?.OwnerParticipantId is Guid ownerParticipantId
-                && !await _permission.HasProjectFullAccessAsync(folder.ProjectId, callerAccountId))
-                excludedParticipantIds.Add(ownerParticipantId);
 
             var items = await _unitOfWork.FilePermissionRepository.GetActivePartipantsByFileItemIdAsync(fileItemId);
 
@@ -63,14 +57,14 @@ namespace Application.Services
             var allProjectParticipants = await _unitOfWork.FilePermissionRepository.GetAllParticipantsByFileItemIdAsync(fileItemId);
 
             var availableGroups = allProjectParticipants
-                .Where(pp => !items.ContainsKey(pp.ProjectParticipantId) && !excludedParticipantIds.Contains(pp.ProjectParticipantId))
+                .Where(pp => !items.ContainsKey(pp.ProjectParticipantId) && !callerParticipantIds.Contains(pp.ProjectParticipantId))
                 .ToList();
 
             return new FilePermissionsViewModelDTO
             {
                 AvailableGroups = availableGroups,
                 SelectedPermissions = activeGroupOfFile
-                    .Where(p => !excludedParticipantIds.Contains(p.ProjectParticipantId))
+                    .Where(p => !callerParticipantIds.Contains(p.ProjectParticipantId))
                     .ToList()
             };
         }
@@ -83,6 +77,10 @@ namespace Application.Services
 
         public async Task<MemberPermissionsViewModelDTO> GetMemberPermissionsAsync(Guid fileItemId, Guid callerAccountId)
         {
+            // Màn "Phân quyền thành viên" cũng là phân quyền -> chỉ leader nhóm sở hữu (hoặc Admin/PM/PA).
+            if (!await _permission.CanAssignFilePermissionsAsync(fileItemId, callerAccountId))
+                throw new ApiExceptionResponse("You cannot assign permissions on this file.", 403);
+
             var file = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
@@ -127,15 +125,9 @@ namespace Application.Services
                 ?? throw new ApiExceptionResponse("File not found.", 404);
             var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(file.FolderId);
 
-            // Nhóm CHỦ SỞ HỮU (theo folder chứa file) chỉ bị đổi quyền bởi Admin/PM/PA (toàn quyền dự
-            // án); leader nhóm khác không được ghi đè/gỡ quyền của chủ sở hữu. Vì override quyền file
-            // "present-wins" (đè cả quyền kế thừa từ thư mục), chặn MỌI thao tác nhắm vào nhóm chủ sở
-            // hữu — cả cấp/hạ mức lẫn gỡ — để không thể tách chủ sở hữu khỏi quyền kế thừa của họ.
-            if (folder?.OwnerParticipantId is Guid ownerParticipantId
-                && !await _permission.HasProjectFullAccessAsync(folder.ProjectId, actorId)
-                && (dto.GroupsPermission.Any(g => g.ProjectParticipantId == ownerParticipantId)
-                    || dto.RemoveParticipantIds.Contains(ownerParticipantId)))
-                throw new ApiExceptionResponse("You cannot change the owning group's permission on this file.", 403);
+            // Phân quyền file theo SỞ HỮU của folder chứa nó: chỉ leader nhóm sở hữu (hoặc Admin/PM/PA).
+            if (!await _permission.CanAssignFilePermissionsAsync(dto.Id, actorId))
+                throw new ApiExceptionResponse("You cannot assign permissions on this file.", 403);
 
             var participantIds = dto.GroupsPermission.Select(u => u.ProjectParticipantId).Union(dto.RemoveParticipantIds).ToList();
 
@@ -223,6 +215,10 @@ namespace Application.Services
 
             if (users.Count == 0 && removeIds.Count == 0)
                 throw new ApiExceptionResponse("No changes provided.", 400);
+
+            // Phân quyền thành viên cũng là phân quyền -> chỉ leader nhóm sở hữu (hoặc Admin/PM/PA).
+            if (!await _permission.CanAssignFilePermissionsAsync(dto.Id, actorId))
+                throw new ApiExceptionResponse("You cannot assign permissions on this file.", 403);
 
             // A leader cannot override their own access (mirrors the group UI hiding the caller's group).
             if (users.Any(u => u.AccountId == actorId) || removeIds.Contains(actorId))

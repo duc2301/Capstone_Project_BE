@@ -69,6 +69,15 @@ namespace Application.Interfaces.IRepositories
         /// <summary>True if the account is the manager of the project that owns the file.</summary>
         Task<bool> IsProjectManagerByFileAsync(Guid fileItemId, Guid accountId);
 
+        // ===== Owner-group leadership (permission-assignment authority) =====
+
+        /// <summary>
+        /// Among the given folders, the FolderIds whose OWNING participant (Folder.OwnerParticipantId,
+        /// active) is a group the account leads (active GroupMember with Role == Leader). Folders with
+        /// no owner are never returned — only Admin/PM can assign there. Single query.
+        /// </summary>
+        Task<HashSet<Guid>> GetLeaderOwnedFolderIdsAmongAsync(Guid accountId, IReadOnlyCollection<Guid> folderIds);
+
         /// <summary>
         /// FolderIds in the project the account can View
         /// (active GroupMember -> active ProjectParticipant -> active FolderPermission with CanView).
