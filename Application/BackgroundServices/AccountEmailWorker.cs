@@ -35,9 +35,9 @@ namespace Application.BackgroundServices
 
             try
             {
-                await foreach (var accountId in _queue.ReadAllAsync(stoppingToken))
+                await foreach (var job in _queue.ReadAllAsync(stoppingToken))
                 {
-                    await ProcessAsync(accountId, stoppingToken);
+                    await ProcessAsync(job, stoppingToken);
                 }
             }
             catch (OperationCanceledException)
@@ -46,7 +46,7 @@ namespace Application.BackgroundServices
             }
         }
 
-        private async Task ProcessAsync(Guid accountId, CancellationToken ct)
+        private async Task ProcessAsync(AccountEmailJob job, CancellationToken ct)
         {
             try
             {
@@ -55,7 +55,7 @@ namespace Application.BackgroundServices
                 var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
                 var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
 
-                var account = await uow.AccountRepository.GetByIdAsync(accountId);
+                var account = await uow.AccountRepository.GetByIdAsync(job.AccountId);
                 if (account == null || !account.IsOnboardingEmailPending)
                     return; // Đã gửi hoặc không còn tồn tại -> bỏ qua (idempotent).
 
@@ -65,13 +65,19 @@ namespace Application.BackgroundServices
                 var setPasswordUrl =
                     $"{frontendBaseUrl}/reset-password?email={Uri.EscapeDataString(account.Email)}&token={account.ResetPasswordToken}&welcome=1";
 
+                // Password chỉ có khi job đến trực tiếp từ import. Nếu job được requeue lúc app khởi động lại
+                // thì plaintext đã mất (không lưu DB) -> bỏ dòng mật khẩu, user dùng nút "Đặt mật khẩu".
+                var passwordLine = string.IsNullOrEmpty(job.Password)
+                    ? string.Empty
+                    : $"Mật khẩu đăng nhập: {job.Password}\n";
+
                 var body =
                     $"Xin chào {account.UserName},\n\n" +
                     "Quản trị viên đã tạo tài khoản cho bạn trên BIM CDE Portal.\n\n" +
                     $"Email đăng nhập: {account.Email}\n" +
-                    "Mật khẩu tạm thời: 123456\n\n" +
-                    "Vì lý do bảo mật, bạn nên đổi sang mật khẩu riêng bằng nút bên dưới " +
-                    "(liên kết không yêu cầu đăng nhập).";
+                    passwordLine + "\n" +
+                    "Bạn có thể đăng nhập ngay bằng thông tin trên. Nếu muốn đổi sang mật khẩu " +
+                    "riêng, hãy dùng nút bên dưới (không bắt buộc, liên kết không yêu cầu đăng nhập).";
 
                 await emailService.SendEmailAsync(
                     account.Email,
@@ -91,7 +97,7 @@ namespace Application.BackgroundServices
             catch (Exception ex)
             {
                 // Giữ IsOnboardingEmailPending == true -> sẽ được requeue ở lần khởi động sau.
-                _logger.LogError(ex, "Failed to send onboarding email for Account {Id}.", accountId);
+                _logger.LogError(ex, "Failed to send onboarding email for Account {Id}.", job.AccountId);
             }
         }
 
@@ -105,8 +111,9 @@ namespace Application.BackgroundServices
                 var pending = (await uow.AccountRepository
                     .FindAsync(a => a.IsOnboardingEmailPending)).ToList();
 
+                // Không có plaintext mật khẩu ở đây (chỉ lưu hash) -> email sẽ chỉ đưa link đặt mật khẩu.
                 foreach (var account in pending)
-                    _queue.Enqueue(account.Id);
+                    _queue.Enqueue(account.Id, null);
 
                 if (pending.Count > 0)
                     _logger.LogInformation("Re-enqueued {Count} pending onboarding email(s) on startup.", pending.Count);
