@@ -18,6 +18,7 @@ using iText.Kernel.Pdf.Extgstate;
 using iText.Layout;
 using iText.Layout.Element;
 using iText.Layout.Properties;
+using iText.Signatures;
 using Microsoft.Extensions.Logging;
 using SkiaSharp;
 using W = DocumentFormat.OpenXml.Wordprocessing;
@@ -94,7 +95,15 @@ namespace Infrastructure.Adapters.Watermarking
             var font = PdfFontFactory.CreateFont(_pdfFontBytes.Value, PdfEncodings.IDENTITY_H);
             var extGState = new PdfExtGState().SetFillOpacity(PdfFillOpacity);
 
-            using (var pdfDocument = new PdfDocument(reader, writer))
+            // File đã ký số (SmartCA) -> phải mở ở chế độ append (incremental update): ghi watermark
+            // như một revision MỚI chồng lên trên, không đụng lại byte của revision đã ký. Mở kiểu ghi
+            // đè bình thường sẽ tính lại toàn bộ file -> đổi hash -> chữ ký báo "dữ liệu đã thay đổi"
+            // dù nội dung tài liệu (ngoài watermark) không hề bị sửa.
+            var stampingProperties = IsSignedPdf(inputBytes)
+                ? new StampingProperties().UseAppendMode()
+                : new StampingProperties();
+
+            using (var pdfDocument = new PdfDocument(reader, writer, stampingProperties))
             {
                 pdfDocument.GetDocumentInfo().SetMoreInfo(WatermarkMarkerKey, "1");
 
@@ -112,6 +121,13 @@ namespace Infrastructure.Adapters.Watermarking
             var reader = new PdfReader(new MemoryStream(pdfBytes));
             using var pdfDocument = new PdfDocument(reader);
             return pdfDocument.GetDocumentInfo().GetMoreInfo(WatermarkMarkerKey) == "1";
+        }
+
+        private static bool IsSignedPdf(byte[] pdfBytes)
+        {
+            var reader = new PdfReader(new MemoryStream(pdfBytes));
+            using var pdfDocument = new PdfDocument(reader);
+            return new SignatureUtil(pdfDocument).GetSignatureNames().Count > 0;
         }
 
         // Lặp lưới nhiều vị trí (không chỉ 1 chỗ) để khó bị crop/che mất khi chụp 1 phần màn hình.
