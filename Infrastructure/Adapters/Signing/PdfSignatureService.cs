@@ -313,14 +313,14 @@ namespace Infrastructure.Adapters.Signing
                 .OrderBy(t => t.SignedAt ?? t.CreatedAt)
                 .ToList();
 
-            var accountIds = signedTransactions.Select(t => t.SignedBy!.Value).Distinct().ToList();
+            var accountIds = signedTransactions.Select(t => t.SignedBy.Value).Distinct().ToList();
             var accounts = (await _unitOfWork.Repository<Account>().FindAsync(a => accountIds.Contains(a.Id)))
                 .ToDictionary(a => a.Id);
 
             return signedTransactions
                 .Select(t =>
                 {
-                    var fallbackName = accounts.TryGetValue(t.SignedBy!.Value, out var account)
+                    var fallbackName = accounts.TryGetValue(t.SignedBy.Value, out var account)
                         ? account.UserName
                         : t.SignedBy.Value.ToString();
                     var name = ResolveSignerDisplayName(t.SignerCertificateBase64, fallbackName);
