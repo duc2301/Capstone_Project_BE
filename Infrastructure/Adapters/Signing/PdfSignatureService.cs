@@ -304,26 +304,20 @@ namespace Infrastructure.Adapters.Signing
 
         internal readonly record struct SignerStampInfo(string Name, DateTime SignedAt, string? CertificateSerial, string? TransactionId);
 
-        /// <summary>
-        /// Lay danh sach TAT CA nguoi thuc su da ky (moi tai khoan 1 dong, theo transaction Signed gan nhat
-        /// cua chinh ho) de khung dau chu ky the hien day du, khong chi 1 nguoi ky sau cung.
-        /// </summary>
         private async Task<IReadOnlyList<SignerStampInfo>> BuildStampSignersAsync(Guid approvalId)
         {
-            var latestPerAccount = (await _unitOfWork.Repository<ApprovalSignatureTransaction>().FindAsync(
+            var signedTransactions = (await _unitOfWork.Repository<ApprovalSignatureTransaction>().FindAsync(
                     t => t.ApprovalRequestId == approvalId
                          && t.Status == SignatureTransactionStatus.Signed
                          && t.SignedBy.HasValue))
-                .GroupBy(t => t.SignedBy!.Value)
-                .Select(g => g.OrderByDescending(t => t.CreatedAt).First())
                 .OrderBy(t => t.SignedAt ?? t.CreatedAt)
                 .ToList();
 
-            var accountIds = latestPerAccount.Select(t => t.SignedBy!.Value).ToList();
+            var accountIds = signedTransactions.Select(t => t.SignedBy!.Value).Distinct().ToList();
             var accounts = (await _unitOfWork.Repository<Account>().FindAsync(a => accountIds.Contains(a.Id)))
                 .ToDictionary(a => a.Id);
 
-            return latestPerAccount
+            return signedTransactions
                 .Select(t =>
                 {
                     var fallbackName = accounts.TryGetValue(t.SignedBy!.Value, out var account)
@@ -456,7 +450,7 @@ namespace Infrastructure.Adapters.Signing
                 var pdfY = pageHeight - position.Y - position.Height;
 
                 var pdfCanvas = new iText.Kernel.Pdf.Canvas.PdfCanvas(page);
-                DrawSignatureStamp(pdfCanvas, position, pdfY, signers);
+                DrawSignatureStamp(pdfCanvas, position, pdfY, signers, pageHeight);
             }
 
             return outputStream.ToArray();
@@ -489,23 +483,37 @@ namespace Infrastructure.Adapters.Signing
             iText.Kernel.Pdf.Canvas.PdfCanvas pdfCanvas,
             FileSignaturePosition position,
             float pdfY,
-            IReadOnlyList<SignerStampInfo> signers)
+            IReadOnlyList<SignerStampInfo> signers,
+            float pageHeight)
         {
-            var validColor = new DeviceRgb(22, 163, 74);    // green-600: vien + tieu de "hop le"
-            var detailColor = new DeviceRgb(220, 38, 38);   // red-600: dong "Ky boi"/"Ky ngay"
+            var validColor = new DeviceRgb(21, 128, 61);      // green-700: vien + tieu de "hop le"
+            var labelColor = new DeviceRgb(185, 28, 28);      // red-700: nhan "Ky boi" - do, dam hon ban goc cho do garish
+            var nameColor = new DeviceRgb(153, 27, 27);       // red-800: ten nguoi ky - do dam nhat, bold noi bat
+            var timestampColor = new DeviceRgb(185, 28, 28);  // red-700: ngay gio
+            const float cornerRadius = 3f;
 
-            const float padding = 5f;
-            const float lineLeading = 1.25f;
-            const float detailFontSize = 5.5f; // co chu co dinh, de doc du ky bao nhieu nguoi
+            const float padding = 6f;
+            const float lineLeading = 1.35f;
+            const float bottomMargin = 12f;
 
-            // Khung co the cao hon khung nguoi dung ve (mo rong xuong duoi trang) neu nhieu nguoi ky can
-            // nhieu dong hon cho voi cha - giu cua tren co dinh dung vi tri nguoi dung dat, chi day canh
-            // duoi xuong. Tranh tinh huong co chu bi ep nho toi muc kho doc khi co nhieu nguoi ky.
-            var titleFontSize = Math.Clamp(position.Height * 0.16f, 6.5f, 13f);
-            var headerHeight = Math.Min(14f, position.Height * 0.32f);
-            var requiredBodyHeight = signers.Count * detailFontSize * lineLeading + padding;
-            var effectiveHeight = Math.Max(position.Height, headerHeight + requiredBodyHeight + padding * 1.5f);
+            var titleFontSize = Math.Clamp(position.Height * 0.17f, 7f, 14f);
+            var headerHeight = Math.Min(16f, position.Height * 0.32f);
             var topY = pdfY + position.Height; // canh tren co dinh
+            var maxAvailableHeight = Math.Max(headerHeight + padding * 1.5f + 2f, topY - bottomMargin);
+
+            var detailFontSize = Math.Clamp(position.Height * 0.11f, 6f, 8.5f);
+            var requiredBodyHeight = signers.Count * 2 * detailFontSize * lineLeading + padding;
+            var effectiveHeight = Math.Max(position.Height, headerHeight + requiredBodyHeight + padding * 1.5f);
+            if (effectiveHeight > maxAvailableHeight)
+            {
+                var availableBodyHeight = maxAvailableHeight - headerHeight - padding * 1.5f;
+                var neededHeightPerUnitFont = signers.Count * 2 * lineLeading;
+                detailFontSize = neededHeightPerUnitFont > 0
+                    ? Math.Max(4.5f, availableBodyHeight / neededHeightPerUnitFont)
+                    : detailFontSize;
+                requiredBodyHeight = signers.Count * 2 * detailFontSize * lineLeading + padding;
+                effectiveHeight = Math.Min(maxAvailableHeight, headerHeight + requiredBodyHeight + padding * 1.5f);
+            }
             pdfY = topY - effectiveHeight; // canh duoi day xuong neu can them cho
 
             var headerRect = new Rectangle(
@@ -522,8 +530,8 @@ namespace Infrastructure.Adapters.Signing
             pdfCanvas.SaveState()
                 .SetFillColor(ColorConstants.WHITE)
                 .SetStrokeColor(validColor)
-                .SetLineWidth(1f)
-                .Rectangle(position.X, pdfY, position.Width, effectiveHeight)
+                .SetLineWidth(1.1f)
+                .RoundRectangle(position.X, pdfY, position.Width, effectiveHeight, cornerRadius)
                 .FillStroke()
                 .RestoreState();
 
@@ -534,7 +542,7 @@ namespace Infrastructure.Adapters.Signing
                 .Add(new Text("Signature Valid").SetFont(boldFont).SetFontSize(titleFontSize).SetFontColor(validColor))
                 .SetMargin(0)
                 .SetMultipliedLeading(1f)
-                .SetTextAlignment(TextAlignment.LEFT);
+                .SetTextAlignment(TextAlignment.CENTER);
 
             var details = new Paragraph()
                 .SetMargin(0)
@@ -542,15 +550,15 @@ namespace Infrastructure.Adapters.Signing
                 .SetTextAlignment(TextAlignment.LEFT)
                 .SetFont(regularFont)
                 .SetFontSize(detailFontSize)
-                .SetFontColor(detailColor);
+                .SetFontColor(labelColor);
 
             for (var i = 0; i < signers.Count; i++)
             {
                 var signer = signers[i];
                 var prefix = i == 0 ? "" : "\n";
-                details.Add(new Text($"{prefix}Ký bởi: ").SetFontColor(detailColor));
-                details.Add(new Text(signer.Name).SetFont(boldFont).SetFontColor(detailColor));
-                details.Add(new Text($" — {ToVietnamTime(signer.SignedAt):dd/MM/yyyy HH:mm:ss}").SetFontColor(detailColor));
+                details.Add(new Text($"{prefix}Ký bởi: ").SetFontColor(labelColor));
+                details.Add(new Text(signer.Name).SetFont(boldFont).SetFontColor(nameColor));
+                details.Add(new Text($"\nKý ngày: {ToVietnamTime(signer.SignedAt):dd/MM/yyyy HH:mm:ss}").SetFontColor(timestampColor));
             }
 
             using (var headerCanvas = new Canvas(pdfCanvas, headerRect))
