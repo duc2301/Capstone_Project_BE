@@ -42,6 +42,10 @@ namespace Application.Interfaces.IServices
         // làm điều kiện tiên quyết trước khi cho ký số, không quan tâm actor là ai.
         Task RequireFolderHasApprovePermissionConfiguredAsync(Guid fileItemId);
 
+        // Bắt buộc file không còn issue liên kết nào chưa đóng (ném 403 nếu còn) — điều kiện tiên
+        // quyết trước khi duyệt/ký, không quan tâm actor là ai.
+        Task RequireNoUnresolvedIssuesAsync(Guid fileItemId);
+
         // Snapshot DTO hiện tại của 1 approval request, không check quyền — dùng nội bộ để broadcast realtime.
         Task<ApprovalRequestResponseDTO> GetSnapshotAsync(Guid approvalId);
 

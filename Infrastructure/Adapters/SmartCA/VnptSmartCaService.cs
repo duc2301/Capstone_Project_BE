@@ -427,16 +427,9 @@ namespace Infrastructure.Adapters.SmartCA
             if (folder == null)
                 return SigningValidationResult.Fail("File folder not found.");
 
-            // Folder phải đã được cấp CanApprove cho ít nhất 1 nhóm trước khi cho phép ký số — không
-            // để signer "lách" qua bước phân quyền folder chỉ vì họ được assign ký cho request này.
-            try
-            {
-                await _approvalService.RequireFolderHasApprovePermissionConfiguredAsync(fileItem.Id);
-            }
-            catch (ApiExceptionResponse ex)
-            {
-                return SigningValidationResult.Fail(ex.Message);
-            }
+            var preconditionError = await ValidateSigningPreconditionsAsync(fileItem.Id, blockSignedFile);
+            if (preconditionError != null)
+                return SigningValidationResult.Fail(preconditionError);
 
             var account = await _unitOfWork.Repository<Account>().GetByIdAsync(currentUserId);
             if (account == null || account.Status != AccountStatus.Active)
@@ -462,6 +455,25 @@ namespace Infrastructure.Adapters.SmartCA
                 return SigningValidationResult.Fail("Current user has already signed this approval request.");
 
             return SigningValidationResult.Success(new SigningContext(approval, fileItem, folder, signer));
+        }
+
+        // Folder phải đã được cấp CanApprove cho ít nhất 1 nhóm trước khi cho phép ký số. Issue chưa
+        // giải quyết chỉ chặn ở bước KHỞI TẠO ký (blockSignedFile=true) — bước chỉ đọc trạng thái
+        // transaction đã tạo (polling) thì bỏ qua, không thì transaction WaitingConfirm sẽ kẹt vĩnh
+        // viễn nếu ai đó tạo issue mới giữa lúc đang chờ SmartCA phản hồi.
+        private async Task<string?> ValidateSigningPreconditionsAsync(Guid fileItemId, bool blockSignedFile)
+        {
+            try
+            {
+                await _approvalService.RequireFolderHasApprovePermissionConfiguredAsync(fileItemId);
+                if (blockSignedFile)
+                    await _approvalService.RequireNoUnresolvedIssuesAsync(fileItemId);
+                return null;
+            }
+            catch (ApiExceptionResponse ex)
+            {
+                return ex.Message;
+            }
         }
 
         // Signer trực tiếp phải VẪN ĐANG là Leader active — AccountId khớp thôi không đủ (chỉ là
