@@ -412,7 +412,7 @@ namespace Application.Services
                     CanEdit = false,
                     //CanUpdate = false,
                     //CanVerify = false,
-                    CanApprove = false,
+                    CanApprove = true,
                     Status = permission.Status
                 });
             }
