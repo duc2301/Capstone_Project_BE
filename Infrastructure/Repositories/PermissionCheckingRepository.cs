@@ -176,6 +176,24 @@ namespace Infrastructure.Repositories
                 .AnyAsync(fi => fi.Id == fileItemId && fi.Folder.Project.ManagerAccountId == accountId);
         }
 
+        public async Task<HashSet<Guid>> GetLeaderOwnedFolderIdsAmongAsync(
+            Guid accountId, IReadOnlyCollection<Guid> folderIds)
+        {
+            if (folderIds.Count == 0) return new HashSet<Guid>();
+
+            return (await _context.Folders
+                .Where(f => folderIds.Contains(f.Id)
+                         && f.OwnerParticipantId != null
+                         && f.OwnerParticipant!.Status == ProjectParticipantStatus.Active
+                         && f.OwnerParticipant.Group.Members.Any(m =>
+                                m.AccountId == accountId
+                                && m.Role == GroupMemberRole.Leader
+                                && m.Status == GroupMemberStatus.Active))
+                .Select(f => f.Id)
+                .ToListAsync())
+                .ToHashSet();
+        }
+
         public async Task<HashSet<Guid>> GetViewableFolderIdsAsync(Guid projectId, Guid accountId)
         {
             var groupViewable = (await _context.FolderPermissions

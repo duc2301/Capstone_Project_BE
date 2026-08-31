@@ -10,6 +10,8 @@ using Domain.Enum.Account;
 using Domain.Enum.Audit;
 using Syncfusion.XlsIO;
 using System.ComponentModel.DataAnnotations;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Application.Services
 {
@@ -17,9 +19,12 @@ namespace Application.Services
     {
         private const string AvatarPrefix = "avatars";
 
-        // Import Excel: mật khẩu mặc định cho mọi tài khoản tạo qua template.
-        private const string DefaultImportPassword = "123456";
         private const int MaxImportRows = 500;
+        // Độ dài mật khẩu ngẫu nhiên sinh cho tài khoản import (permanent, gửi kèm email onboarding).
+        private const int ImportPasswordLength = 12;
+        // Bộ ký tự sinh mật khẩu — bỏ các ký tự dễ nhầm (0/O, 1/I/l) cho người đọc từ email.
+        private const string ImportPasswordAlphabet =
+            "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
         // Token trong email onboarding sống lâu hơn forgot-password (nhân viên có thể bấm sau vài ngày).
         private const int OnboardingTokenValidityDays = 7;
         private static readonly string[] ImportTemplateHeaders = { "UserName", "Email" };
@@ -144,7 +149,8 @@ namespace Application.Services
                 ws[1, column].Text = ImportTemplateHeaders[column - 1];
             ws["A1:B1"].CellStyle.Font.Bold = true;
 
-            // Dòng ví dụ để admin biết định dạng (mật khẩu mặc định "123456", vai trò User — không cần nhập).
+            // Dòng ví dụ để admin biết định dạng (mỗi tài khoản được cấp mật khẩu ngẫu nhiên,
+            // vai trò User — không cần nhập).
             ws[2, 1].Text = "Nguyen Van A";
             ws[2, 2].Text = "nguyenvana@example.com";
 
@@ -227,7 +233,9 @@ namespace Application.Services
             var existingEmails = await _unitOfWork.AccountRepository
                 .GetExistingEmailsAsync(candidates.Select(c => c.Email));
 
-            var toCreate = new List<Account>();
+            // Giữ plaintext mật khẩu ngẫu nhiên song song với account để đưa vào email onboarding
+            // (DB chỉ lưu hash). Mật khẩu này là permanent — dùng đăng nhập bình thường cho tới khi user tự đổi.
+            var toCreate = new List<(Account Account, string Password)>();
             foreach (var (rowNumber, userName, email) in candidates)
             {
                 if (existingEmails.Contains(email.ToLower()))
@@ -237,22 +245,24 @@ namespace Application.Services
                 }
 
                 var now = DateTime.UtcNow;
-                toCreate.Add(new Account
+                var password = GenerateRandomPassword();
+                toCreate.Add((new Account
                 {
                     Id = Guid.NewGuid(),
                     UserName = userName,
                     Email = email,
-                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(DefaultImportPassword),
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
                     Role = AccountRole.User,
                     Status = AccountStatus.Active,
                     IsEmailVerified = true, // Admin bảo lãnh — bỏ qua luồng OTP.
                     // Token cho nút "Đặt mật khẩu" trong email onboarding (tái dùng luồng reset-password).
+                    // Chỉ là tiện ích tuỳ chọn — mật khẩu ngẫu nhiên ở trên vẫn dùng được bình thường.
                     ResetPasswordToken = Guid.NewGuid().ToString("N"),
                     ResetPasswordTokenExpiresAt = now.AddDays(OnboardingTokenValidityDays),
                     IsOnboardingEmailPending = true,
                     CreatedAt = now,
                     UpdatedAt = now
-                });
+                }, password));
 
                 result.Created.Add(new ImportAccountCreatedDTO
                 {
@@ -264,7 +274,7 @@ namespace Application.Services
 
             if (toCreate.Count > 0)
             {
-                await _unitOfWork.AccountRepository.CreateRangeAsync(toCreate);
+                await _unitOfWork.AccountRepository.CreateRangeAsync(toCreate.Select(x => x.Account).ToList());
 
                 await _auditLog.LogAsync(
                     LogScope.System, AuditAction.Create, nameof(Account), actorId.ToString(), actorId,
@@ -274,12 +284,24 @@ namespace Application.Services
 
                 // Gửi email onboarding out-of-band: enqueue sau khi commit thành công,
                 // AccountEmailWorker sẽ drain nền nên HTTP response trả về ngay.
-                foreach (var account in toCreate)
-                    _emailQueue.Enqueue(account.Id);
+                foreach (var (account, password) in toCreate)
+                    _emailQueue.Enqueue(account.Id, password);
             }
 
             result.CreatedCount = toCreate.Count;
             return result;
+        }
+
+        // Sinh mật khẩu ngẫu nhiên (cryptographically secure) cho tài khoản import.
+        private static string GenerateRandomPassword()
+        {
+            var bytes = new byte[ImportPasswordLength];
+            RandomNumberGenerator.Fill(bytes);
+
+            var sb = new StringBuilder(ImportPasswordLength);
+            foreach (var b in bytes)
+                sb.Append(ImportPasswordAlphabet[b % ImportPasswordAlphabet.Length]);
+            return sb.ToString();
         }
 
         private static void AddError(ImportAccountsResultDTO result, int rowNumber, string? email, string reason)

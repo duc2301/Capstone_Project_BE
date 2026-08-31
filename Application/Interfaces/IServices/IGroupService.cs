@@ -8,7 +8,7 @@ namespace Application.Interfaces.IServices
     {
         Task<IEnumerable<GroupResponseDTO>> GetAllAsync();
         Task<GroupResponseDTO?> GetByIdAsync(Guid id);
-        Task<GroupResponseDTO> CreateAsync(CreateGroupDTO dto);
+        Task<GroupResponseDTO> CreateAsync(CreateGroupDTO dto, Guid actorId, string? actorRole);
         // actor/actorRole do controller lấy từ JWT (kiểm tra Admin/PM trước khi sửa/xóa).
         Task<GroupResponseDTO> UpdateAsync(Guid id, UpdateGroupDTO dto, Guid actorId, string? actorRole);
         Task DeleteAsync(Guid id, Guid actorId, string? actorRole);

@@ -155,6 +155,33 @@ namespace Application.Services
                || await _permissionCheckingRepository.IsProjectManagerAsync(projectId, accountId)
                || await _permissionCheckingRepository.HasProjectAdminAccessAsync(projectId, accountId);
 
+        // ===== Permission-assignment authority (ownership-based) =====
+
+        public async Task<bool> CanAssignFolderPermissionsAsync(Guid folderId, Guid accountId)
+        {
+            var folder = await _permissionCheckingRepository.GetFolderAsync(folderId);
+            if (folder == null) return false;
+
+            // Admin / PM / ProjectAdmin are above all and may assign anywhere.
+            if (await HasProjectFullAccessAsync(folder.ProjectId, accountId)) return true;
+
+            // Otherwise only the leader of the owning group. Owner-less folder -> denied here.
+            var owned = await _permissionCheckingRepository
+                .GetLeaderOwnedFolderIdsAmongAsync(accountId, new[] { folderId });
+            return owned.Contains(folderId);
+        }
+
+        public async Task<bool> CanAssignFilePermissionsAsync(Guid fileItemId, Guid accountId)
+        {
+            var file = await _permissionCheckingRepository.GetFileItemAsync(fileItemId);
+            if (file == null) return false;
+            return await CanAssignFolderPermissionsAsync(file.FolderId, accountId);
+        }
+
+        public Task<HashSet<Guid>> GetAssignableFolderIdsAmongAsync(
+            Guid accountId, IReadOnlyCollection<Guid> folderIds)
+            => _permissionCheckingRepository.GetLeaderOwnedFolderIdsAmongAsync(accountId, folderIds);
+
         public Task<HashSet<Guid>> GetViewableFolderIdsAsync(Guid projectId, Guid accountId)
             => _permissionCheckingRepository.GetViewableFolderIdsAsync(projectId, accountId);
 

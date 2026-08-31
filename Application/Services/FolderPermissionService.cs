@@ -16,15 +16,17 @@ namespace Application.Services
 
         private readonly IAuditLogService _auditLog;
         private readonly IPermissionCleanupService _cleanup;
+        private readonly IPermissionCheckingService _permission;
 
         public FolderPermissionService(
             IUnitOfWork unitOfWork, IMapper mapper, IAuditLogService auditLog,
-            IPermissionCleanupService cleanup)
+            IPermissionCleanupService cleanup, IPermissionCheckingService permission)
         {
             _auditLog = auditLog;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _cleanup = cleanup;
+            _permission = permission;
         }
 
         #region Lấy data cho frontend
@@ -36,6 +38,11 @@ namespace Application.Services
 
         public async Task<FolderPermissionsViewModelDTO> GetDataForPermissionUIAsync(Guid folderId, Guid callerAccountId)
         {
+            // Chỉ leader nhóm SỞ HỮU folder (hoặc Admin/PM/PA) mới mở được màn phân quyền — nhóm được
+            // mời không phân quyền được nên không nhận dữ liệu màn này.
+            if (!await _permission.CanAssignFolderPermissionsAsync(folderId, callerAccountId))
+                throw new ApiExceptionResponse("You cannot assign permissions on this folder.", 403);
+
             // Groups the caller belongs to are excluded so they cannot kick themselves out of the group.
             var callerParticipantIds = await _unitOfWork.FolderPermissionRepository.GetCallerParticipantIdsByFolderIdAsync(folderId, callerAccountId);
 
@@ -66,6 +73,10 @@ namespace Application.Services
 
         public async Task<MemberPermissionsViewModelDTO> GetMemberPermissionsAsync(Guid folderId, Guid callerAccountId)
         {
+            // Màn "Phân quyền thành viên" cũng là phân quyền -> chỉ leader nhóm sở hữu (hoặc Admin/PM/PA).
+            if (!await _permission.CanAssignFolderPermissionsAsync(folderId, callerAccountId))
+                throw new ApiExceptionResponse("You cannot assign permissions on this folder.", 403);
+
             var grants = await _unitOfWork.FolderPermissionRepository.GetActiveGroupGrantsByFolderIdAsync(folderId);
             var grantByParticipant = grants.ToDictionary(g => g.ParticipantId);
 
@@ -86,8 +97,20 @@ namespace Application.Services
 
         public async Task<IEnumerable<GroupFolderPermissionResponseDTO>> BulkUpdateFolderPermissionsAsync(AddPermissionsBulkDTO dto, Guid actorId)
         {
-            //if (!dto.GroupsPermission.Any()) 
+            //if (!dto.GroupsPermission.Any())
             //    throw new ApiExceptionResponse("GroupsPermission list is empty.", 400);
+
+            // Chỉ leader nhóm SỞ HỮU folder (hoặc Admin/PM/PA) mới được phân quyền trên folder này.
+            if (!await _permission.CanAssignFolderPermissionsAsync(dto.Id, actorId))
+                throw new ApiExceptionResponse("You cannot assign permissions on this folder.", 403);
+
+            // Không tự sửa quyền NHÓM CỦA MÌNH (đồng nhất với ma trận): tránh chủ sở hữu tự cấp lại
+            // nhóm mình sau khi bị Admin/PM gỡ, và tránh tự leo thang quyền.
+            var callerParticipantIds = (await _unitOfWork.FolderPermissionRepository
+                .GetCallerParticipantIdsByFolderIdAsync(dto.Id, actorId)).ToHashSet();
+            if (dto.GroupsPermission.Any(g => callerParticipantIds.Contains(g.ProjectParticipantId))
+                || dto.RemoveParticipantIds.Any(callerParticipantIds.Contains))
+                throw new ApiExceptionResponse("You cannot change permissions for your own group.", 403);
 
             var participantIds = dto.GroupsPermission.Select(u => u.ProjectParticipantId).Union(dto.RemoveParticipantIds).ToList();
 
@@ -178,6 +201,10 @@ namespace Application.Services
 
             if (users.Count == 0 && removeIds.Count == 0)
                 throw new ApiExceptionResponse("No changes provided.", 400);
+
+            // Phân quyền thành viên cũng là phân quyền -> chỉ leader nhóm sở hữu (hoặc Admin/PM/PA).
+            if (!await _permission.CanAssignFolderPermissionsAsync(dto.Id, actorId))
+                throw new ApiExceptionResponse("You cannot assign permissions on this folder.", 403);
 
             // A leader cannot override their own access (mirrors the group UI hiding the caller's group).
             if (users.Any(u => u.AccountId == actorId) || removeIds.Contains(actorId))

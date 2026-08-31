@@ -144,6 +144,14 @@ namespace Infrastructure.DbContexts
                 .HasForeignKey(f => f.ParentFolderId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // Nhóm chủ sở hữu folder. Restrict để tránh nhiều đường cascade và giữ folder khi
+            // participant bị xoá (không xử lý chuyển/thu hồi chủ sở hữu ở bản này).
+            modelBuilder.Entity<Folder>()
+                .HasOne(f => f.OwnerParticipant)
+                .WithMany()
+                .HasForeignKey(f => f.OwnerParticipantId)
+                .OnDelete(DeleteBehavior.Restrict);
+
 
             // ACL thư mục: xóa Folder -> xóa các dòng phân quyền của nó.
             // Group được tham chiếu Restrict để tránh nhiều đường cascade.

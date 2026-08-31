@@ -71,8 +71,13 @@ namespace Application.Services
             return Build(entity, members, accounts);
         }
 
-        public async Task<GroupResponseDTO> CreateAsync(CreateGroupDTO dto)
+        public async Task<GroupResponseDTO> CreateAsync(CreateGroupDTO dto, Guid actor, string? actorRole)
         {
+            // Nhóm mới chưa gắn dự án nào -> không có groupId để suy ra PM của nhóm.
+            // Vì vậy chỉ cần Admin hoặc PM của BẤT KỲ dự án nào là được tạo nhóm.
+            await EnsureAdminOrAnyProjectManagerAsync(actor, actorRole,
+                "Chỉ Admin hoặc PM dự án mới được tạo nhóm.");
+
             var entity = _mapper.Map<Group>(dto);
             entity.Id = Guid.NewGuid();
             entity.CreatedAt = entity.UpdatedAt = DateTime.UtcNow;
@@ -280,6 +285,17 @@ namespace Application.Services
         {
             if (actorRole == AccountRole.Admin.ToString()) return;
             if (await IsProjectManagerOfGroupAsync(groupId, actor)) return;
+            throw new ApiExceptionResponse(message, 403);
+        }
+
+        // Dùng cho thao tác chưa có nhóm (tạo mới): cho phép Admin, hoặc actor là PM của ít nhất 1 dự án.
+        private async Task EnsureAdminOrAnyProjectManagerAsync(Guid actor, string? actorRole, string message)
+        {
+            if (actorRole == AccountRole.Admin.ToString()) return;
+            var isProjectManager = (await _unitOfWork.Repository<Project>()
+                    .FindAsync(p => p.ManagerAccountId == actor))
+                .Any();
+            if (isProjectManager) return;
             throw new ApiExceptionResponse(message, 403);
         }
 

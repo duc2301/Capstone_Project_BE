@@ -28,9 +28,9 @@ namespace Capstone_Project.Controllers
             => Ok(ApiResponse.Success("Retrieved successfully", await _service.GetByIdAsync(id)));
 
         [HttpPost]
-        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Create([FromBody] CreateGroupDTO dto)
-            => Ok(ApiResponse.Success("Created successfully", await _service.CreateAsync(dto)));
+            => Ok(ApiResponse.Success("Created successfully",
+                await _service.CreateAsync(dto, User.GetAccountId(), User.GetSystemRole())));
 
         [HttpPut("{id:guid}")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateGroupDTO dto)

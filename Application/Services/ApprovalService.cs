@@ -1084,15 +1084,16 @@ namespace Application.Services
                 return groupIds;
             }
 
-            var teamGroupIds = await ResolveGroupIdsAsync(applyApproveFilter: requireApprovePermission);
+            // Quyền "duyệt" không còn được gác theo cờ CanApprove: nhóm phụ trách = MỌI nhóm đang giữ
+            // một dòng ACL trên file hoặc chuỗi folder (chủ sở hữu lẫn nhóm được mời) — Leader của bất
+            // kỳ nhóm nào trong số đó đều được duyệt. Vì thế luôn resolve KHÔNG áp bộ lọc CanApprove.
+            var teamGroupIds = await ResolveGroupIdsAsync(applyApproveFilter: false);
             if (teamGroupIds.Count > 0 || !requireApprovePermission)
                 return teamGroupIds.Count > 0 ? teamGroupIds : activeParticipants.Values.ToHashSet();
 
-            // Không có nhóm nào có CanApprove=true trên file/folder này (dù bị tắt có chủ đích hay
-            // hoàn toàn chưa cấu hình) -> KHÔNG đoán/fallback về "tất cả nhóm dự án" nữa, trả về rỗng.
-            // Không nhóm nào được coi là phụ trách cho tới khi Admin cấu hình CanApprove rõ ràng cho
-            // đúng nhóm — tránh đoán sai sang nhóm không liên quan (VD: nhóm khác chưa cấu hình gì
-            // trên folder này nhưng lại vô tình lọt vào fallback, hiện nhầm "Người nhận").
+            // Không nhóm nào giữ dòng ACL nào trên file/chuỗi folder này (folder chưa được cấu hình
+            // phân quyền) -> vẫn trả rỗng để caller yêu-cầu-quyền báo lỗi rõ ràng, thay vì đoán bừa
+            // "tất cả nhóm dự án" và hiện nhầm "Người nhận".
             return Array.Empty<Guid>();
         }
 
