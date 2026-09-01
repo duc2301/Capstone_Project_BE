@@ -28,8 +28,8 @@ namespace Capstone_Project.Controllers
         /// Xem tất cả yêu cầu phê duyệt mà người dùng hiện tại được phép xem, có phân trang.
         /// </summary>
         [HttpGet]
-        public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
-            => Ok(ApiResponse.Success("Approvals retrieved", await _approvalService.GetAllAsync(User.GetAccountId(), page, pageSize)));
+        public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] Guid? projectId = null)
+            => Ok(ApiResponse.Success("Approvals retrieved", await _approvalService.GetAllAsync(User.GetAccountId(), page, pageSize, projectId)));
 
         /// <summary>
         /// Xem danh sách yêu cầu đang chờ duyệt của Team Leader hiện tại, có phân trang.
