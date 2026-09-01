@@ -95,8 +95,38 @@ namespace Infrastructure.Adapters.SmartCA
             if (certificates == null)
                 return BuildExternalFailResponse(external!);
 
+            var account = await _unitOfWork.Repository<Account>().GetByIdAsync(currentUserId);
+            foreach (var certificate in certificates)
+                certificate.NameMismatchesAccount = !NameMatchesAccount(certificate.Subject, account?.UserName);
+
             return ApiResponse.Success("Certificates retrieved", certificates);
         }
+
+        private static bool NameMatchesAccount(string? certificateSubject, string? accountUserName)
+        {
+            if (string.IsNullOrWhiteSpace(accountUserName))
+                return true;
+
+            var cn = certificateSubject?
+                .Split(',')
+                .Select(part => part.Trim())
+                .FirstOrDefault(part => part.StartsWith("CN=", StringComparison.OrdinalIgnoreCase))?
+                .Substring(3);
+            if (string.IsNullOrWhiteSpace(cn))
+                return true;
+
+            return NormalizeNameForComparison(cn) == NormalizeNameForComparison(accountUserName);
+        }
+
+        private static string NormalizeNameForComparison(string name)
+            => new string(name
+                    .Replace('Đ', 'D')
+                    .Replace('đ', 'd')
+                    .Normalize(System.Text.NormalizationForm.FormD)
+                    .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
+                    .ToArray())
+                .Replace(" ", "")
+                .ToUpperInvariant();
 
         /// <summary>
         /// Goi lai API get_certificate cua VNPT (dung chung logic voi GetCertificatesAsync) de lay
