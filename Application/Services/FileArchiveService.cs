@@ -197,7 +197,7 @@ namespace Application.Services
                 {
                     existing.CanView = source.CanView;
                     existing.CanEdit = false;
-                    existing.CanApprove = false;
+                    existing.CanApprove = true;
                     existing.Status = PermissionStatus.Active;
                     _unitOfWork.Repository<FilePermission>().Update(existing);
                     continue;
@@ -211,7 +211,7 @@ namespace Application.Services
                     AccountId = source.AccountId,
                     CanView = source.CanView,
                     CanEdit = false,
-                    CanApprove = false,
+                    CanApprove = true,
                     Status = PermissionStatus.Active
                 });
             }

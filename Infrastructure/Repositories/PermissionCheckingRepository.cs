@@ -176,6 +176,24 @@ namespace Infrastructure.Repositories
                 .AnyAsync(fi => fi.Id == fileItemId && fi.Folder.Project.ManagerAccountId == accountId);
         }
 
+        public async Task<HashSet<Guid>> GetLeaderOwnedFolderIdsAmongAsync(
+            Guid accountId, IReadOnlyCollection<Guid> folderIds)
+        {
+            if (folderIds.Count == 0) return new HashSet<Guid>();
+
+            return (await _context.Folders
+                .Where(f => folderIds.Contains(f.Id)
+                         && f.OwnerParticipantId != null
+                         && f.OwnerParticipant!.Status == ProjectParticipantStatus.Active
+                         && f.OwnerParticipant.Group.Members.Any(m =>
+                                m.AccountId == accountId
+                                && m.Role == GroupMemberRole.Leader
+                                && m.Status == GroupMemberStatus.Active))
+                .Select(f => f.Id)
+                .ToListAsync())
+                .ToHashSet();
+        }
+
         public async Task<HashSet<Guid>> GetViewableFolderIdsAsync(Guid projectId, Guid accountId)
         {
             var groupViewable = (await _context.FolderPermissions
@@ -235,6 +253,64 @@ namespace Infrastructure.Repositories
                 if (!masked) result.Add(f.Id);
             }
             return result;
+        }
+
+        public async Task<HashSet<Guid>> GetExtraViewableFileIdsAsync(
+            Guid projectId, Guid accountId, IReadOnlyCollection<Guid> viewableFolderIds)
+        {
+            // Ba đường cộng thêm chạy thành ba truy vấn riêng rồi gộp trong bộ nhớ, thay vì Concat +
+            // Contains lồng nhau: mỗi truy vấn đều là dạng EF chắc chắn dịch được, và số dòng trả về
+            // là số tệp được cấp lẻ (nhỏ), không phải toàn bộ tệp dự án.
+            // Lấy kèm FolderId để loại ngay các tệp nằm trong thư mục đã xem được — bộ lọc thư mục
+            // của truy vấn vector đã nhận chúng rồi.
+
+            // (a) Override cấp file CHO PHÉP xem — theo nhóm (ProjectParticipantId) hoặc theo chính
+            //     tài khoản (AccountId). Đây là đường "cấp quyền cho đúng một tệp" trên màn hình
+            //     phân quyền tệp.
+            var permitted = await _context.FilePermissions
+                .Where(fp => fp.CanView
+                          && fp.Status == PermissionStatus.Active
+                          && fp.FileItem.Folder.ProjectId == projectId
+                          && (fp.AccountId == accountId
+                              || (fp.ProjectParticipant != null
+                                  && fp.ProjectParticipant.Status == ProjectParticipantStatus.Active
+                                  && fp.ProjectParticipant.Group.Members.Any(m =>
+                                        m.AccountId == accountId && m.Status == GroupMemberStatus.Active))))
+                .Select(fp => new { Id = fp.FileItemId, fp.FileItem.FolderId })
+                .ToListAsync();
+
+            // (b) Grant xem theo tài khoản (người được assign ký).
+            var granted = await _context.FileViewGrants
+                .Where(g => g.AccountId == accountId
+                         && g.Status == PermissionStatus.Active
+                         && g.FileItem.Folder.ProjectId == projectId)
+                .Select(g => new { Id = g.FileItemId, g.FileItem.FolderId })
+                .ToListAsync();
+
+            // (c) Bên liên quan của issue chưa đóng — cùng điều kiện với HasIssueStakeholderFileAccessAsync.
+            var issueStakeholder = await _context.FileItems
+                .Where(fi => fi.Folder.ProjectId == projectId
+                          && (fi.Folder.Area == CdeArea.Shared || fi.Folder.Area == CdeArea.Published)
+                          && _context.Issues.Any(i =>
+                                i.LinkedFileItemId == fi.Id
+                                && i.Status != IssueStatus.Closed
+                                && (i.RaisedByAccountId == accountId
+                                    || i.AssignedToAccountId == accountId
+                                    || (i.AssignedToGroupId != null && _context.GroupMembers.Any(m =>
+                                            m.GroupId == i.AssignedToGroupId
+                                            && m.AccountId == accountId
+                                            && m.Status == GroupMemberStatus.Active))
+                                    || _context.IssueMentions.Any(m =>
+                                            m.IssueId == i.Id && m.MentionedAccountId == accountId))))
+                .Select(fi => new { fi.Id, fi.FolderId })
+                .ToListAsync();
+
+            return permitted
+                .Concat(granted)
+                .Concat(issueStakeholder)
+                .Where(x => !viewableFolderIds.Contains(x.FolderId))
+                .Select(x => x.Id)
+                .ToHashSet();
         }
 
         public async Task<bool> HasActiveFileViewGrantAsync(Guid fileItemId, Guid accountId)

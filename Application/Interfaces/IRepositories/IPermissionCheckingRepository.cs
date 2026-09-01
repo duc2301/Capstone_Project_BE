@@ -69,11 +69,30 @@ namespace Application.Interfaces.IRepositories
         /// <summary>True if the account is the manager of the project that owns the file.</summary>
         Task<bool> IsProjectManagerByFileAsync(Guid fileItemId, Guid accountId);
 
+        // ===== Owner-group leadership (permission-assignment authority) =====
+
+        /// <summary>
+        /// Among the given folders, the FolderIds whose OWNING participant (Folder.OwnerParticipantId,
+        /// active) is a group the account leads (active GroupMember with Role == Leader). Folders with
+        /// no owner are never returned — only Admin/PM can assign there. Single query.
+        /// </summary>
+        Task<HashSet<Guid>> GetLeaderOwnedFolderIdsAmongAsync(Guid accountId, IReadOnlyCollection<Guid> folderIds);
+
         /// <summary>
         /// FolderIds in the project the account can View
         /// (active GroupMember -> active ProjectParticipant -> active FolderPermission with CanView).
         /// </summary>
         Task<HashSet<Guid>> GetViewableFolderIdsAsync(Guid projectId, Guid accountId);
+
+        /// <summary>
+        /// FileItemIds the account can view through a FILE-level grant while the owning folder is NOT
+        /// in viewableFolderIds — the files a folder-only filter would wrongly drop. Covers every
+        /// additive path HasViewFileAsync accepts: a CanView FilePermission (group or per-account),
+        /// an active FileViewGrant, and open-issue stakeholder access.
+        /// Files inside already-viewable folders are excluded: the folder filter admits them anyway.
+        /// </summary>
+        Task<HashSet<Guid>> GetExtraViewableFileIdsAsync(
+            Guid projectId, Guid accountId, IReadOnlyCollection<Guid> viewableFolderIds);
 
         /// <summary>
         /// True if the account holds an active per-account view grant on the file (FileViewGrant),

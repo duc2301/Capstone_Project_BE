@@ -90,6 +90,8 @@ namespace Application.Services
                         Name = group.Name,
                         Area = root.Area,
                         IsTemplate = false,
+                        // "Ô" của nhóm là gốc quyền sở hữu: chính participant này sở hữu, con cháu kế thừa.
+                        OwnerParticipantId = participant.Id,
                         CreatedAt = now,
                         UpdatedAt = now
                     };
@@ -127,6 +129,7 @@ namespace Application.Services
                 ?? throw new ApiExceptionResponse("Parent folder not found.", 404);
 
             await EnsureCanCreateSubFolderAsync(actor, parentFolder, actorRole);
+            await EnsureChildNameAvailableAsync(parentFolder, name.Trim());
 
             var now = DateTime.UtcNow;
             var child = new Folder
@@ -138,6 +141,9 @@ namespace Application.Services
                 Area = parentFolder.Area,                          // kế thừa khu vực
                 IsTemplate = false,
                 CreatedByAccountId = actor,
+                // Kế thừa nhóm sở hữu của cha: mọi thứ trong "lãnh thổ" của một nhóm thuộc về nhóm đó,
+                // kể cả folder do leader nhóm khác (được mời) tạo bên trong.
+                OwnerParticipantId = parentFolder.OwnerParticipantId,
                 CreatedAt = now,
                 UpdatedAt = now
             };
@@ -223,20 +229,16 @@ namespace Application.Services
             };
         }
 
-        private async Task<Guid?> ResolveOwnerGroupIdAsync(Folder folder)
+        private async Task EnsureChildNameAvailableAsync(Folder parentFolder, string name)
         {
+            var siblings = await _unitOfWork.Repository<Folder>()
+                .FindAsync(f => f.ParentFolderId == parentFolder.Id
+                             && f.Area == parentFolder.Area
+                             && !f.IsTemplate);
 
-            var byId = (await _unitOfWork.Repository<Folder>()
-                    .FindAsync(f => f.ProjectId == folder.ProjectId))
-                .ToDictionary(f => f.Id);
-
-            var cur = folder;
-            while (cur.ParentFolderId.HasValue && byId.TryGetValue(cur.ParentFolderId.Value, out var parent))
-            {
-                
-                cur = parent;
-            }
-            return null;
+            if (siblings.Any(f => string.Equals(f.Name.Trim(), name, StringComparison.OrdinalIgnoreCase)))
+                throw new ApiExceptionResponse(
+                    $"Folder name '{name}' already exists in zone: {parentFolder.Area}.", 409);
         }
 
         public async Task EnsureCanManageFolderAsync(Guid folderId, Guid actorId, string? actorRole)
@@ -388,6 +390,8 @@ namespace Application.Services
                 Area = mirrorParent.Area,
                 IsTemplate = false,
                 CreatedByAccountId = source.CreatedByAccountId,
+                // Bản chiếu thuộc cùng nhóm sở hữu với folder gốc bên WIP.
+                OwnerParticipantId = source.OwnerParticipantId,
                 MirrorSourceFolderId = source.Id,
                 CreatedAt = now,
                 UpdatedAt = now
@@ -408,7 +412,7 @@ namespace Application.Services
                     CanEdit = false,
                     //CanUpdate = false,
                     //CanVerify = false,
-                    CanApprove = false,
+                    CanApprove = true,
                     Status = permission.Status
                 });
             }

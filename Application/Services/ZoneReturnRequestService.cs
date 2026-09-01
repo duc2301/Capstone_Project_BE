@@ -192,6 +192,24 @@ namespace Application.Services
             foreach (var grant in viewGrants)
                 _unitOfWork.Repository<FileViewGrant>().Delete(grant);
 
+            // Mất quyền xem là thứ người dùng sẽ thắc mắc -> ghi log riêng, gọi tên từng người kèm
+            // nhóm. Trước đây việc này diễn ra im lặng, chỉ còn lại dòng "Duyệt trả về WIP".
+            if (viewGrants.Count > 0)
+            {
+                var revokedAccountIds = viewGrants.Select(g => g.AccountId).Distinct().ToList();
+                var revokedLabels = await PermissionAuditDescriber.ResolveAccountLabelsAsync(
+                    _unitOfWork, currentFolder.ProjectId, revokedAccountIds);
+                var revokedNames = revokedAccountIds
+                    .Select(id => PermissionAuditDescriber.AccountLabelOf(revokedLabels, id))
+                    .ToList();
+
+                await _auditLog.LogAsync(
+                    LogScope.Project, AuditAction.RevokeShare, nameof(FileItem), fileItem.Id.ToString(), actorId,
+                    detail: $"Thu hồi quyền xem '{fileItem.Name}' của {PermissionAuditDescriber.Join(revokedNames)}"
+                            + $" — lý do: tệp được trả từ {request.FromZone} về WIP",
+                    projectId: currentFolder.ProjectId, folderId: currentFolder.Id);
+            }
+
             // Versioning: quay về WIP từ tài liệu đã publish (C{rev}) -> P{WorkingRevision}.01,
             // PublishedRevision bảo toàn. Quay về từ Shared: version giữ nguyên.
             if (fileItem.CurrentVersionId.HasValue)

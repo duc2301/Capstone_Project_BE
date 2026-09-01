@@ -105,23 +105,19 @@ namespace Application.Services
             // Vùng CDE của từng folder — để chọn cổng quyền theo vùng.
             var folderAreaById = flatFolders.ToDictionary(f => f.node.Id, f => f.node.Area);
 
-            // Folder leader quản lý được (sửa ô quyền) tùy theo VÙNG, KHÔNG kế thừa xuống theo cây:
-            //   Shared -> chỉ cần quyền XEM (vùng chia sẻ, được phép điều phối quyền cho nhóm khác)
-            //   WIP    -> cần quyền GHI (vùng làm việc riêng)
-            // Published/Archived đã chặn ở trên (chỉ Admin/PM). Full-access sửa mọi folder (empty + cờ isFullAccess).
+            // Sửa ô quyền = QUYỀN PHÂN QUYỀN, chỉ dành cho LEADER của nhóm SỞ HỮU folder (theo
+            // Folder.OwnerParticipantId). Nhóm được mời (dù có Xem/Sửa) KHÔNG phân quyền được -> folder
+            // họ không sở hữu bị ẩn khỏi ma trận. Published/Archived đã chặn ở trên (chỉ Admin/PM).
+            // Full-access (empty + cờ isFullAccess) sửa mọi folder.
             var editableFolderIds = new HashSet<Guid>();
             if (!isFullAccess)
             {
-                var wipFolderIds = flatFolders
-                    .Where(f => f.node.ParentFolderId != null && f.node.Area == CdeArea.Wip)
-                    .Select(f => f.node.Id).ToList();
-                var sharedFolderIds = flatFolders
-                    .Where(f => f.node.ParentFolderId != null && f.node.Area == CdeArea.Shared)
+                var candidateFolderIds = flatFolders
+                    .Where(f => f.node.ParentFolderId != null
+                             && (f.node.Area == CdeArea.Wip || f.node.Area == CdeArea.Shared))
                     .Select(f => f.node.Id).ToList();
 
-                editableFolderIds = await _permissionChecking.GetEditableFolderIdsAsync(accountId, wipFolderIds);
-                editableFolderIds.UnionWith(
-                    await _permissionChecking.GetViewableFolderIdsAmongAsync(accountId, sharedFolderIds));
+                editableFolderIds = await _permissionChecking.GetAssignableFolderIdsAmongAsync(accountId, candidateFolderIds);
             }
 
             // Hiển thị file: full-access thấy mọi file trong folder hiện; leader CHỈ thấy file ở folder
@@ -314,6 +310,22 @@ namespace Application.Services
                 .Select(c => c.TargetId).Distinct().ToList();
             var fileById = (await _matrixRepo.GetFilesByIdsAsync(fileChangeIds)).ToDictionary(f => f.Id);
 
+            // Quyền phân quyền = SỞ HỮU: caller không full-access chỉ phân quyền được trên folder nhóm
+            // mình LÀM CHỦ. Gom folder đích (folder trực tiếp + folder chứa file) rồi lọc một lần.
+            var assignableFolderIds = new HashSet<Guid>();
+            if (!isFullAccess)
+            {
+                var targetFolderIds = changes
+                    .Where(c => c.TargetType == MatrixTargetType.Folder)
+                    .Select(c => c.TargetId)
+                    .Concat(changes
+                        .Where(c => c.TargetType == MatrixTargetType.File && fileById.ContainsKey(c.TargetId))
+                        .Select(c => fileById[c.TargetId].FolderId))
+                    .Distinct()
+                    .ToList();
+                assignableFolderIds = await _permissionChecking.GetAssignableFolderIdsAmongAsync(accountId, targetFolderIds);
+            }
+
             // Kiểm tra TOÀN BỘ lô trước khi ghi.
             foreach (var c in changes)
             {
@@ -333,16 +345,9 @@ namespace Application.Services
                         throw new ApiExceptionResponse("Root areas are not assignable.", 403);
                     if (c.Level == PermissionLevel.Inherit)
                         throw new ApiExceptionResponse("Folders cannot inherit; use N/R/W.", 400);
-                    // Cổng quyền theo VÙNG trên chính folder (không kế thừa từ folder cha) — khớp phần hiển thị:
-                    // Shared cần XEM, WIP cần GHI. Chặn leo thang qua cây.
-                    if (!isFullAccess)
-                    {
-                        var canManageFolder = targetFolder.Area == CdeArea.Shared
-                            ? await _permissionChecking.HasViewFolderAsync(c.TargetId, accountId)
-                            : await _permissionChecking.HasEditFolderAsync(c.TargetId, accountId);
-                        if (!canManageFolder)
-                            throw new ApiExceptionResponse("You cannot assign permissions on this folder.", 403);
-                    }
+                    // Phân quyền = quyền của LEADER nhóm SỞ HỮU folder. Nhóm được mời không phân quyền được.
+                    if (!isFullAccess && !assignableFolderIds.Contains(c.TargetId))
+                        throw new ApiExceptionResponse("You cannot assign permissions on this folder.", 403);
                 }
                 else
                 {
@@ -350,16 +355,9 @@ namespace Application.Services
                         throw new ApiExceptionResponse("File does not belong to this project.", 400);
                     if (IsExcludedArea(owningFolder.Area) && !canManageRestrictedAreas)
                         throw new ApiExceptionResponse("Only admin/PM can assign permissions in Published/Archived areas.", 403);
-                    // Cổng quyền theo VÙNG của folder chứa file, trên CHÍNH file — khớp phần hiển thị:
-                    // Shared cần XEM, WIP cần GHI. Chặn leo thang qua cây.
-                    if (!isFullAccess)
-                    {
-                        var canManageFile = owningFolder.Area == CdeArea.Shared
-                            ? await _permissionChecking.HasViewFileAsync(c.TargetId, accountId)
-                            : await _permissionChecking.HasEditFileAsync(c.TargetId, accountId);
-                        if (!canManageFile)
-                            throw new ApiExceptionResponse("You cannot assign permissions on this file.", 403);
-                    }
+                    // Phân quyền file theo SỞ HỮU của folder chứa nó (file không có chủ riêng).
+                    if (!isFullAccess && !assignableFolderIds.Contains(owningFolder.Id))
+                        throw new ApiExceptionResponse("You cannot assign permissions on this file.", 403);
                 }
             }
 
@@ -428,10 +426,27 @@ namespace Application.Services
             if (filesToCreate.Count > 0)
                 await _unitOfWork.Repository<FilePermission>().CreateRangeAsync(filesToCreate);
 
+            // Mỗi ô là một quyết định phân quyền thật sự -> log phải nói ra đối tượng nào, bên nào,
+            // mức nào. "N ô" không truy vết được vì ô trên ma trận không có danh tính khi đọc lại log.
+            var groupNames = await PermissionAuditDescriber.ResolveGroupNamesAsync(
+                _unitOfWork, changes.Select(c => c.ProjectParticipantId).ToList());
+            var auditEntries = changes
+                .Select(c =>
+                {
+                    var targetName = c.TargetType == MatrixTargetType.Folder
+                        ? $"thư mục '{(folderById.TryGetValue(c.TargetId, out var f) ? f.Name : c.TargetId.ToString())}'"
+                        : $"tệp '{(fileById.TryGetValue(c.TargetId, out var fi) ? fi.Name : c.TargetId.ToString())}'";
+
+                    return PermissionAuditDescriber.Entry(
+                        $"{targetName} · {PermissionAuditDescriber.GroupNameOf(groupNames, c.ProjectParticipantId)}",
+                        PermissionAuditDescriber.LevelName(c.Level));
+                })
+                .ToList();
+
             await _auditLog.LogAsync(
                 LogScope.Project, AuditAction.PermissionChange,
                 nameof(Project), projectId.ToString(), accountId,
-                detail: $"Cập nhật ma trận phân quyền: {changes.Count} ô",
+                detail: $"Cập nhật ma trận phân quyền: {PermissionAuditDescriber.Join(auditEntries)}",
                 projectId: projectId);
 
             await _unitOfWork.CommitAsync();

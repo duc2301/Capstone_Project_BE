@@ -16,15 +16,17 @@ namespace Application.Services
 
         private readonly IAuditLogService _auditLog;
         private readonly IPermissionCleanupService _cleanup;
+        private readonly IPermissionCheckingService _permission;
 
         public FilePermissionService(
             IUnitOfWork unitOfWork, IMapper mapper, IAuditLogService auditLog,
-            IPermissionCleanupService cleanup)
+            IPermissionCleanupService cleanup, IPermissionCheckingService permission)
         {
             _auditLog = auditLog;
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _cleanup = cleanup;
+            _permission = permission;
         }
 
         #region CRUD có sẵn
@@ -41,6 +43,10 @@ namespace Application.Services
 
         public async Task<FilePermissionsViewModelDTO> GetDataForPermissionUIAsync(Guid fileItemId, Guid callerAccountId)
         {
+            // Chỉ leader nhóm SỞ HỮU (theo folder chứa file), hoặc Admin/PM/PA, mới mở được màn phân quyền.
+            if (!await _permission.CanAssignFilePermissionsAsync(fileItemId, callerAccountId))
+                throw new ApiExceptionResponse("You cannot assign permissions on this file.", 403);
+
             // Groups the caller belongs to are excluded so they cannot kick themselves out of the group.
             var callerParticipantIds = await _unitOfWork.FilePermissionRepository.GetCallerParticipantIdsByFileItemIdAsync(fileItemId, callerAccountId);
 
@@ -71,6 +77,10 @@ namespace Application.Services
 
         public async Task<MemberPermissionsViewModelDTO> GetMemberPermissionsAsync(Guid fileItemId, Guid callerAccountId)
         {
+            // Màn "Phân quyền thành viên" cũng là phân quyền -> chỉ leader nhóm sở hữu (hoặc Admin/PM/PA).
+            if (!await _permission.CanAssignFilePermissionsAsync(fileItemId, callerAccountId))
+                throw new ApiExceptionResponse("You cannot assign permissions on this file.", 403);
+
             var file = await _unitOfWork.Repository<FileItem>().GetByIdAsync(fileItemId)
                 ?? throw new ApiExceptionResponse("File not found.", 404);
 
@@ -108,8 +118,24 @@ namespace Application.Services
 
         public async Task<IEnumerable<GroupFilePermissionResponseDTO>> BulkUpdateFilePermissionsAsync(AddPermissionsBulkDTO dto, Guid actorId)
         {
-            //if (!dto.GroupsPermission.Any()) 
+            //if (!dto.GroupsPermission.Any())
             //    throw new ApiExceptionResponse("GroupsPermission list is empty.", 400);
+
+            var file = await _unitOfWork.Repository<FileItem>().GetByIdAsync(dto.Id)
+                ?? throw new ApiExceptionResponse("File not found.", 404);
+            var folder = await _unitOfWork.Repository<Folder>().GetByIdAsync(file.FolderId);
+
+            // Phân quyền file theo SỞ HỮU của folder chứa nó: chỉ leader nhóm sở hữu (hoặc Admin/PM/PA).
+            if (!await _permission.CanAssignFilePermissionsAsync(dto.Id, actorId))
+                throw new ApiExceptionResponse("You cannot assign permissions on this file.", 403);
+
+            // Không tự sửa quyền NHÓM CỦA MÌNH (đồng nhất với ma trận): tránh chủ sở hữu tự cấp lại
+            // nhóm mình sau khi bị Admin/PM gỡ, và tránh tự leo thang quyền.
+            var callerParticipantIds = (await _unitOfWork.FilePermissionRepository
+                .GetCallerParticipantIdsByFileItemIdAsync(dto.Id, actorId)).ToHashSet();
+            if (dto.GroupsPermission.Any(g => callerParticipantIds.Contains(g.ProjectParticipantId))
+                || dto.RemoveParticipantIds.Any(callerParticipantIds.Contains))
+                throw new ApiExceptionResponse("You cannot change permissions for your own group.", 403);
 
             var participantIds = dto.GroupsPermission.Select(u => u.ProjectParticipantId).Union(dto.RemoveParticipantIds).ToList();
 
@@ -117,6 +143,9 @@ namespace Application.Services
             var existingPermissions = await _unitOfWork.FilePermissionRepository.GetFilePermissionsByFileItemIdAsync(dto.Id, participantIds);
 
             var updatedParticipantIds = new List<Guid>();
+
+            // (bên tham gia, mức mới) để dựng câu audit log sau khi tra được tên nhóm.
+            var auditChanges = new List<(Guid ParticipantId, string Level)>();
 
             // Remove permissions for participants in the removal list
             foreach (var participantId in dto.RemoveParticipantIds)
@@ -127,6 +156,7 @@ namespace Application.Services
                     PermissionLevelMapper.Apply(perm, PermissionLevel.Inherit, isFile: true);
 
                     updatedParticipantIds.Add(participantId);
+                    auditChanges.Add((participantId, "bỏ quyền riêng, kế thừa theo thư mục"));
 
                 }
             }
@@ -154,21 +184,26 @@ namespace Application.Services
                     permission, PermissionLevelMapper.FromFlags(u.CanView, u.CanEdit), isFile: true);
 
                 updatedParticipantIds.Add(u.ProjectParticipantId);
+                auditChanges.Add((u.ProjectParticipantId, PermissionAuditDescriber.LevelName(u.CanView, u.CanEdit)));
 
             }
 
             if (toCreate.Any())
                 await _unitOfWork.Repository<FilePermission>().CreateRangeAsync(toCreate);
 
-            var auditFile = await _unitOfWork.Repository<FileItem>().GetByIdAsync(dto.Id);
-            var auditFolder = auditFile == null
-                ? null
-                : await _unitOfWork.Repository<Folder>().GetByIdAsync(auditFile.FolderId);
+            // Ghi rõ TỪNG bên và mức quyền mới thay vì chỉ đếm số bên.
+            var groupNames = await PermissionAuditDescriber.ResolveGroupNamesAsync(
+                _unitOfWork, auditChanges.Select(c => c.ParticipantId).ToList());
+            var auditEntries = auditChanges
+                .Select(c => PermissionAuditDescriber.Entry(
+                    PermissionAuditDescriber.GroupNameOf(groupNames, c.ParticipantId), c.Level))
+                .ToList();
+
             await _auditLog.LogAsync(
                 Domain.Enum.Audit.LogScope.Project, Domain.Enum.Audit.AuditAction.PermissionChange,
                 nameof(FileItem), dto.Id.ToString(), actorId,
-                detail: $"Cập nhật phân quyền tệp '{auditFile?.Name}' cho {updatedParticipantIds.Count()} bên tham gia",
-                projectId: auditFolder?.ProjectId, folderId: auditFile?.FolderId);
+                detail: $"Phân quyền nhóm trên tệp '{file.Name}': {PermissionAuditDescriber.Join(auditEntries)}",
+                projectId: folder?.ProjectId, folderId: file.FolderId);
 
             await _unitOfWork.CommitAsync();
 
@@ -189,6 +224,10 @@ namespace Application.Services
             if (users.Count == 0 && removeIds.Count == 0)
                 throw new ApiExceptionResponse("No changes provided.", 400);
 
+            // Phân quyền thành viên cũng là phân quyền -> chỉ leader nhóm sở hữu (hoặc Admin/PM/PA).
+            if (!await _permission.CanAssignFilePermissionsAsync(dto.Id, actorId))
+                throw new ApiExceptionResponse("You cannot assign permissions on this file.", 403);
+
             // A leader cannot override their own access (mirrors the group UI hiding the caller's group).
             if (users.Any(u => u.AccountId == actorId) || removeIds.Contains(actorId))
                 throw new ApiExceptionResponse("You cannot change your own permission.", 403);
@@ -199,6 +238,9 @@ namespace Application.Services
 
             var updatedAccountIds = new List<Guid>();
 
+            // (tài khoản, mức mới) để dựng câu audit log sau khi tra được tên người + nhóm của họ.
+            var auditChanges = new List<(Guid AccountId, string Level)>();
+
             // Remove = trả tài khoản về kế thừa quyền nhóm (dòng Inactive; đường đọc lọc Active nên bỏ qua).
             foreach (var accountId in removeIds)
             {
@@ -206,6 +248,7 @@ namespace Application.Services
                 {
                     PermissionLevelMapper.Apply(perm, PermissionLevel.Inherit, isFile: true);
                     updatedAccountIds.Add(accountId);
+                    auditChanges.Add((accountId, "bỏ quyền riêng, trở lại theo nhóm"));
                 }
             }
 
@@ -228,6 +271,7 @@ namespace Application.Services
                 PermissionLevelMapper.Apply(
                     permission, PermissionLevelMapper.FromFlags(u.CanView, u.CanEdit), isFile: true);
                 updatedAccountIds.Add(u.AccountId);
+                auditChanges.Add((u.AccountId, PermissionAuditDescriber.LevelName(u.CanView, u.CanEdit)));
             }
 
             if (toCreate.Any())
@@ -237,10 +281,19 @@ namespace Application.Services
             var auditFolder = auditFile == null
                 ? null
                 : await _unitOfWork.Repository<Folder>().GetByIdAsync(auditFile.FolderId);
+
+            // Ghi rõ TÊN người và nhóm của họ thay vì chỉ đếm số người.
+            var accountLabels = await PermissionAuditDescriber.ResolveAccountLabelsAsync(
+                _unitOfWork, auditFolder?.ProjectId, auditChanges.Select(c => c.AccountId).ToList());
+            var auditEntries = auditChanges
+                .Select(c => PermissionAuditDescriber.Entry(
+                    PermissionAuditDescriber.AccountLabelOf(accountLabels, c.AccountId), c.Level))
+                .ToList();
+
             await _auditLog.LogAsync(
                 Domain.Enum.Audit.LogScope.Project, Domain.Enum.Audit.AuditAction.PermissionChange,
                 nameof(FileItem), dto.Id.ToString(), actorId,
-                detail: $"Cập nhật phân quyền người dùng cho tệp '{auditFile?.Name}': {updatedAccountIds.Distinct().Count()} người",
+                detail: $"Phân quyền người dùng trên tệp '{auditFile?.Name}': {PermissionAuditDescriber.Join(auditEntries)}",
                 projectId: auditFolder?.ProjectId, folderId: auditFile?.FolderId);
 
             await _unitOfWork.CommitAsync();

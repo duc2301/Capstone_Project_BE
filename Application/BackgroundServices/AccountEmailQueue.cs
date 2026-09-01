@@ -5,12 +5,13 @@ namespace Application.BackgroundServices
 {
     public sealed class AccountEmailQueue : IAccountEmailQueue
     {
-        private readonly Channel<Guid> _channel = Channel.CreateUnbounded<Guid>(
+        private readonly Channel<AccountEmailJob> _channel = Channel.CreateUnbounded<AccountEmailJob>(
             new UnboundedChannelOptions { SingleReader = true });
 
-        public void Enqueue(Guid accountId) => _channel.Writer.TryWrite(accountId);
+        public void Enqueue(Guid accountId, string? password) =>
+            _channel.Writer.TryWrite(new AccountEmailJob(accountId, password));
 
-        public IAsyncEnumerable<Guid> ReadAllAsync(CancellationToken ct) =>
+        public IAsyncEnumerable<AccountEmailJob> ReadAllAsync(CancellationToken ct) =>
             _channel.Reader.ReadAllAsync(ct);
     }
 }

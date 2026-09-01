@@ -77,8 +77,41 @@ namespace Application.Interfaces.IServices
         /// <summary>True if the account has full access to the project (system admin or ProjectAdmin/PM).</summary>
         Task<bool> HasProjectFullAccessAsync(Guid projectId, Guid accountId);
 
+        // ===== Permission-assignment authority (ownership-based) =====
+        // Assigning permissions on a folder/file is restricted to the LEADER of the owning group,
+        // plus project full-access (system admin / PM / ProjectAdmin). Distinct from view/edit: an
+        // invited group with view/edit can operate in the folder but cannot assign any permission.
+
+        /// <summary>
+        /// True if the account may assign permissions on this folder: project full-access, OR the
+        /// leader of the group that owns it (Folder.OwnerParticipantId). Owner-less folders -> only
+        /// full-access qualifies.
+        /// </summary>
+        Task<bool> CanAssignFolderPermissionsAsync(Guid folderId, Guid accountId);
+
+        /// <summary>
+        /// True if the account may assign permissions on this file — decided by the OWNING folder's
+        /// ownership (files have no owner of their own), so file and folder assignment rules match.
+        /// </summary>
+        Task<bool> CanAssignFilePermissionsAsync(Guid fileItemId, Guid accountId);
+
+        /// <summary>
+        /// Among the given folders, those a NON-full-access caller may assign on (leads the owning
+        /// group). For building the matrix's editable set; full-access callers bypass this entirely.
+        /// </summary>
+        Task<HashSet<Guid>> GetAssignableFolderIdsAmongAsync(Guid accountId, IReadOnlyCollection<Guid> folderIds);
+
         /// <summary>FolderIds in the project the account can View — for building filtered list views.</summary>
         Task<HashSet<Guid>> GetViewableFolderIdsAsync(Guid projectId, Guid accountId);
+
+        /// <summary>
+        /// FileItemIds viewable through a FILE-level grant while the owning folder is NOT viewable —
+        /// the files a folder-only filter drops even though the user may open them. Callers that
+        /// pre-filter by folder (semantic search) must widen their candidate set with this, otherwise
+        /// "cấp quyền cho riêng một tệp" works everywhere except there.
+        /// </summary>
+        Task<HashSet<Guid>> GetExtraViewableFileIdsAsync(
+            Guid projectId, Guid accountId, IReadOnlyCollection<Guid> viewableFolderIds);
 
         /// <summary>
         /// Among the files in one folder, the FileItemIds this account is DENIED view on — for

@@ -265,13 +265,22 @@ namespace Application.Services
 
             if (request.TargetZone == CdeArea.Published)
             {
-                var revokedCount = await RevokeFileViewGrantsOnZoneExitAsync(fileItem.Id);
+                var revokedAccountIds = await RevokeFileViewGrantsOnZoneExitAsync(fileItem.Id);
 
-                if (revokedCount > 0)
+                if (revokedAccountIds.Count > 0)
+                {
+                    var revokedLabels = await PermissionAuditDescriber.ResolveAccountLabelsAsync(
+                        _unitOfWork, folder.ProjectId, revokedAccountIds);
+                    var revokedNames = revokedAccountIds
+                        .Select(id => PermissionAuditDescriber.AccountLabelOf(revokedLabels, id))
+                        .ToList();
+
                     await _auditLog.LogAsync(
                         LogScope.Project, AuditAction.RevokeShare, nameof(FileItem), fileItem.Id.ToString(), actor,
-                        detail: $"Thu hồi quyền xem '{fileItem.Name}' của {revokedCount} tài khoản (file sang Published)",
+                        detail: $"Thu hồi quyền xem '{fileItem.Name}' của {PermissionAuditDescriber.Join(revokedNames)}"
+                                + " — lý do: tệp đã chuyển sang Published",
                         projectId: folder.ProjectId, folderId: folder.Id);
+                }
             }
 
             await _auditLog.LogAsync(
@@ -709,7 +718,12 @@ namespace Application.Services
             return grantAccountIds.Count;
         }
 
-        private async Task<int> RevokeFileViewGrantsOnZoneExitAsync(Guid fileItemId)
+        /// <summary>
+        /// Gỡ mọi grant xem theo tài khoản của file và trả về DANH SÁCH tài khoản bị thu hồi (không chỉ
+        /// số lượng) để dòng audit log gọi được tên từng người — mất quyền xem là việc người dùng sẽ
+        /// thắc mắc, log phải trả lời được "ai" chứ không chỉ "mấy người".
+        /// </summary>
+        private async Task<List<Guid>> RevokeFileViewGrantsOnZoneExitAsync(Guid fileItemId)
         {
             var signerGrants = (await _unitOfWork.Repository<FileViewGrant>().FindAsync(
                     g => g.FileItemId == fileItemId))
@@ -717,7 +731,7 @@ namespace Application.Services
             foreach (var grant in signerGrants)
                 _unitOfWork.Repository<FileViewGrant>().Delete(grant);
 
-            return signerGrants.Count;
+            return signerGrants.Select(g => g.AccountId).Distinct().ToList();
         }
 
         /// <summary>
@@ -1073,15 +1087,16 @@ namespace Application.Services
                 return groupIds;
             }
 
-            var teamGroupIds = await ResolveGroupIdsAsync(applyApproveFilter: requireApprovePermission);
+            // Quyền "duyệt" không còn được gác theo cờ CanApprove: nhóm phụ trách = MỌI nhóm đang giữ
+            // một dòng ACL trên file hoặc chuỗi folder (chủ sở hữu lẫn nhóm được mời) — Leader của bất
+            // kỳ nhóm nào trong số đó đều được duyệt. Vì thế luôn resolve KHÔNG áp bộ lọc CanApprove.
+            var teamGroupIds = await ResolveGroupIdsAsync(applyApproveFilter: false);
             if (teamGroupIds.Count > 0 || !requireApprovePermission)
                 return teamGroupIds.Count > 0 ? teamGroupIds : activeParticipants.Values.ToHashSet();
 
-            // Không có nhóm nào có CanApprove=true trên file/folder này (dù bị tắt có chủ đích hay
-            // hoàn toàn chưa cấu hình) -> KHÔNG đoán/fallback về "tất cả nhóm dự án" nữa, trả về rỗng.
-            // Không nhóm nào được coi là phụ trách cho tới khi Admin cấu hình CanApprove rõ ràng cho
-            // đúng nhóm — tránh đoán sai sang nhóm không liên quan (VD: nhóm khác chưa cấu hình gì
-            // trên folder này nhưng lại vô tình lọt vào fallback, hiện nhầm "Người nhận").
+            // Không nhóm nào giữ dòng ACL nào trên file/chuỗi folder này (folder chưa được cấu hình
+            // phân quyền) -> vẫn trả rỗng để caller yêu-cầu-quyền báo lỗi rõ ràng, thay vì đoán bừa
+            // "tất cả nhóm dự án" và hiện nhầm "Người nhận".
             return Array.Empty<Guid>();
         }
 

@@ -71,8 +71,13 @@ namespace Application.Services
             return Build(entity, members, accounts);
         }
 
-        public async Task<GroupResponseDTO> CreateAsync(CreateGroupDTO dto)
+        public async Task<GroupResponseDTO> CreateAsync(CreateGroupDTO dto, Guid actor, string? actorRole)
         {
+            // Nhóm mới chưa gắn dự án nào -> không có groupId để suy ra PM của nhóm.
+            // Vì vậy chỉ cần Admin hoặc PM của BẤT KỲ dự án nào là được tạo nhóm.
+            await EnsureAdminOrAnyProjectManagerAsync(actor, actorRole,
+                "Chỉ Admin hoặc PM dự án mới được tạo nhóm.");
+
             var entity = _mapper.Map<Group>(dto);
             entity.Id = Guid.NewGuid();
             entity.CreatedAt = entity.UpdatedAt = DateTime.UtcNow;
@@ -146,7 +151,8 @@ namespace Application.Services
 
             var currentLeader = members.FirstOrDefault(
                 gm => gm.Role == GroupMemberRole.Leader && gm.Status == GroupMemberStatus.Active);
-            await RequireCanChangeMemberRoleAsync(groupId, actor, actorRole, currentLeader);
+            await EnsureAdminOrProjectManagerAsync(groupId, actor, actorRole,
+                "Chỉ Admin hoặc PM dự án mới được đổi vai trò thành viên.");
 
             var previousRole = target.Role;
             var demotedLeader = ApplyRoleChange(target, newRole, currentLeader);
@@ -157,17 +163,6 @@ namespace Application.Services
 
             return await GetByIdAsync(groupId)
                 ?? throw new ApiExceptionResponse("Group not found after update.", 500);
-        }
-
-        private async Task RequireCanChangeMemberRoleAsync(
-            Guid groupId, Guid actor, string? actorRole, GroupMember? currentLeader)
-        {
-            var isAdmin = actorRole == AccountRole.Admin.ToString();
-            var isLeader = currentLeader != null && currentLeader.AccountId == actor;
-            var isManager = await IsProjectManagerOfGroupAsync(groupId, actor);
-            if (!isAdmin && !isLeader && !isManager)
-                throw new ApiExceptionResponse(
-                    "Chỉ Admin, PM dự án hoặc Trưởng nhóm hiện tại mới được đổi vai trò thành viên.", 403);
         }
 
         // Mutate target (entity đang tracked) theo newRole. Trả về Leader cũ nếu bị tự động hạ xuống
@@ -290,6 +285,17 @@ namespace Application.Services
         {
             if (actorRole == AccountRole.Admin.ToString()) return;
             if (await IsProjectManagerOfGroupAsync(groupId, actor)) return;
+            throw new ApiExceptionResponse(message, 403);
+        }
+
+        // Dùng cho thao tác chưa có nhóm (tạo mới): cho phép Admin, hoặc actor là PM của ít nhất 1 dự án.
+        private async Task EnsureAdminOrAnyProjectManagerAsync(Guid actor, string? actorRole, string message)
+        {
+            if (actorRole == AccountRole.Admin.ToString()) return;
+            var isProjectManager = (await _unitOfWork.Repository<Project>()
+                    .FindAsync(p => p.ManagerAccountId == actor))
+                .Any();
+            if (isProjectManager) return;
             throw new ApiExceptionResponse(message, 403);
         }
 
