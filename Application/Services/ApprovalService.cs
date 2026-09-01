@@ -176,28 +176,31 @@ namespace Application.Services
         /// <summary>
         /// Lấy tất cả approval request mà actor có quyền xem.
         /// </summary>
-        public async Task<PagedResult<ApprovalRequestResponseDTO>> GetAllAsync(Guid actorId, int page, int pageSize)
+        public async Task<PagedResult<ApprovalRequestResponseDTO>> GetAllAsync(Guid actorId, int page, int pageSize, Guid? projectId = null)
         {
             var safePage = page < 1 ? 1 : page;
             var safeSize = pageSize < 1 || pageSize > MaxPageSize ? DefaultPageSize : pageSize;
 
-            // "Lịch sử phê duyệt" chỉ hiện đúng cái actor tự gửi — Admin/PM dự án vẫn xem được hết.
-            var canViewAll = await CanViewAllApprovalsAsync(actorId);
+            var canViewAll = await CanViewAllApprovalsAsync(actorId, projectId);
             var (requests, totalCount) = await _unitOfWork.Repository<ApprovalRequest>().GetPagedAsync(
                 safePage, safeSize,
-                predicate: canViewAll ? null : a => a.RequestedBy == actorId,
+                predicate: a => (canViewAll || a.RequestedBy == actorId)
+                                && (projectId == null || a.FileItem.Folder.ProjectId == projectId.Value),
                 orderBy: q => q.OrderByDescending(a => a.CreatedAt));
 
             return await BuildPagedResponseAsync(requests, totalCount, actorId, safePage, safeSize);
         }
 
-        private async Task<bool> CanViewAllApprovalsAsync(Guid actorId)
+        private async Task<bool> CanViewAllApprovalsAsync(Guid actorId, Guid? projectId)
         {
             var account = await _unitOfWork.Repository<Account>().GetByIdAsync(actorId);
             if (account?.Role == Domain.Enum.Account.AccountRole.Admin)
                 return true;
 
-            return (await _unitOfWork.Repository<Project>().FindAsync(p => p.ManagerAccountId == actorId)).Any();
+            var managedProjects = await _unitOfWork.Repository<Project>().FindAsync(p => p.ManagerAccountId == actorId);
+            return projectId.HasValue
+                ? managedProjects.Any(p => p.Id == projectId.Value)
+                : managedProjects.Any();
         }
 
         /// <summary>

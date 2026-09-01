@@ -16,8 +16,7 @@ namespace Application.Interfaces.IServices
         // Gửi file để chờ Team Leader phê duyệt.
         Task<ApprovalRequestResponseDTO> SubmitAsync(Guid fileItemId, SubmitApprovalRequestDTO? dto, Guid actorId);
 
-        // Tất cả yêu cầu phê duyệt mà người dùng được phép xem, có phân trang.
-        Task<PagedResult<ApprovalRequestResponseDTO>> GetAllAsync(Guid actorId, int page, int pageSize);
+        Task<PagedResult<ApprovalRequestResponseDTO>> GetAllAsync(Guid actorId, int page, int pageSize, Guid? projectId = null);
 
         // Danh sách yêu cầu đang chờ duyệt của Team Leader hiện tại, có phân trang. projectId null =
         // không lọc (dùng cho Dashboard tổng hợp mọi dự án); có giá trị = chỉ lấy request của dự án đó

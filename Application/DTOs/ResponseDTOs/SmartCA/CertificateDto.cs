@@ -17,5 +17,8 @@ namespace Application.DTOs.ResponseDTOs.SmartCA
 
         /// <summary>Cac chung thu chain (CA trung gian/goc) dang base64, neu VNPT tra kem trong response.</summary>
         public IReadOnlyList<string>? ChainCertificateDataBase64 { get; set; }
+
+        /// <summary>Ten (CN) tren chung thu khac voi UserName tai khoan dang dang nhap - chi canh bao, khong chan ky.</summary>
+        public bool NameMismatchesAccount { get; set; }
     }
 }
