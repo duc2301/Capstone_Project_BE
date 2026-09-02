@@ -16,6 +16,7 @@ using iText.Kernel.Geom;
 using iText.Kernel.Pdf;
 using iText.Layout;
 using iText.Layout.Element;
+using iText.Layout.Layout;
 using iText.Layout.Properties;
 using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
@@ -495,26 +496,40 @@ namespace Infrastructure.Adapters.Signing
             const float padding = 6f;
             const float lineLeading = 1.35f;
             const float bottomMargin = 12f;
+            const float minDetailFontSize = 4.5f;
+            const float fontStep = 0.25f;
 
             var titleFontSize = Math.Clamp(position.Height * 0.17f, 7f, 14f);
             var headerHeight = Math.Min(16f, position.Height * 0.32f);
             var topY = pdfY + position.Height; // canh tren co dinh
             var maxAvailableHeight = Math.Max(headerHeight + padding * 1.5f + 2f, topY - bottomMargin);
+            var bodyWidth = Math.Max(1f, position.Width - padding * 2);
 
-            var detailFontSize = Math.Clamp(position.Height * 0.11f, 6f, 8.5f);
-            var requiredBodyHeight = signers.Count * 2 * detailFontSize * lineLeading + padding;
-            var effectiveHeight = Math.Max(position.Height, headerHeight + requiredBodyHeight + padding * 1.5f);
-            if (effectiveHeight > maxAvailableHeight)
+            // Uoc luong "2 dong/nguoi ky" truoc day sai khi ten dai (vd "Ký bởi: TRƯƠNG THỊ THANH HUYỀN")
+            // tu xuong dong trong khung hep - lam thieu chieu cao cap phat va iText Canvas AM THAM CAT BOT
+            // nhung nguoi ky cuoi danh sach (khong loi, chi khong ve). Do do phai ĐO chieu cao THUC TE bang
+            // chinh engine layout cua iText (khong con uoc luong so dong) roi moi giam font neu con thieu cho.
+            // Viec do dac dung mot PdfFont/PdfDocument tam rieng (xem MeasureParagraphHeight) - KHONG dung
+            // chung PdfFont voi ban ve that, vi mot PdfFont da "dinh" vao PdfDocument nao thi khong the ghi
+            // sang PdfDocument khac (loi "indirect object belongs to other PDF document").
+            var detailFontSize = Math.Clamp(position.Height * 0.11f, minDetailFontSize, 8.5f);
+            float requiredBodyHeight;
+            while (true)
             {
+                var measuredHeight = MeasureSignerDetailsHeight(signers, detailFontSize, lineLeading, bodyWidth);
+                requiredBodyHeight = measuredHeight + padding;
                 var availableBodyHeight = maxAvailableHeight - headerHeight - padding * 1.5f;
-                var neededHeightPerUnitFont = signers.Count * 2 * lineLeading;
-                detailFontSize = neededHeightPerUnitFont > 0
-                    ? Math.Max(4.5f, availableBodyHeight / neededHeightPerUnitFont)
-                    : detailFontSize;
-                requiredBodyHeight = signers.Count * 2 * detailFontSize * lineLeading + padding;
-                effectiveHeight = Math.Min(maxAvailableHeight, headerHeight + requiredBodyHeight + padding * 1.5f);
+                if (requiredBodyHeight <= availableBodyHeight || detailFontSize <= minDetailFontSize)
+                    break;
+                detailFontSize = Math.Max(minDetailFontSize, detailFontSize - fontStep);
             }
+
+            var effectiveHeight = Math.Min(maxAvailableHeight, Math.Max(position.Height, headerHeight + requiredBodyHeight + padding * 1.5f));
             pdfY = topY - effectiveHeight; // canh duoi day xuong neu can them cho
+
+            var boldFont = GetBoldFont();
+            var regularFont = GetRegularFont();
+            var details = BuildSignerDetailsParagraph(signers, boldFont, regularFont, labelColor, nameColor, timestampColor, detailFontSize, lineLeading);
 
             var headerRect = new Rectangle(
                 position.X + padding,
@@ -535,31 +550,11 @@ namespace Infrastructure.Adapters.Signing
                 .FillStroke()
                 .RestoreState();
 
-            var boldFont = GetBoldFont();
-            var regularFont = GetRegularFont();
-
             var title = new Paragraph()
                 .Add(new Text("Signature Valid").SetFont(boldFont).SetFontSize(titleFontSize).SetFontColor(validColor))
                 .SetMargin(0)
                 .SetMultipliedLeading(1f)
                 .SetTextAlignment(TextAlignment.CENTER);
-
-            var details = new Paragraph()
-                .SetMargin(0)
-                .SetMultipliedLeading(lineLeading)
-                .SetTextAlignment(TextAlignment.LEFT)
-                .SetFont(regularFont)
-                .SetFontSize(detailFontSize)
-                .SetFontColor(labelColor);
-
-            for (var i = 0; i < signers.Count; i++)
-            {
-                var signer = signers[i];
-                var prefix = i == 0 ? "" : "\n";
-                details.Add(new Text($"{prefix}Ký bởi: ").SetFontColor(labelColor));
-                details.Add(new Text(signer.Name).SetFont(boldFont).SetFontColor(nameColor));
-                details.Add(new Text($"\nKý ngày: {ToVietnamTime(signer.SignedAt):dd/MM/yyyy HH:mm:ss}").SetFontColor(timestampColor));
-            }
 
             using (var headerCanvas = new Canvas(pdfCanvas, headerRect))
             {
@@ -577,6 +572,71 @@ namespace Infrastructure.Adapters.Signing
             {
                 bodyCanvas.Add(bodyWrapper);
             }
+        }
+
+        private static Paragraph BuildSignerDetailsParagraph(
+            IReadOnlyList<SignerStampInfo> signers,
+            PdfFont boldFont,
+            PdfFont regularFont,
+            DeviceRgb labelColor,
+            DeviceRgb nameColor,
+            DeviceRgb timestampColor,
+            float detailFontSize,
+            float lineLeading)
+        {
+            var details = new Paragraph()
+                .SetMargin(0)
+                .SetMultipliedLeading(lineLeading)
+                .SetTextAlignment(TextAlignment.LEFT)
+                .SetFont(regularFont)
+                .SetFontSize(detailFontSize)
+                .SetFontColor(labelColor);
+
+            for (var i = 0; i < signers.Count; i++)
+            {
+                var signer = signers[i];
+                var prefix = i == 0 ? "" : "\n";
+                details.Add(new Text($"{prefix}Ký bởi: ").SetFontColor(labelColor));
+                details.Add(new Text(signer.Name).SetFont(boldFont).SetFontColor(nameColor));
+                details.Add(new Text($"\nKý ngày: {ToVietnamTime(signer.SignedAt):dd/MM/yyyy HH:mm:ss}").SetFontColor(timestampColor));
+            }
+
+            return details;
+        }
+
+        // Do chieu cao THUC TE (co tinh xuong dong theo be rong) ma noi dung cac nguoi ky can khi ve - thay
+        // vi uoc luong so dong theo cong thuc, vi ten nguoi ky dai se tu xuong dong va lam sai lech uoc
+        // luong, khien iText Canvas (khung co dinh) am tham cat mat cac nguoi ky ve sau trong danh sach.
+        // Dung PdfFont/PdfDocument TAM RIENG cho viec do - khong dung chung voi PdfFont dung de ve that,
+        // vi mot PdfFont da "dinh" vao PdfDocument nao thi khong flush duoc sang PdfDocument khac.
+        private static float MeasureSignerDetailsHeight(
+            IReadOnlyList<SignerStampInfo> signers, float detailFontSize, float lineLeading, float width)
+        {
+            using var measureWriter = new PdfWriter(new MemoryStream());
+            using var measureDocument = new iText.Layout.Document(new PdfDocument(measureWriter));
+            var measureBoldFont = PdfFontFactory.CreateFont(_boldFontBytes.Value, PdfEncodings.IDENTITY_H);
+            var measureRegularFont = PdfFontFactory.CreateFont(_regularFontBytes.Value, PdfEncodings.IDENTITY_H);
+
+            var paragraph = new Paragraph()
+                .SetMargin(0)
+                .SetMultipliedLeading(lineLeading)
+                .SetFont(measureRegularFont)
+                .SetFontSize(detailFontSize)
+                .SetWidth(width);
+
+            for (var i = 0; i < signers.Count; i++)
+            {
+                var signer = signers[i];
+                var prefix = i == 0 ? "" : "\n";
+                paragraph.Add(new Text($"{prefix}Ký bởi: "));
+                paragraph.Add(new Text(signer.Name).SetFont(measureBoldFont));
+                paragraph.Add(new Text($"\nKý ngày: {ToVietnamTime(signer.SignedAt):dd/MM/yyyy HH:mm:ss}"));
+            }
+
+            var renderer = paragraph.CreateRendererSubTree().SetParent(measureDocument.GetRenderer());
+            var area = new LayoutArea(1, new Rectangle(0, 0, width, 100_000f));
+            var result = renderer.Layout(new LayoutContext(area));
+            return result.GetOccupiedArea().GetBBox().GetHeight();
         }
     }
 }
